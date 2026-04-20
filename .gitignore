@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+*.log
+.DS_Store
+# Local user data — contains your tasks, checkins, scraped classmate data
+userdata/
+*.sqlite
+*.sqlite-journal
+.env
+.env.local

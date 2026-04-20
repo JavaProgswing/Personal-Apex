@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Local desktop app. CSP covers Vite HMR, custom apex-img:// protocol for timetable PNGs,
+         and outbound calls to Ollama (localhost), GitHub, NextTechLab. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: apex-img: file: https: http://localhost:* ws://localhost:*; img-src 'self' data: blob: apex-img: file: https:;"
+    />
+    <title>Apex</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

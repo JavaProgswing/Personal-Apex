@@ -1,0 +1,49 @@
+{
+  "name": "apex",
+  "version": "0.1.0",
+  "description": "Apex — personal productivity OS: timetable, tasks, Ollama planner, burnout check-in, and classmate project radar.",
+  "private": true,
+  "main": "electron/main.cjs",
+  "author": "Yashasvi",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "concurrently -k -n VITE,ELECTRON -c blue,magenta \"npm:dev:vite\" \"npm:dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
+    "build": "vite build",
+    "start": "cross-env NODE_ENV=production electron .",
+    "dist": "vite build && electron-builder",
+    "rebuild": "electron-rebuild -f -w better-sqlite3"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "cheerio": "^1.0.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.0",
+    "@vitejs/plugin-react": "^4.3.3",
+    "concurrently": "^9.0.1",
+    "cross-env": "^7.0.3",
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^5.4.10",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "in.apex.app",
+    "productName": "Apex",
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "db/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
