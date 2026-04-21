@@ -33,6 +33,19 @@ contextBridge.exposeInMainWorld("apex", {
     upsert: (p) => invoke("checkins:upsert", p),
     last: (days) => invoke("checkins:last", days),
   },
+  dayNotes: {
+    get: (date) => invoke("dayNotes:get", date),
+    upsert: (p) => invoke("dayNotes:upsert", p),
+    list: (limit) => invoke("dayNotes:list", limit),
+    delete: (date) => invoke("dayNotes:delete", date),
+    summarize: (p) => invoke("dayNotes:summarize", p),
+    hasPasscode: () => invoke("dayNotes:hasPasscode"),
+    setPasscode: (passcode) => invoke("dayNotes:setPasscode", { passcode }),
+    unlock: (passcode) => invoke("dayNotes:unlock", { passcode }),
+    lock: () => invoke("dayNotes:lock"),
+    isUnlocked: () => invoke("dayNotes:isUnlocked"),
+    clearPasscode: (passcode) => invoke("dayNotes:clearPasscode", { passcode }),
+  },
   streak: {
     status: () => invoke("streak:status"),
   },
@@ -54,6 +67,9 @@ contextBridge.exposeInMainWorld("apex", {
     resyncFromAcademia: (folder) => invoke("schedule:resyncFromAcademia", folder),
     parseJson: (p) => invoke("schedule:parseJson", p),
     setDayOrderForDate: (iso, d) => invoke("schedule:setDayOrderForDate", iso, d),
+    pickImages: () => invoke("schedule:pickImages"),
+    parseImages: (payload) => invoke("schedule:parseImages", payload),
+    importImageRows: (rows) => invoke("schedule:importImageRows", rows),
   },
   // kept for backwards-compat; UI should use schedule.*
   timetable: {
@@ -67,6 +83,9 @@ contextBridge.exposeInMainWorld("apex", {
     burnoutSuggest: (ctx) => invoke("ollama:burnoutSuggest", ctx),
     burnoutCheck: (ctx) => invoke("ollama:burnoutCheck", ctx),
     eveningReview: (ctx) => invoke("ollama:eveningReview", ctx),
+    best: () => invoke("ollama:best"),
+    start: () => invoke("ollama:start"),
+    ping: () => invoke("ollama:ping"),
   },
   burnout: {
     latestReport: () => invoke("burnout:latestReport"),
@@ -134,6 +153,12 @@ contextBridge.exposeInMainWorld("apex", {
   wellbeing: {
     devices: () => invoke("wellbeing:devices"),
     syncNow: () => invoke("wellbeing:syncNow"),
+  },
+  battery: {
+    supported: () => invoke("battery:supported"),
+    run: (duration) => invoke("battery:run", duration),
+    latest: () => invoke("battery:latest"),
+    syncToActivity: (duration) => invoke("battery:syncToActivity", duration),
   },
   calendar: {
     parse: (p) => invoke("calendar:parse", p),

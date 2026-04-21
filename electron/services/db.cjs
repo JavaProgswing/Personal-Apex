@@ -3,6 +3,7 @@
 
 const path = require("node:path");
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const { app } = require("electron");
 const Database = require("better-sqlite3");
 
@@ -87,6 +88,14 @@ async function init() {
     seedCourseHabits();
   } catch (e) {
     console.warn("[db] course habit seed skipped:", e.message);
+  }
+
+  // One-shot cleanup of role-like names that leaked in from the NextTechLab
+  // scraper ("associate", "mentor", etc. mistaken for a person's name).
+  try {
+    cleanupRolePeople();
+  } catch (e) {
+    console.warn("[db] role-name cleanup skipped:", e.message);
   }
 
   console.log("[db] ready at", dbPath());
@@ -797,6 +806,34 @@ function upsertPerson(p) {
       return db.prepare("SELECT * FROM people WHERE id = ?").get(existing.id);
     }
   }
+  // Secondary dedupe: match by linkedin_url. Otherwise the same LinkedIn-only
+  // scrape re-runs keep appending duplicates (the user saw two "associate"
+  // rows for the same LinkedIn handle).
+  if (p.linkedin_url && !p.github_username) {
+    const existing = db
+      .prepare("SELECT * FROM people WHERE linkedin_url = ? AND (github_username IS NULL OR github_username = '')")
+      .get(p.linkedin_url);
+    if (existing) {
+      const mergedTags = Array.from(
+        new Set([...safeJson(existing.tags, []), ...(p.tags ?? [])]),
+      );
+      db.prepare(
+        `UPDATE people SET name = COALESCE(?, name), source = COALESCE(?, source),
+           tags = ?, notes = COALESCE(?, notes), avatar_url = COALESCE(?, avatar_url),
+           bio = COALESCE(?, bio)
+         WHERE id = ?`,
+      ).run(
+        p.name ?? null,
+        p.source ?? null,
+        JSON.stringify(mergedTags),
+        p.notes ?? null,
+        p.avatar_url ?? null,
+        p.bio ?? null,
+        existing.id,
+      );
+      return db.prepare("SELECT * FROM people WHERE id = ?").get(existing.id);
+    }
+  }
   const info = db
     .prepare(
       `INSERT INTO people (name, github_username, linkedin_url, source, tags, notes,
@@ -867,9 +904,189 @@ function upsertRepo(r) {
     pushed_at: r.pushed_at ?? null,
   });
 }
+// ───────────────────────────────────────────────────────────────────────────
+// day_notes — private per-day journal entries.
+// ───────────────────────────────────────────────────────────────────────────
+function getDayNote(date) {
+  const row = db.prepare(`SELECT * FROM day_notes WHERE date = ?`).get(date);
+  return row || null;
+}
+function upsertDayNote({ date, body, isPrivate }) {
+  if (!date) throw new Error("date required");
+  const existing = db.prepare(`SELECT date FROM day_notes WHERE date = ?`).get(date);
+  const priv = isPrivate === false ? 0 : 1;
+  if (existing) {
+    db.prepare(
+      `UPDATE day_notes SET body = ?, private = ?, updated_at = datetime('now') WHERE date = ?`,
+    ).run(body || "", priv, date);
+  } else {
+    db.prepare(
+      `INSERT INTO day_notes (date, body, private) VALUES (?, ?, ?)`,
+    ).run(date, body || "", priv);
+  }
+  return getDayNote(date);
+}
+function setDayNoteSummary(date, summary) {
+  db.prepare(
+    `UPDATE day_notes SET summary = ?, updated_at = datetime('now') WHERE date = ?`,
+  ).run(summary || null, date);
+  return getDayNote(date);
+}
+function listDayNoteDates(limit = 60) {
+  return db
+    .prepare(
+      `SELECT date, updated_at, LENGTH(body) AS chars, private FROM day_notes
+       ORDER BY date DESC LIMIT ?`,
+    )
+    .all(limit);
+}
+function deleteDayNote(date) {
+  db.prepare(`DELETE FROM day_notes WHERE date = ?`).run(date);
+  return true;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Day-notes passcode. A lightweight gate for the history-view UI — it is
+// NOT disk encryption (the bodies still sit plaintext in SQLite at rest),
+// but it ensures a casual onlooker can't tap "View history" and read past
+// entries. Hash is stored salted in settings.
+//
+// Scheme: scrypt(passcode, salt, 32) → stored as "scrypt:<saltHex>:<hashHex>".
+// ───────────────────────────────────────────────────────────────────────────
+function hasDayNotePasscode() {
+  const v = getSetting("dayNotes.passcodeHash");
+  return !!(v && v.startsWith("scrypt:"));
+}
+function setDayNotePasscode(plaintext) {
+  const text = String(plaintext || "");
+  if (text.length < 3) throw new Error("Passcode must be at least 3 characters");
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(text, salt, 32);
+  setSetting("dayNotes.passcodeHash", `scrypt:${salt.toString("hex")}:${hash.toString("hex")}`);
+  return true;
+}
+function verifyDayNotePasscode(plaintext) {
+  const stored = getSetting("dayNotes.passcodeHash");
+  if (!stored || !stored.startsWith("scrypt:")) return false;
+  const parts = stored.split(":");
+  if (parts.length !== 3) return false;
+  try {
+    const salt = Buffer.from(parts[1], "hex");
+    const expected = Buffer.from(parts[2], "hex");
+    const got = crypto.scryptSync(String(plaintext || ""), salt, 32);
+    return got.length === expected.length && crypto.timingSafeEqual(got, expected);
+  } catch {
+    return false;
+  }
+}
+function clearDayNotePasscode() {
+  setSetting("dayNotes.passcodeHash", "");
+  return true;
+}
+
 function importPeople(members) {
+  // Dedupe and guard against role-like names (a common scraper bug where
+  // "associate"/"mentor"/"member" role headings leak in as the person's name).
+  const cleaned = (members || []).map(sanitiseMember).filter(Boolean);
   const tx = db.transaction((list) => list.map((m) => upsertPerson(m)));
-  return tx(members);
+  return tx(cleaned);
+}
+
+// Role/title words that scrapers sometimes mistake for a person's name.
+const PERSON_ROLE_WORDS = new Set([
+  "associate", "associates", "mentor", "mentors", "member", "members",
+  "alumni", "alumnus", "lead", "leads", "head", "heads", "president",
+  "vicepresident", "vice-president", "secretary", "treasurer",
+  "founder", "cofounder", "co-founder", "faculty", "advisor", "advisors",
+  "coordinator", "coordinators", "director", "intern", "interns",
+  "contributor", "contributors", "maintainer", "maintainers",
+  "student", "students", "staff", "team",
+]);
+
+function looksLikeRoleName(name) {
+  if (!name) return false;
+  const normalised = String(name).trim().toLowerCase().replace(/[^a-z\s-]/g, "").replace(/\s+/g, "");
+  if (!normalised) return false;
+  return PERSON_ROLE_WORDS.has(normalised);
+}
+
+function linkedinHandleFromUrl(url) {
+  if (!url) return null;
+  const m = String(url).match(/linkedin\.com\/in\/([^/?#]+)/i);
+  return m ? decodeURIComponent(m[1]).replace(/\/+$/, "") : null;
+}
+
+function sanitiseMember(m) {
+  if (!m) return null;
+  const out = { ...m };
+  if (looksLikeRoleName(out.name)) {
+    // Prefer GitHub handle, then LinkedIn vanity, then null (upsert will keep
+    // whatever name is already on the matching row).
+    out.name = out.github_username || linkedinHandleFromUrl(out.linkedin_url) || null;
+  }
+  // Final safety net: collapse empty strings to null so we don't overwrite
+  // existing names with "".
+  if (out.name === "") out.name = null;
+  return out;
+}
+
+// One-shot cleanup of existing rows whose `name` is a role word. Also collapses
+// duplicates that share the same linkedin_url. Called from open() on startup;
+// idempotent.
+function cleanupRolePeople() {
+  try {
+    const rows = db.prepare(`SELECT id, name, github_username, linkedin_url FROM people`).all();
+    let fixed = 0;
+    for (const r of rows) {
+      if (!looksLikeRoleName(r.name)) continue;
+      const better = r.github_username || linkedinHandleFromUrl(r.linkedin_url);
+      if (!better) continue;
+      db.prepare(`UPDATE people SET name = ? WHERE id = ?`).run(better, r.id);
+      fixed++;
+    }
+    if (fixed > 0) console.log(`[db] cleaned ${fixed} role-like person names`);
+
+    // Dedupe by linkedin_url when github_username is missing. Keep the row with
+    // the richer data (github/lc/cf/cc non-null) or the oldest id.
+    const liGroups = db
+      .prepare(
+        `SELECT linkedin_url, COUNT(*) AS n FROM people
+          WHERE linkedin_url IS NOT NULL AND linkedin_url != ''
+            AND (github_username IS NULL OR github_username = '')
+          GROUP BY linkedin_url HAVING n > 1`,
+      )
+      .all();
+    let dropped = 0;
+    for (const g of liGroups) {
+      const dupes = db
+        .prepare(
+          `SELECT * FROM people WHERE linkedin_url = ?
+                AND (github_username IS NULL OR github_username = '')
+              ORDER BY id ASC`,
+        )
+        .all(g.linkedin_url);
+      if (dupes.length < 2) continue;
+      // Pick a canonical: the one with a real (non-role) name first, else id asc.
+      const canonical =
+        dupes.find((r) => r.name && !looksLikeRoleName(r.name)) || dupes[0];
+      for (const d of dupes) {
+        if (d.id === canonical.id) continue;
+        // Merge tags
+        const merged = Array.from(
+          new Set([...safeJson(canonical.tags, []), ...safeJson(d.tags, [])]),
+        );
+        db.prepare(`UPDATE people SET tags = ? WHERE id = ?`).run(
+          JSON.stringify(merged),
+          canonical.id,
+        );
+        db.prepare(`DELETE FROM people WHERE id = ?`).run(d.id);
+        dropped++;
+      }
+    }
+    if (dropped > 0) console.log(`[db] collapsed ${dropped} duplicate LinkedIn-only people`);
+  } catch (err) {
+    console.warn("[db] role-name cleanup failed:", err.message);
+  }
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -1201,7 +1418,7 @@ function insertActivityFeed(personId, pushes) {
   return pushes.length;
 }
 function listActivityFeed({ days = 7, personId, limit = 100 } = {}) {
-  const where = ['at >= date("now", ?)'];
+  const where = [`at >= date('now', ?)`];
   const args = [`-${days} days`];
   if (personId) {
     where.push("person_id = ?");
@@ -1307,6 +1524,15 @@ module.exports = {
   listActivityFeed,
   saveBurnoutReport,
   latestBurnoutReport,
+  getDayNote,
+  upsertDayNote,
+  listDayNoteDates,
+  setDayNoteSummary,
+  deleteDayNote,
+  hasDayNotePasscode,
+  setDayNotePasscode,
+  verifyDayNotePasscode,
+  clearDayNotePasscode,
   // legacy / compatibility — not persistent. Kept to avoid UI breakage.
   listInterests: () =>
     db

@@ -27,6 +27,7 @@ const backup = require("./services/backup.cjs");
 const activity = require("./services/activity.cjs");
 const activityTracker = require("./services/activityTracker.cjs");
 const wellbeing = require("./services/wellbeing.cjs");
+const batteryReport = require("./services/batteryReport.cjs");
 const importLinks = require("./services/importLinks.cjs");
 const cp = require("./services/cp.cjs");
 
@@ -122,6 +123,20 @@ app.whenReady().then(async () => {
     }
   } catch (e) { console.warn("[tracker] autostart skipped:", e.message); }
 
+  // Auto-launch Ollama daemon in the background so the user doesn't have to
+  // click the Start-menu shortcut before the app can do AI work. Controlled
+  // by the `ollama.autoStart` setting (defaults to on).
+  try {
+    const autoStart = (db.getSetting("ollama.autoStart") ?? "true") === "true"
+                   || db.getSetting("ollama.autoStart") === "1";
+    if (autoStart) {
+      // Fire-and-forget: don't block the UI if Ollama takes a few seconds.
+      ollama.ensureRunning({ timeoutMs: 15000 })
+        .then((r) => console.log("[ollama] ensureRunning:", r.ok ? (r.already ? "already up" : "launched") : `failed: ${r.error}`))
+        .catch((e) => console.warn("[ollama] ensureRunning threw:", e.message));
+    }
+  } catch (e) { console.warn("[ollama] autostart skipped:", e.message); }
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -184,6 +199,88 @@ ipcMain.handle("checkins:upsert", (_e, payload) =>
 );
 ipcMain.handle("checkins:last", (_e, days) => db.lastCheckins(days ?? 14));
 
+// --- day notes (private journal) -------------------------------------------
+// Past-entry access is gated by a passcode. We hold the unlock flag in
+// process memory only — it resets whenever the app restarts.
+let _dayNotesUnlockedUntil = 0;
+const DAY_NOTES_UNLOCK_TTL_MS = 15 * 60 * 1000; // 15 minutes
+function dayNotesIsUnlocked() { return Date.now() < _dayNotesUnlockedUntil; }
+// guardAny — once a passcode is configured, EVERY day note (today included)
+// needs an active unlock session. If no passcode is configured, nothing is
+// gated. During the first setup we open the unlock window ourselves.
+function guardAny(_date) {
+  if (!db.hasDayNotePasscode()) return true;
+  return dayNotesIsUnlocked();
+}
+
+ipcMain.handle("dayNotes:get", (_e, date) => {
+  const iso = date || today();
+  if (!guardAny(iso)) return { locked: true };
+  return db.getDayNote(iso);
+});
+ipcMain.handle("dayNotes:upsert", (_e, payload) => {
+  const p = payload || {};
+  if (!guardAny(p.date)) {
+    return { ok: false, locked: true, error: "Unlock first" };
+  }
+  return db.upsertDayNote(p);
+});
+ipcMain.handle("dayNotes:list", (_e, limit) => {
+  if (!guardAny()) return { locked: true, dates: [] };
+  return { locked: false, dates: db.listDayNoteDates(limit ?? 60) };
+});
+ipcMain.handle("dayNotes:delete", (_e, date) => {
+  if (!guardAny(date)) return { ok: false, locked: true };
+  db.deleteDayNote(date);
+  return { ok: true };
+});
+ipcMain.handle("dayNotes:hasPasscode", () => ({ set: db.hasDayNotePasscode() }));
+ipcMain.handle("dayNotes:setPasscode", (_e, { passcode }) => {
+  try {
+    db.setDayNotePasscode(passcode);
+    _dayNotesUnlockedUntil = Date.now() + DAY_NOTES_UNLOCK_TTL_MS;
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+ipcMain.handle("dayNotes:unlock", (_e, { passcode }) => {
+  if (!db.hasDayNotePasscode()) return { ok: false, error: "No passcode set" };
+  if (db.verifyDayNotePasscode(passcode)) {
+    _dayNotesUnlockedUntil = Date.now() + DAY_NOTES_UNLOCK_TTL_MS;
+    return { ok: true, ttlMs: DAY_NOTES_UNLOCK_TTL_MS };
+  }
+  return { ok: false, error: "Incorrect passcode" };
+});
+ipcMain.handle("dayNotes:lock", () => { _dayNotesUnlockedUntil = 0; return { ok: true }; });
+ipcMain.handle("dayNotes:isUnlocked", () => ({ unlocked: dayNotesIsUnlocked() }));
+ipcMain.handle("dayNotes:clearPasscode", (_e, { passcode }) => {
+  // Require current passcode to clear, so a shoulder-surfer can't just wipe it.
+  if (db.hasDayNotePasscode() && !db.verifyDayNotePasscode(passcode)) {
+    return { ok: false, error: "Incorrect passcode" };
+  }
+  db.clearDayNotePasscode();
+  _dayNotesUnlockedUntil = 0;
+  return { ok: true };
+});
+ipcMain.handle("dayNotes:summarize", async (_e, payload) => {
+  const { date, model } = payload || {};
+  if (!guardAny(date || today())) return { ok: false, locked: true, error: "Unlock first" };
+  const note = db.getDayNote(date || today());
+  if (!note || !(note.body || "").trim()) return { ok: false, error: "empty note" };
+  const prompt =
+    `Summarise this personal diary entry in one concise sentence (<= 30 words), third person, factual.\n\nEntry:\n${note.body}`;
+  const res = await ollama.chat({
+    model,
+    system: "You are a terse summariser. Output only the summary sentence, no preface.",
+    user: prompt,
+  });
+  if (!res.ok) return res;
+  const summary = String(res.content || "").trim().replace(/^["'`]|["'`]$/g, "");
+  db.setDayNoteSummary(date || today(), summary);
+  return { ok: true, summary };
+});
+
 // --- streak / weekly goals (replaces weekly_focus) ---
 ipcMain.handle("streak:status", () => db.streakStatus());
 ipcMain.handle("goals:list", () => db.listWeeklyGoals());
@@ -204,6 +301,18 @@ ipcMain.handle("schedule:resyncFromAcademia", async (_e, folder) => {
   return timetable.resyncFromAcademia(folder);
 });
 ipcMain.handle("schedule:parseJson", (_e, jsonPath) => timetable.parseFromJson(jsonPath));
+ipcMain.handle("schedule:pickImages", async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile", "multiSelections"],
+    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "bmp"] }],
+  });
+  if (res.canceled) return null;
+  return res.filePaths || [];
+});
+ipcMain.handle("schedule:parseImages", async (_e, payload) => {
+  return timetable.parseFromImages(payload || {});
+});
+ipcMain.handle("schedule:importImageRows", (_e, rows) => timetable.importFromImageRows(rows));
 ipcMain.handle("schedule:setDayOrderForDate", (_e, isoDate, dayOrder) =>
   db.setDayOrderForDate(isoDate, dayOrder),
 );
@@ -215,11 +324,18 @@ ipcMain.handle("timetable:today", () => timetable.today());
 ipcMain.handle("ollama:listModels", () => ollama.listModels());
 ipcMain.handle("ollama:plan", (_e, ctx) => ollama.planDay(ctx));
 ipcMain.handle("ollama:chat", (_e, { model, system, user }) =>
-  ollama.chat({ model, system, user }),
+  // Wrap the UI-supplied role prompt with the shared personal-context layer
+  // so even Ask-Apex gets the profile + house rules.
+  ollama.chat({ model, system: ollama.buildSystem(system || "You are Apex, a helpful personal assistant."), user }),
 );
 ipcMain.handle("ollama:burnoutSuggest", (_e, ctx) => ollama.burnoutSuggest(ctx));
 ipcMain.handle("ollama:burnoutCheck", (_e, ctx) => ollama.burnoutCheck(ctx));
 ipcMain.handle("ollama:eveningReview", (_e, ctx) => ollama.eveningReview(ctx));
+// Return the best installed chat model (so the renderer can default to it).
+ipcMain.handle("ollama:best", async () => ({ model: await ollama.autoPickBest() }));
+// Manual "Start Ollama" button in Settings.
+ipcMain.handle("ollama:start", () => ollama.ensureRunning({ timeoutMs: 15000 }));
+ipcMain.handle("ollama:ping", () => ollama.ping().then((ok) => ({ ok })));
 ipcMain.handle("burnout:latestReport", () => db.latestBurnoutReport());
 
 // --- github ---
@@ -298,6 +414,14 @@ ipcMain.handle("tracker:categorize", (_e, app, category) => {
 // --- mobile wellbeing (ADB) ---
 ipcMain.handle("wellbeing:devices", () => wellbeing.devices());
 ipcMain.handle("wellbeing:syncNow", () => wellbeing.syncNow());
+
+// --- battery-report-derived desktop screen time (Windows only) ---
+ipcMain.handle("battery:supported", () => ({ ok: true, supported: batteryReport.supported() }));
+ipcMain.handle("battery:run", (_e, duration) => batteryReport.run(duration ?? 14));
+ipcMain.handle("battery:latest", () => batteryReport.latest());
+ipcMain.handle("battery:syncToActivity", (_e, duration) =>
+  batteryReport.syncToActivity({ duration: duration ?? 14 }),
+);
 
 // --- calendar (SRM academic calendar HTML → day-order overrides) ---
 ipcMain.handle("calendar:parse", (_e, htmlPath) => calendar.parseCalendarHtml(htmlPath));

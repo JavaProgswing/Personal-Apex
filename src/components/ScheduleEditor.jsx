@@ -12,6 +12,7 @@ const EMPTY = {
 export default function ScheduleEditor() {
   const [rows, setRows] = useState([]);
   const [draft, setDraft] = useState(null);
+  const [showImageImport, setShowImageImport] = useState(false);
 
   useEffect(() => { reload(); }, []);
   async function reload() { setRows(await api.schedule.list()); }
@@ -33,7 +34,8 @@ export default function ScheduleEditor() {
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="row between">
         <div className="card-title">Schedule editor</div>
-        <div className="row">
+        <div className="row" style={{ gap: 6 }}>
+          <button onClick={() => setShowImageImport(true)}>Import from image</button>
           <button className="primary" onClick={() => setDraft(EMPTY)}>+ Add class</button>
         </div>
       </div>
@@ -65,6 +67,142 @@ export default function ScheduleEditor() {
       ))}
 
       {draft && <ClassModal initial={draft} onClose={() => setDraft(null)} onSave={saveRow} />}
+      {showImageImport && (
+        <ImageImportModal
+          onClose={() => setShowImageImport(false)}
+          onImported={() => { setShowImageImport(false); reload(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ImageImportModal — pick one or more timetable images, run local vision-OCR
+// through Ollama, preview the extracted rows, and commit them to the DB.
+// ────────────────────────────────────────────────────────────────────────────
+function ImageImportModal({ onClose, onImported }) {
+  const [paths, setPaths] = useState([]);
+  const [hint, setHint] = useState("");
+  const [models, setModels] = useState([]);
+  const [model, setModel] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [rows, setRows] = useState([]);
+
+  useEffect(() => {
+    api.ollama.listModels().then((r) => {
+      const list = (r?.models || []).filter((m) => /vision|llava|minicpm-v|bakllava/i.test(m));
+      setModels(list.length > 0 ? list : r?.models || []);
+      if (list.length > 0) setModel(list[0]);
+    });
+  }, []);
+
+  async function pick() {
+    const picked = await api.schedule.pickImages();
+    if (Array.isArray(picked)) setPaths(picked);
+  }
+  async function extract() {
+    if (paths.length === 0) { setErr("Pick at least one image first."); return; }
+    setLoading(true); setErr(""); setRows([]);
+    try {
+      const res = await api.schedule.parseImages({ imagePaths: paths, model, hint });
+      if (!res?.ok) {
+        setErr(res?.error || "OCR failed. Make sure you have a vision model installed (e.g. `ollama pull llama3.2-vision`).");
+      } else {
+        setRows(res.rows || []);
+        if ((res.rows || []).length === 0) setErr("The model returned no classes. Try a clearer image or a different model.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+  async function commit() {
+    if (rows.length === 0) return;
+    if (!confirm(`Replace your whole schedule with these ${rows.length} classes?`)) return;
+    const res = await api.schedule.importImageRows(rows);
+    if (res?.ok) onImported();
+    else setErr(res?.error || "Import failed.");
+  }
+
+  const byDay = new Map([1, 2, 3, 4, 5].map((d) => [d, rows.filter((r) => r.day_order === d)]));
+
+  return (
+    <div className="modal-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal wide" style={{ width: 720 }}>
+        <div className="row between">
+          <h3 style={{ margin: 0 }}>Import timetable from image</h3>
+          <button className="ghost" onClick={onClose}>✕</button>
+        </div>
+        <p className="muted small" style={{ marginTop: 4 }}>
+          Reads one or more screenshots of your timetable with a local vision model via Ollama. Nothing leaves your machine.
+        </p>
+
+        <div className="form-row">
+          <label>Images</label>
+          <div className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <button onClick={pick}>{paths.length === 0 ? "Pick image(s)…" : "Replace images"}</button>
+            {paths.length > 0 && (
+              <small className="muted">
+                {paths.length} file{paths.length === 1 ? "" : "s"}: {paths.map((p) => p.split(/[\\/]/).pop()).join(", ")}
+              </small>
+            )}
+          </div>
+        </div>
+
+        <div className="form-row">
+          <label>Vision model</label>
+          <select value={model} onChange={(e) => setModel(e.target.value)}>
+            {models.length === 0 && <option value="">(none installed — run `ollama pull llama3.2-vision`)</option>}
+            {models.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+
+        <div className="form-row">
+          <label>Hint <small className="muted">(optional — e.g. "Day orders 1-3 are in the first image")</small></label>
+          <input value={hint} onChange={(e) => setHint(e.target.value)} placeholder="Context the model might need…" />
+        </div>
+
+        <div className="row" style={{ gap: 6, marginTop: 8 }}>
+          <button className="primary" onClick={extract} disabled={loading || paths.length === 0 || !model}>
+            {loading ? "Reading…" : "Read timetable"}
+          </button>
+          {rows.length > 0 && (
+            <button className="primary" onClick={commit}>Replace schedule ({rows.length})</button>
+          )}
+        </div>
+
+        {err && <div className="error" style={{ marginTop: 10 }}>{err}</div>}
+
+        {rows.length > 0 && (
+          <div style={{ marginTop: 14, maxHeight: 320, overflow: "auto" }}>
+            <div className="muted small" style={{ marginBottom: 6 }}>
+              Preview — review before committing. Commit replaces ALL existing classes.
+            </div>
+            {[1, 2, 3, 4, 5].map((d) => {
+              const list = byDay.get(d) || [];
+              if (list.length === 0) return null;
+              return (
+                <div key={d} style={{ marginTop: 8 }}>
+                  <strong>Day order {d}</strong>
+                  {list.map((r, i) => (
+                    <div key={i} className="row" style={{ margin: "4px 0", gap: 8, alignItems: "center", fontSize: 12 }}>
+                      <span className="pill mono">{r.start_time}–{r.end_time}</span>
+                      <span style={{ flex: 1 }}>
+                        <strong>{r.subject}</strong>
+                        <span className="muted">
+                          {r.code ? ` · ${r.code}` : ""}{r.room ? ` · ${r.room}` : ""}{r.faculty ? ` · ${r.faculty}` : ""}
+                        </span>
+                      </span>
+                      <span className="pill">{r.kind}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

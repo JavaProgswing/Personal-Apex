@@ -258,3 +258,15 @@ CREATE TABLE IF NOT EXISTS activity_feed (
 );
 CREATE INDEX IF NOT EXISTS idx_feed_person ON activity_feed(person_id);
 CREATE INDEX IF NOT EXISTS idx_feed_at ON activity_feed(at);
+
+-- Private per-day journal notes. `summary` is an optional AI-generated
+-- distillation the user has opted in to feed back as context for Ask Apex /
+-- burnout reports. `private` is a belt-and-braces flag — when true the row
+-- is never sent to Ollama or any external call, even if the summary exists.
+CREATE TABLE IF NOT EXISTS day_notes (
+  date TEXT PRIMARY KEY,                 -- YYYY-MM-DD, local
+  body TEXT NOT NULL DEFAULT '',         -- raw user text
+  summary TEXT,                          -- optional AI summary (1–2 sentences)
+  private INTEGER NOT NULL DEFAULT 1,    -- 1 = never share body with AI
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

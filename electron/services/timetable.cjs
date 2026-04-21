@@ -225,6 +225,72 @@ function shortenTitle(title, code) {
   return title.split(/\s+/).map((w) => w[0]).filter(Boolean).join('').slice(0, 5).toUpperCase() || code || 'Class';
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// parseFromImages — vision-OCR one or more timetable images via Ollama.
+// imagePaths: absolute paths to PNG/JPEG files on disk.
+// Returns { ok, rows } where rows match the classes table schema.
+// ────────────────────────────────────────────────────────────────────────────
+async function parseFromImages({ imagePaths, model, hint }) {
+  if (!Array.isArray(imagePaths) || imagePaths.length === 0) {
+    return { ok: false, error: 'No image paths supplied' };
+  }
+  const ollama = require('./ollama.cjs');
+  const imagesBase64 = [];
+  for (const p of imagePaths) {
+    if (!fs.existsSync(p)) return { ok: false, error: 'File missing: ' + p };
+    try {
+      imagesBase64.push(fs.readFileSync(p).toString('base64'));
+    } catch (e) {
+      return { ok: false, error: `Cannot read ${p}: ${e.message}` };
+    }
+  }
+  const resp = await ollama.ocrTimetable({ imagesBase64, hint, model });
+  if (!resp.ok) return resp;
+  // Normalise rows to match the DB shape: coerce period numbers, fix 24h times,
+  // fill in missing period index per day, drop invalid rows.
+  const raw = Array.isArray(resp.rows) ? resp.rows : [];
+  const byDay = new Map();
+  for (const r of raw) {
+    const day_order = Number(r.day_order);
+    if (!(day_order >= 1 && day_order <= 5)) continue;
+    if (!r.start_time || !r.end_time) continue;
+    const subject = (r.subject || r.code || '').toString().trim();
+    if (!subject) continue;
+    const row = {
+      day_order,
+      period: Number(r.period) || 0,
+      slot: r.slot || null,
+      subject,
+      code: r.code || null,
+      room: r.room || null,
+      faculty: r.faculty || null,
+      start_time: to24h(String(r.start_time).trim()),
+      end_time: to24h(String(r.end_time).trim()),
+      kind: (r.kind && ['lecture', 'lab', 'tutorial'].includes(r.kind)) ? r.kind : 'lecture',
+      note: r.note || '',
+    };
+    if (!byDay.has(day_order)) byDay.set(day_order, []);
+    byDay.get(day_order).push(row);
+  }
+  // Sort per day by start_time and reindex period.
+  const rows = [];
+  for (const [, list] of byDay) {
+    list.sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''));
+    list.forEach((r, i) => { r.period = i + 1; rows.push(r); });
+  }
+  return { ok: true, rows, count: rows.length, model: resp.model };
+}
+
+// Commit parsed OCR rows to the classes table (replaces everything, same as
+// the AcademiaScraper JSON re-sync). Use with care — the UI confirms first.
+function importFromImageRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { ok: false, error: 'No rows to import' };
+  }
+  db.replaceAllClasses(rows);
+  return { ok: true, count: rows.length };
+}
+
 function resyncFromAcademia(folderArg) {
   const folder = resolveFolder(folderArg);
   const jsonPath = path.join(folder, 'data', 'timetable.json');
@@ -291,5 +357,7 @@ module.exports = {
   resyncFromDefaults,
   resyncFromAcademia,
   parseFromJson,
+  parseFromImages,
+  importFromImageRows,
   yashasviClasses,
 };

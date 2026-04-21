@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../../lib/api.js";
 import ActivityFeed from "../ActivityFeed.jsx";
+import { MarkdownBlock } from "../../lib/markdown.jsx";
 
 // Curated preset links shown in the "Import from links" modal. Includes the
 // five NextTechLab labs plus a couple of generic GitHub org pages. The user
@@ -360,6 +361,9 @@ function PersonModal({ person, repos, cpStats, activity, onClose, onSyncGh, onSy
   const [repoLang, setRepoLang] = useState("");
   const [repoSort, setRepoSort] = useState("pushed");
 
+  const hasGh = !!person.github_username;
+  const hasCpHandles = !!(person.leetcode_username || person.codeforces_username || person.codechef_username);
+
   const languages = useMemo(() => {
     const s = new Set();
     repos.forEach((r) => r.language && s.add(r.language));
@@ -383,36 +387,48 @@ function PersonModal({ person, repos, cpStats, activity, onClose, onSyncGh, onSy
     return (activity || []).slice(0, 8);
   }, [activity]);
 
+  const shortLinkedin = (url) => {
+    if (!url) return "";
+    try {
+      const u = new URL(url);
+      return `${u.hostname.replace(/^www\./, "")}${u.pathname}`.replace(/\/$/, "");
+    } catch {
+      return url;
+    }
+  };
+
   return (
     <div className="modal-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal wide" style={{ width: 900 }}>
-        <div className="row between">
-          <div>
+      <div className="modal wide person-modal" style={{ width: 900 }}>
+        {/* Header: identity + actions in one row */}
+        <div className="person-modal-head">
+          <div className="person-modal-ident">
             <h3 style={{ margin: 0 }}>{person.name}</h3>
-            {person.github_username && (
-              <div className="muted">
+            <div className="person-modal-links">
+              {hasGh && (
                 <a href="#" onClick={(e) => { e.preventDefault(); api.ext.open(`https://github.com/${person.github_username}`); }}>
                   github.com/{person.github_username}
                 </a>
-              </div>
-            )}
-            {person.linkedin_url && (
-              <div className="muted">
-                <a href="#" onClick={(e) => { e.preventDefault(); api.ext.open(person.linkedin_url); }}>{person.linkedin_url}</a>
+              )}
+              {person.linkedin_url && (
+                <a href="#" onClick={(e) => { e.preventDefault(); api.ext.open(person.linkedin_url); }}>
+                  {shortLinkedin(person.linkedin_url)}
+                </a>
+              )}
+            </div>
+            {(person.tags || []).length > 0 && (
+              <div className="tags" style={{ marginTop: 8 }}>
+                {(person.tags || []).map((t) => <span key={t} className="pill">{t}</span>)}
               </div>
             )}
           </div>
-          <button onClick={onClose} className="ghost">✕</button>
-        </div>
-        <div className="tags" style={{ margin: "10px 0" }}>
-          {(person.tags || []).map((t) => <span key={t} className="pill">{t}</span>)}
-        </div>
-
-        <div className="row" style={{ margin: "10px 0", flexWrap: "wrap", gap: 6 }}>
-          <button className="primary" onClick={onSyncGh}>Sync GitHub</button>
-          <button onClick={onSyncCp}>Sync CP</button>
-          <button onClick={() => setEditMode((v) => !v)}>{editMode ? "Cancel edit" : "Edit handles"}</button>
-          <button className="ghost" onClick={onDelete}>Delete</button>
+          <div className="person-modal-actions">
+            {hasGh && <button className="small primary" onClick={onSyncGh} title="Fetch repos from GitHub">Sync GitHub</button>}
+            {hasCpHandles && <button className="small" onClick={onSyncCp} title="Refresh CP stats">Sync CP</button>}
+            <button className="small ghost" onClick={() => setEditMode((v) => !v)}>{editMode ? "Cancel" : "Edit handles"}</button>
+            <button className="small ghost danger" onClick={onDelete} title="Remove this person">Delete</button>
+            <button onClick={onClose} className="ghost icon-btn" aria-label="Close">✕</button>
+          </div>
         </div>
 
         {editMode && <HandleEdit person={person} onSaved={() => { setEditMode(false); onChanged(); }} />}
@@ -438,46 +454,71 @@ function PersonModal({ person, repos, cpStats, activity, onClose, onSyncGh, onSy
           </>
         )}
 
-        {/* CP stats */}
-        <div className="section-label" style={{ marginTop: 12 }}>Competitive programming</div>
-        {cpStats.length === 0 && <div className="muted">No CP handles set. Click "Edit handles" above.</div>}
-        {cpStats.map((cp) => <CpStatCard key={cp.id} cp={cp} />)}
+        {/* CP stats — only show when handles are set OR we already have stats */}
+        {(hasCpHandles || cpStats.length > 0) && (
+          <>
+            <div className="section-label" style={{ marginTop: 12 }}>Competitive programming</div>
+            {cpStats.length === 0 ? (
+              <div className="muted small" style={{ padding: "4px 0" }}>No stats yet — hit Sync CP to fetch.</div>
+            ) : (
+              cpStats.map((cp) => <CpStatCard key={cp.id} cp={cp} />)
+            )}
+          </>
+        )}
 
-        {/* Repos */}
-        <div className="row between" style={{ marginTop: 14 }}>
-          <div className="section-label" style={{ margin: 0 }}>Repos ({repos.length})</div>
-          <div className="row" style={{ gap: 6 }}>
-            <input placeholder="filter repos…" value={repoQ} onChange={(e) => setRepoQ(e.target.value)} style={{ maxWidth: 180 }} />
-            <select value={repoLang} onChange={(e) => setRepoLang(e.target.value)} style={{ maxWidth: 130 }}>
-              <option value="">All langs</option>
-              {languages.map((l) => <option key={l} value={l}>{l}</option>)}
-            </select>
-            <select value={repoSort} onChange={(e) => setRepoSort(e.target.value)} style={{ maxWidth: 140 }}>
-              <option value="pushed">Recently pushed</option>
-              <option value="stars">Most stars</option>
-              <option value="name">Name (A-Z)</option>
-            </select>
-          </div>
-        </div>
-        {repos.length === 0 && <div className="muted">No repos cached. Click "Sync GitHub".</div>}
-        <div className="grid-auto">
-          {filteredRepos.map((r) => (
-            <div key={r.id} className="repo-card" onClick={() => onOpenRepo(r)}>
-              <div className="repo-title row between">
-                <strong>{r.name}</strong>
-                <small className="muted">★ {r.stars ?? 0}</small>
-              </div>
-              {r.description && <div className="repo-desc">{r.description}</div>}
-              <div className="chip-row" style={{ marginTop: 6 }}>
-                {r.language && <span className="chip">{r.language}</span>}
-                {(r.topics || []).slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}
-              </div>
-              <div className="repo-meta" style={{ marginTop: 6 }}>
-                ⑂ {r.forks ?? 0} · pushed {r.pushed_at ? new Date(r.pushed_at).toLocaleDateString() : "—"}
-              </div>
+        {/* Repos — only show when GH is connected OR we already have repos */}
+        {(hasGh || repos.length > 0) && (
+          <>
+            <div className="row between" style={{ marginTop: 14 }}>
+              <div className="section-label" style={{ margin: 0 }}>Repos ({repos.length})</div>
+              {repos.length > 0 && (
+                <div className="row" style={{ gap: 6 }}>
+                  <input placeholder="filter repos…" value={repoQ} onChange={(e) => setRepoQ(e.target.value)} style={{ maxWidth: 180 }} />
+                  <select value={repoLang} onChange={(e) => setRepoLang(e.target.value)} style={{ maxWidth: 130 }}>
+                    <option value="">All langs</option>
+                    {languages.map((l) => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                  <select value={repoSort} onChange={(e) => setRepoSort(e.target.value)} style={{ maxWidth: 140 }}>
+                    <option value="pushed">Recently pushed</option>
+                    <option value="stars">Most stars</option>
+                    <option value="name">Name (A-Z)</option>
+                  </select>
+                </div>
+              )}
             </div>
-          ))}
-        </div>
+            {repos.length === 0 && (
+              <div className="muted small" style={{ padding: "4px 0" }}>No repos cached yet — hit Sync GitHub.</div>
+            )}
+            <div className="grid-auto">
+              {filteredRepos.map((r) => (
+                <div key={r.id} className="repo-card" onClick={() => onOpenRepo(r)}>
+                  <div className="repo-title row between">
+                    <strong>{r.name}</strong>
+                    <small className="muted">★ {r.stars ?? 0}</small>
+                  </div>
+                  {r.description && <div className="repo-desc">{r.description}</div>}
+                  <div className="chip-row" style={{ marginTop: 6 }}>
+                    {r.language && <span className="chip">{r.language}</span>}
+                    {(r.topics || []).slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}
+                  </div>
+                  <div className="repo-meta" style={{ marginTop: 6 }}>
+                    ⑂ {r.forks ?? 0} · pushed {r.pushed_at ? new Date(r.pushed_at).toLocaleDateString() : "—"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* When neither GH nor CP is set, offer a hint instead of an empty modal */}
+        {!hasGh && !hasCpHandles && cpStats.length === 0 && repos.length === 0 && (
+          <div className="card" style={{ marginTop: 12, textAlign: "center", padding: 16 }}>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              No GitHub or CP handles linked yet for this profile.
+            </div>
+            <button className="small primary" onClick={() => setEditMode(true)}>Add handles</button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -902,30 +943,40 @@ function RepoDetailModal({ repo, person, onClose }) {
             {tech.length > 0 && (
               <>
                 <div className="section-label" style={{ marginTop: 14 }}>Tech stack</div>
-                <div className="lang-bar">
+                <div className="lang-bar" title={tech.map((t) => `${t.name} ${t.pct}%`).join(" · ")}>
                   {tech.map((t, i) => (
-                    <div key={t.name} className={`lang-seg seg-${i % 6}`} style={{ width: `${t.pct}%` }} title={`${t.name} ${t.pct}%`}>
+                    <div
+                      key={t.name}
+                      className={`lang-seg seg-${i % 6}`}
+                      style={{ width: `${t.pct}%` }}
+                      title={`${t.name} ${t.pct}%`}
+                    >
                       <small>{t.name} {t.pct}%</small>
                     </div>
+                  ))}
+                </div>
+                <div className="lang-legend">
+                  {tech.map((t, i) => (
+                    <span key={t.name} className={`lang-dot seg-${i % 6}`}>
+                      <i />{t.name} <small className="muted">{t.pct}%</small>
+                    </span>
                   ))}
                 </div>
               </>
             )}
 
             {/* AI summary */}
-            <div className="section-label" style={{ marginTop: 14 }}>AI overview</div>
+            <div className="section-label" style={{ marginTop: 14 }}>Overview</div>
             <div className="card" style={{ background: "var(--bg-elev-2)" }}>
               {!aiSummary && !aiLoading && (
-                <div className="row" style={{ gap: 6 }}>
-                  <span className={"pill " + (ollamaOk ? "teal" : "rose")}>{ollamaOk ? "ollama" : "offline"}</span>
+                <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
                   <select value={model} onChange={(e) => setModel(e.target.value)} style={{ maxWidth: 160 }}>
                     {models.length === 0 && <option value="">(no models)</option>}
                     {models.map((m) => <option key={m} value={m}>{m}</option>)}
                   </select>
-                  <button className="primary" onClick={runSummary} disabled={!ollamaOk || !model}>
-                    Summarize with Ollama
+                  <button className="primary small" onClick={runSummary} disabled={!ollamaOk || !model}>
+                    Summarise
                   </button>
-                  <small className="muted">reads README + recent commits</small>
                 </div>
               )}
               {aiLoading && <div className="muted">Thinking…</div>}
@@ -974,9 +1025,9 @@ function RepoDetailModal({ repo, person, onClose }) {
             {detail.readme && (
               <>
                 <div className="section-label" style={{ marginTop: 14 }}>README</div>
-                <pre style={{ maxHeight: 300, overflow: "auto", padding: 12, background: "var(--bg-elev-2)", borderRadius: 10, whiteSpace: "pre-wrap", fontSize: 12 }}>
-                  {detail.readme.slice(0, 4000)}{detail.readme.length > 4000 ? "\n…truncated" : ""}
-                </pre>
+                <div className="readme-md">
+                  <MarkdownBlock text={detail.readme.slice(0, 8000) + (detail.readme.length > 8000 ? "\n\n_…truncated_" : "")} />
+                </div>
               </>
             )}
 

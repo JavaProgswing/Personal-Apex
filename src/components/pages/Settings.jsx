@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import api from "../../lib/api.js";
 import ScheduleEditor from "../ScheduleEditor.jsx";
 import WeeklyGoalsEditor from "../WeeklyGoalsEditor.jsx";
+import { prettyAppName } from "../../lib/appName.js";
 
 const TABS = [
   { key: "schedule",  label: "Schedule" },
@@ -89,33 +90,83 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
     setMsg(res?.ok ? `Calendar: ${res.count} date→day-order overrides loaded.` : "Calendar sync failed: " + (res?.error || "unknown"));
   }
 
+  function scrollToEditor() {
+    const el = document.getElementById("schedule-editor");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  const hasFolder = !!all["timetable.folder"];
+
   return (
     <>
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-title">AcademiaScraper</div>
+        <small className="hint" style={{ display: "block", marginBottom: 10 }}>
+          Point Apex at your local clone of SRM AcademiaScraper. Apex reads{" "}
+          <code>data/timetable.json</code> for classes and <code>calendar.html</code>{" "}
+          for day-order overrides (holidays, make-up days).
+        </small>
+
         <div className="form-row">
-          <label>Folder containing <code>data/timetable.json</code> + <code>calendar.html</code></label>
-          <div className="row">
+          <label>Folder path</label>
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
             <input
+              style={{ flex: "1 1 260px" }}
               value={all["timetable.folder"] || ""}
               placeholder="C:\Users\yashasvi\Documents\Python\AcademiaScraper"
               onChange={(e) => setAll({ ...all, "timetable.folder": e.target.value })}
+              onBlur={(e) => save("timetable.folder", e.target.value)}
             />
             <button onClick={pickAcademia}>Pick folder…</button>
-            <button className="primary" onClick={resyncNow} disabled={!all["timetable.folder"]}>Re-sync timetable</button>
           </div>
         </div>
-        <small className="hint">
-          Re-sync reads <code>&lt;folder&gt;/data/timetable.json</code> and replaces all 5 day-orders.
-        </small>
+
         <hr className="soft" />
-        <div className="row">
-          <button onClick={pickJson}>Import a timetable.json file…</button>
-          <button className="primary" onClick={syncCalendar} disabled={!all["timetable.folder"]}>Sync academic calendar</button>
+
+        <div style={{ marginBottom: 6, fontWeight: 600 }}>Import timetable</div>
+        <small className="hint" style={{ display: "block", marginBottom: 8 }}>
+          Any of these replaces all 5 day-orders. Prefer the JSON path if you've run AcademiaScraper recently.
+        </small>
+        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+          <button
+            className="primary"
+            onClick={resyncNow}
+            disabled={!hasFolder}
+            title="Reads <folder>/data/timetable.json"
+          >
+            Re-sync from AcademiaScraper
+          </button>
+          <button onClick={pickJson} title="Pick any timetable.json file">
+            Import timetable.json…
+          </button>
+          <button
+            onClick={scrollToEditor}
+            title="Use Ollama vision to OCR a photo or screenshot of your timetable"
+          >
+            Import from image…
+          </button>
+        </div>
+
+        <hr className="soft" />
+
+        <div style={{ marginBottom: 6, fontWeight: 600 }}>Academic calendar</div>
+        <small className="hint" style={{ display: "block", marginBottom: 8 }}>
+          Parses <code>calendar.html</code> into a date→day-order map so holidays
+          and make-up days override the normal rotation.
+        </small>
+        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+          <button
+            className="primary"
+            onClick={syncCalendar}
+            disabled={!hasFolder}
+          >
+            Sync academic calendar
+          </button>
         </div>
         {calendarInfo?.ok && (
           <small className="hint" style={{ display: "block", marginTop: 8 }}>
-            Loaded {calendarInfo.count} date→day-order overrides from calendar.html. Holidays + make-up days now respected.
+            Loaded {calendarInfo.count} date→day-order overrides. Holidays +
+            make-up days now respected across Dashboard, Timetable, and Upcoming.
           </small>
         )}
       </div>
@@ -147,7 +198,9 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
         </div>
       </div>
 
-      <ScheduleEditor />
+      <div id="schedule-editor">
+        <ScheduleEditor />
+      </div>
     </>
   );
 }
@@ -193,7 +246,7 @@ function ActivityTab({ all, setAll, save, setMsg }) {
             ? <button onClick={stop} disabled={loading}>Stop tracker</button>
             : <button className="primary" onClick={start} disabled={loading}>Start tracker</button>}
           <small className="muted">
-            {status?.running && status.current ? `Currently: ${status.current.app} (${status.current.minutes || 0} min, ${status.current.category})` : ""}
+            {status?.running && status.current ? `Currently: ${prettyAppName(status.current.app)} (${status.current.minutes || 0} min, ${status.current.category})` : ""}
           </small>
         </div>
         <hr className="soft" />
@@ -220,8 +273,116 @@ function ActivityTab({ all, setAll, save, setMsg }) {
         <p className="muted">Manually reclassify specific apps. Applies to all future samples (old sessions keep their original category).</p>
         <CategorizationOverrides />
       </div>
+
+      <BatteryReportCard setMsg={setMsg} />
     </>
   );
+}
+
+// Windows-only: run `powercfg /batteryreport` and show per-day active time.
+// Complements the per-app tracker (works even when the tracker is off).
+function BatteryReportCard({ setMsg }) {
+  const [supported, setSupported] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => { (async () => {
+    const s = await api.battery.supported();
+    setSupported(!!s?.supported);
+    if (s?.supported) {
+      const cached = await api.battery.latest();
+      if (cached?.ok) setData(cached);
+    }
+  })(); }, []);
+
+  async function refresh() {
+    setLoading(true); setErr("");
+    const res = await api.battery.run(14);
+    setLoading(false);
+    if (res?.ok) { setData(res); setMsg("Battery report refreshed."); }
+    else setErr(res?.error || "Failed to run powercfg.");
+  }
+
+  if (supported === false) {
+    return (
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-title">Desktop screen time (battery report)</div>
+        <p className="muted">Only available on Windows — this reads <code>powercfg /batteryreport</code>.</p>
+      </div>
+    );
+  }
+  if (supported === null) return null;
+
+  const days = (data?.days || []).slice(0, 14);
+  const total = days.reduce((s, d) => s + (d.active_minutes || 0), 0);
+  const avg = days.length ? Math.round(total / days.length) : 0;
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="row between">
+        <div className="card-title">Desktop screen time (battery report)</div>
+        <button className="small primary" onClick={refresh} disabled={loading}>
+          {loading ? "Reading…" : (data ? "Refresh" : "Run now")}
+        </button>
+      </div>
+      <p className="muted small" style={{ marginTop: 4 }}>
+        Derived from Windows' own battery/usage history — active foreground time per day for the last 14 days.
+        Works even when Apex's per-app tracker is off.
+      </p>
+
+      {err && <div className="error" style={{ marginTop: 8 }}>{err}</div>}
+
+      {!data && !err && (
+        <div className="muted" style={{ marginTop: 8 }}>
+          No report yet. Hit <strong>Run now</strong> — takes a few seconds.
+        </div>
+      )}
+
+      {data && (
+        <>
+          <div className="row" style={{ gap: 18, marginTop: 10, flexWrap: "wrap" }}>
+            <div>
+              <div className="muted small">Last 14 days</div>
+              <strong style={{ fontSize: 18 }}>{fmtHM(total)}</strong>
+            </div>
+            <div>
+              <div className="muted small">Daily avg</div>
+              <strong style={{ fontSize: 18 }}>{fmtHM(avg)}</strong>
+            </div>
+            <div>
+              <div className="muted small">Generated</div>
+              <div>{data.generatedAt ? new Date(data.generatedAt).toLocaleString() : "—"}</div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            {days.map((d) => {
+              const pct = Math.min(100, Math.round((d.active_minutes / Math.max(1, Math.max(...days.map((x) => x.active_minutes || 1)))) * 100));
+              return (
+                <div key={d.date} className="row" style={{ gap: 10, alignItems: "center", margin: "2px 0" }}>
+                  <small className="muted" style={{ width: 86 }}>{d.date}</small>
+                  <div className="bar" style={{ flex: 1, height: 6 }}>
+                    <div className="bar-fill" style={{ width: `${pct}%` }} />
+                  </div>
+                  <small style={{ width: 54, textAlign: "right" }}>{fmtHM(d.active_minutes)}</small>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function fmtHM(mins) {
+  if (!mins || mins <= 0) return "—";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
 }
 
 function CategorizationOverrides() {
@@ -265,7 +426,7 @@ function CategorizationOverrides() {
       {list.length === 0 && <div className="muted">No overrides yet.</div>}
       {list.map((x) => (
         <div key={x.app} className="row between" style={{ margin: "6px 0" }}>
-          <span><code>{x.app}</code> → <span className="pill">{x.category}</span></span>
+          <span><code>{x.app}</code> <small className="muted">({prettyAppName(x.app)})</small> → <span className="pill">{x.category}</span></span>
           <button className="ghost small" onClick={() => remove(x.app)}>✕ remove</button>
         </div>
       ))}
@@ -389,48 +550,151 @@ function HandleRow({ k, label, all, setAll, save }) {
 function OllamaTab({ all, setAll, save }) {
   const [models, setModels] = useState([]);
   const [ok, setOk] = useState(null);
+  const [best, setBest] = useState(null);
+  const [starting, setStarting] = useState(false);
 
-  useEffect(() => { (async () => {
-    const r = await api.ollama.listModels();
-    setModels(r?.models || []); setOk(r?.ok);
-  })(); }, []);
+  const profile = (() => {
+    try { return JSON.parse(all["user.profile"] || "{}"); } catch { return {}; }
+  })();
+  function saveProfile(next) {
+    const json = JSON.stringify(next);
+    setAll({ ...all, "user.profile": json });
+    save("user.profile", json);
+  }
+
+  async function refresh() {
+    const [r, b] = await Promise.all([
+      api.ollama.listModels(),
+      api.ollama.best().catch(() => ({ model: null })),
+    ]);
+    setModels(r?.models || []);
+    setOk(r?.ok);
+    setBest(b?.model || null);
+  }
+
+  async function startOllama() {
+    setStarting(true);
+    try {
+      const r = await api.ollama.start?.();
+      if (r?.ok) await refresh();
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  const autoStart = (all["ollama.autoStart"] ?? "true") === "true";
 
   return (
-    <div className="card" style={{ marginBottom: 16 }}>
-      <div className="row between">
-        <div className="card-title">Ollama</div>
-        <span className={"pill " + (ok ? "teal" : "rose")}>{ok === null ? "…" : ok ? "connected" : "offline"}</span>
-      </div>
-      <div className="form-row">
-        <label>Host</label>
-        <input value={all["ollama.host"] || ""} placeholder="http://127.0.0.1:11434"
-          onChange={(e) => setAll({ ...all, "ollama.host": e.target.value })}
-          onBlur={(e) => save("ollama.host", e.target.value)} />
-      </div>
-      <div className="form-row">
-        <label>Preferred model</label>
-        <div className="row">
-          {models.length > 0 ? (
-            <select value={all["ollama.model"] || ""} style={{ maxWidth: 260 }}
-              onChange={(e) => { setAll({ ...all, "ollama.model": e.target.value }); save("ollama.model", e.target.value); }}>
-              <option value="">(auto-pick)</option>
-              {models.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          ) : (
-            <input value={all["ollama.model"] || ""} placeholder="llama3.2"
-              onChange={(e) => setAll({ ...all, "ollama.model": e.target.value })}
-              onBlur={(e) => save("ollama.model", e.target.value)} />
-          )}
-          <button onClick={async () => {
-            const r = await api.ollama.listModels();
-            setModels(r?.models || []); setOk(r?.ok);
-          }}>↻ Refresh</button>
+    <>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="row between">
+          <div className="card-title">Ollama</div>
+          <span className={"pill " + (ok ? "teal" : "rose")}>
+            {ok === null ? "…" : ok ? "connected" : "offline"}
+          </span>
         </div>
-        <small className="hint">
-          If Ollama is running but nothing's installed, run <code>ollama pull llama3.2</code> in a terminal.
-        </small>
+
+        {!ok && ok !== null && (
+          <div className="row" style={{ gap: 8, marginTop: 6 }}>
+            <button className="primary small" onClick={startOllama} disabled={starting}>
+              {starting ? "Starting…" : "Start Ollama"}
+            </button>
+            <small className="muted">
+              We'll launch <code>ollama app.exe</code> and retry for ~15s.
+            </small>
+          </div>
+        )}
+
+        <div className="form-row">
+          <label>Host</label>
+          <input value={all["ollama.host"] || ""} placeholder="http://127.0.0.1:11434"
+            onChange={(e) => setAll({ ...all, "ollama.host": e.target.value })}
+            onBlur={(e) => save("ollama.host", e.target.value)} />
+        </div>
+        <div className="form-row">
+          <label>Preferred model</label>
+          <div className="row">
+            {models.length > 0 ? (
+              <select value={all["ollama.model"] || ""} style={{ maxWidth: 260 }}
+                onChange={(e) => { setAll({ ...all, "ollama.model": e.target.value }); save("ollama.model", e.target.value); }}>
+                <option value="">(auto-pick{best ? ` → ${best}` : ""})</option>
+                {models.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            ) : (
+              <input value={all["ollama.model"] || ""} placeholder="gpt-oss:120b-cloud"
+                onChange={(e) => setAll({ ...all, "ollama.model": e.target.value })}
+                onBlur={(e) => save("ollama.model", e.target.value)} />
+            )}
+            <button onClick={refresh}>↻ Refresh</button>
+          </div>
+          <small className="hint">
+            Auto-pick priority: <code>gpt-oss:120b-cloud</code> → <code>llama3:latest</code> → <code>gemma3:4b</code> → others.
+          </small>
+        </div>
+        <div className="form-row">
+          <label className="row" style={{ gap: 6, alignItems: "center" }}>
+            <input type="checkbox" checked={autoStart}
+              onChange={(e) => { setAll({ ...all, "ollama.autoStart": String(e.target.checked) }); save("ollama.autoStart", String(e.target.checked)); }} />
+            Auto-start Ollama when Apex launches
+          </label>
+        </div>
       </div>
-    </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-title">Personal context</div>
+        <small className="muted">
+          Gets injected into every Ollama prompt (Plan, Ask Apex, burnout, evening review). Stays on this machine.
+        </small>
+        <div className="grid-2" style={{ marginTop: 8 }}>
+          <div className="form-row">
+            <label>Name</label>
+            <input value={profile.name || ""} placeholder="Yashasvi"
+              onChange={(e) => saveProfile({ ...profile, name: e.target.value })} />
+          </div>
+          <div className="form-row">
+            <label>College</label>
+            <input value={profile.college || ""} placeholder="SRM Institute of Science and Technology"
+              onChange={(e) => saveProfile({ ...profile, college: e.target.value })} />
+          </div>
+          <div className="form-row">
+            <label>Major</label>
+            <input value={profile.major || ""} placeholder="Computer Science"
+              onChange={(e) => saveProfile({ ...profile, major: e.target.value })} />
+          </div>
+          <div className="form-row">
+            <label>Year</label>
+            <input value={profile.year || ""} placeholder="2"
+              onChange={(e) => saveProfile({ ...profile, year: e.target.value })} />
+          </div>
+        </div>
+        <div className="form-row">
+          <label>Interests (comma-separated)</label>
+          <input value={Array.isArray(profile.interests) ? profile.interests.join(", ") : (profile.interests || "")}
+            placeholder="systems, AI tooling, competitive programming, local-first apps"
+            onChange={(e) => saveProfile({ ...profile, interests: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} />
+        </div>
+        <div className="form-row">
+          <label>Long-term goals</label>
+          <textarea rows={2} value={profile.goals || ""}
+            placeholder="become a strong systems + AI engineer; ship personal projects weekly; stay healthy."
+            onChange={(e) => saveProfile({ ...profile, goals: e.target.value })} />
+        </div>
+        <div className="form-row">
+          <label>Preferred tone</label>
+          <input value={profile.tone || ""} placeholder="calm, precise, no pep talk, no hedging"
+            onChange={(e) => saveProfile({ ...profile, tone: e.target.value })} />
+        </div>
+        <div className="form-row">
+          <label>Extra context (free-form)</label>
+          <textarea rows={3} value={all["user.extraContext"] || ""}
+            placeholder="Anything else the model should know — constraints, preferences, ongoing projects…"
+            onChange={(e) => setAll({ ...all, "user.extraContext": e.target.value })}
+            onBlur={(e) => save("user.extraContext", e.target.value)} />
+        </div>
+      </div>
+    </>
   );
 }
 
