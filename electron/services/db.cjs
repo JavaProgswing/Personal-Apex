@@ -1100,6 +1100,50 @@ function addActivitySession(s) {
   );
   return true;
 }
+
+// Upsert a session by (source + started_at). Used by the desktop tracker to
+// "checkpoint" long-running sessions so their minutes become visible before
+// the user switches apps. The composite key makes this idempotent.
+function upsertActivitySession(s) {
+  const existing = db
+    .prepare(
+      `SELECT id FROM activity_sessions
+       WHERE source = ? AND started_at = ?`,
+    )
+    .get(s.source ?? "desktop", s.started_at ?? "");
+  if (existing) {
+    db.prepare(
+      `UPDATE activity_sessions
+         SET window_title = ?, ended_at = ?, minutes = ?, category = ?
+       WHERE id = ?`,
+    ).run(
+      s.window_title ?? null,
+      s.ended_at ?? null,
+      s.minutes ?? 0,
+      s.category ?? "neutral",
+      existing.id,
+    );
+    return existing.id;
+  }
+  const info = db
+    .prepare(
+      `INSERT INTO activity_sessions
+        (date, source, app, window_title, category, started_at, ended_at, minutes, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      s.date ?? isoDate(new Date()),
+      s.source ?? "desktop",
+      s.app ?? null,
+      s.window_title ?? null,
+      s.category ?? "neutral",
+      s.started_at ?? null,
+      s.ended_at ?? null,
+      s.minutes ?? 0,
+      s.note ?? null,
+    );
+  return info.lastInsertRowid;
+}
 function topAppsOn(date, limit = 10) {
   return db
     .prepare(
@@ -1254,6 +1298,7 @@ module.exports = {
   activityTotalsOn,
   activityTrend,
   addActivitySession,
+  upsertActivitySession,
   topAppsOn,
   activitySessionsRange,
   getRepoSummary,

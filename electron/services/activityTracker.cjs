@@ -18,8 +18,12 @@ let timer = null;
 let currentSession = null;    // { app, title, category, startedAt, lastTickAt }
 let emitter = null;
 let nudgedFor = null;         // the sessionId we already nudged about
+let lastPsError = null;       // surfaced via status() so UI can show cause
 
+// PowerShell script. NOTE: do NOT use $pid — it's a read-only automatic
+// variable in PowerShell (current process id). We use $procId instead.
 const PS_SCRIPT = `
+$ErrorActionPreference = 'SilentlyContinue'
 $sig = @"
 using System;
 using System.Diagnostics;
@@ -28,33 +32,48 @@ using System.Text;
 public class W {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint procId);
 }
 "@
 Add-Type -TypeDefinition $sig -Language CSharp
 $h = [W]::GetForegroundWindow()
 $sb = New-Object System.Text.StringBuilder 1024
 [W]::GetWindowText($h, $sb, 1024) | Out-Null
-$pid = 0
-[W]::GetWindowThreadProcessId($h, [ref]$pid) | Out-Null
-try { $p = Get-Process -Id $pid -ErrorAction Stop } catch { $p = $null }
-$exe = if ($p) { $p.ProcessName } else { $null }
+$procId = [uint32]0
+[W]::GetWindowThreadProcessId($h, [ref]$procId) | Out-Null
+$proc = $null
+try { $proc = Get-Process -Id $procId -ErrorAction Stop } catch { $proc = $null }
+$exe = if ($proc) { $proc.ProcessName } else { $null }
 [PSCustomObject]@{ exe = $exe; title = $sb.ToString() } | ConvertTo-Json -Compress
-`;
+`.trim();
+
+// Use -EncodedCommand with a base64-encoded UTF-16LE string. This sidesteps
+// all the Windows quote-escaping pain (the old \" approach was unreliable
+// and frequently produced empty stdout — which silently disabled tracking).
+const PS_ENCODED = Buffer.from(PS_SCRIPT, 'utf16le').toString('base64');
 
 function getForegroundWindow() {
   return new Promise((resolve) => {
     if (process.platform !== 'win32') return resolve(null);
     exec(
-      `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "${PS_SCRIPT.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`,
-      { windowsHide: true, timeout: 8000 },
-      (err, stdout) => {
-        if (err || !stdout) return resolve(null);
+      `powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${PS_ENCODED}`,
+      { windowsHide: true, timeout: 8000, maxBuffer: 1024 * 256 },
+      (err, stdout, stderr) => {
+        if (err) {
+          lastPsError = (stderr || err.message || '').toString().slice(0, 240);
+          return resolve(null);
+        }
+        const trimmed = (stdout || '').trim();
+        if (!trimmed) {
+          lastPsError = (stderr || 'powershell returned empty output').toString().slice(0, 240);
+          return resolve(null);
+        }
         try {
-          const trimmed = stdout.trim();
-          if (!trimmed) return resolve(null);
-          resolve(JSON.parse(trimmed));
-        } catch {
+          const parsed = JSON.parse(trimmed);
+          lastPsError = null;
+          resolve(parsed);
+        } catch (e) {
+          lastPsError = `json parse: ${e.message}`;
           resolve(null);
         }
       }
@@ -102,9 +121,28 @@ async function tick() {
     currentSession = { app, title, category, startedAt: now, lastTickAt: now };
   }
 
-  // Soft nudge if we've been in the same session for >= NUDGE_AFTER_MIN min
   if (currentSession) {
     const mins = Math.round((now - currentSession.startedAt) / 60000);
+
+    // Checkpoint long-running sessions so they appear in Top apps / trail
+    // BEFORE the user switches apps. Idempotent upsert keyed on started_at.
+    if (mins >= 1) {
+      try {
+        const started = new Date(currentSession.startedAt);
+        db.upsertActivitySession({
+          date: toIsoDate(started),
+          source: 'desktop',
+          app: currentSession.app,
+          window_title: currentSession.title,
+          category: currentSession.category,
+          started_at: started.toISOString(),
+          ended_at: new Date(now).toISOString(),
+          minutes: mins,
+        });
+      } catch { /* non-fatal */ }
+    }
+
+    // Soft nudge if we've been in the same session for >= NUDGE_AFTER_MIN min
     if (mins >= NUDGE_AFTER_MIN && nudgedFor !== currentSession.startedAt) {
       nudgedFor = currentSession.startedAt;
       sendRendererEvent('activity:nudge', {
@@ -121,7 +159,9 @@ function rollover(now) {
   const ended = new Date(currentSession.lastTickAt || now);
   const mins = Math.max(1, Math.round((ended - started) / 60000));
   if (mins >= 1) {
-    db.addActivitySession({
+    // Upsert — checkpoints during tick() may already have inserted a row
+    // keyed on started_at; rollover gives it its final ended_at + minutes.
+    db.upsertActivitySession({
       date: toIsoDate(started),
       source: 'desktop',
       app: currentSession.app,
@@ -140,6 +180,9 @@ function rollover(now) {
 function start(send) {
   if (timer) return { ok: true, already: true };
   emitter = send;
+  // Kick off an immediate tick so the current foreground window is recorded
+  // right away — otherwise the user sees "nothing tracked" for the first 30s.
+  tick().catch(() => {});
   timer = setInterval(() => { tick().catch(() => {}); }, POLL_MS);
   db.setSetting('activity.tracking', '1');
   return { ok: true };
@@ -195,7 +238,7 @@ function status() {
     todayDesktop.topCategory = rows[0]?.category || null;
   } catch {}
 
-  return { running, current, last, todayDesktop };
+  return { running, current, last, todayDesktop, lastError: lastPsError };
 }
 
 function toIsoDate(d) {

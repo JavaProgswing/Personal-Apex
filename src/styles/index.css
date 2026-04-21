@@ -422,6 +422,46 @@ h1.page-title {
 .person-card .handle {
   color: var(--text-dim);
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+.person-card .handle .handle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  letter-spacing: 0;
+}
+.person-card .handle.li .handle-icon {
+  background: #0a66c2;
+  color: #fff;
+}
+.person-card .handle.li {
+  color: #0a66c2;
+}
+.person-card.li-only {
+  border-left: 2px solid #0a66c2;
+}
+.person-card .avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: var(--text-dim);
+  font-size: 16px;
+  background: var(--bg-elev-2);
+}
+.person-card .person-bio {
+  max-width: 100%;
 }
 .person-card .tags {
   display: flex;
@@ -789,18 +829,33 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 .burnout-chip.risk-mid .dot  { background: var(--warn); }
 .burnout-chip.risk-high .dot { background: var(--bad); }
 
-/* Trail — stacked vertical columns (was pill-style; Dashboard uses columns) */
+/* Trail — stacked vertical columns. Outer .trail-day is the unclipped
+   container (so day labels below are visible); inner .trail-day-stack clips
+   the colored legs into a nice rounded rect. */
 .trail { display: flex; align-items: flex-end; gap: 6px; min-height: 110px; padding: 4px 0 0; }
 .trail-day {
+  display: flex; flex-direction: column; align-items: stretch;
+  width: 34px;
+  position: relative;
+  /* no overflow:hidden here — labels live outside the stack */
+}
+.trail-day-stack {
   display: flex; flex-direction: column-reverse; align-items: stretch;
-  width: 34px; min-height: 90px; border-radius: 8px;
-  background: var(--bg-elev-2); position: relative; overflow: hidden;
-  padding: 0; gap: 1px;
+  min-height: 90px;
+  border-radius: 8px;
+  background: var(--bg-elev-2);
+  overflow: hidden;
+  gap: 1px;
 }
 .trail-day .day {
-  position: absolute; bottom: -18px; left: 0; right: 0;
+  display: flex; flex-direction: column; align-items: center;
   text-align: center; font-size: 10px; color: var(--text-faint);
+  line-height: 1.15;
+  margin-top: 4px;
+  gap: 1px;
 }
+.trail-day .day .wk { color: var(--text-dim); font-weight: 500; }
+.trail-day .day .dt { font-variant-numeric: tabular-nums; color: var(--text-faint); }
 .trail-day .leg { width: 100%; min-height: 0; flex: 0 0 auto; display: block; padding: 0; background: transparent; }
 .trail-day .leg.productive  { background: #4ecdc4; }
 .trail-day .leg.distraction { background: #ef6b5a; }
@@ -868,14 +923,17 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
 .trail-day .leg.neutral { background: #8b98a5; }
 .trail-day .leg.rest    { background: #5eead4; opacity: 0.75; }
 
-/* Selected day column — when user clicks it to drive "top apps" */
+/* Selected day column — outline the stack, not the whole container */
 .trail-day {
   cursor: pointer;
-  transition: transform 120ms ease, box-shadow 120ms ease, outline-color 120ms ease;
-  outline: 1px solid transparent;
+  transition: transform 120ms ease;
 }
 .trail-day:hover { transform: translateY(-1px); }
-.trail-day.sel {
+.trail-day .trail-day-stack {
+  transition: box-shadow 120ms ease, outline-color 120ms ease;
+  outline: 1px solid transparent;
+}
+.trail-day.sel .trail-day-stack {
   outline-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(124,124,255,0.2);
 }
@@ -1194,22 +1252,28 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
   padding: 12px 14px;
 }
 
-/* Taller trail bars, weekday + day labels stacked */
+/* Taller trail bars, weekday + day labels visible below each column */
 .trail-pane .trail {
-  min-height: 148px;
-  padding-bottom: 28px; /* more room for weekday + date label */
+  min-height: 172px;
+  align-items: flex-end;
+  padding: 6px 0 4px; /* label is part of .trail-day now, no extra padding needed */
 }
 .trail-pane .trail-day {
-  width: 38px;
-  min-height: 124px;
+  width: 40px;
+}
+.trail-pane .trail-day-stack {
+  min-height: 132px;
 }
 .trail-pane .trail-day .day {
-  bottom: -26px;
-  line-height: 1.15;
+  font-size: 11px;
+  margin-top: 6px;
 }
-.trail-pane .trail-day.sel {
+.trail-pane .trail-day.sel .trail-day-stack {
   background: linear-gradient(180deg, rgba(124,124,255,0.14), var(--bg-elev-2));
+  outline: 1px solid rgba(124,124,255,0.5);
+  outline-offset: 0;
 }
+.trail-pane .trail-day.sel .day .wk { color: var(--accent); }
 
 /* Source toggle row (All / Desktop / Mobile) */
 .source-toggle .chip { cursor: pointer; }
@@ -1251,5 +1315,100 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
   font-size: 12px;
 }
 .last-session strong { color: var(--text); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Burnout "Today's read" card — v0.3.3
+   Gradient top-accent that shifts hue by risk band + inline vibe logger.
+   ═══════════════════════════════════════════════════════════════════ */
+.burnout-read-card {
+  position: relative;
+  overflow: hidden;
+}
+.burnout-read-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #4ecdc4, #5eead4);
+}
+.burnout-read-card.band-mid::before  { background: linear-gradient(90deg, #f5a524, #ffa657); }
+.burnout-read-card.band-high::before { background: linear-gradient(90deg, #ef6b5a, #ff8b8b); }
+.burnout-read-card.band-none::before { background: linear-gradient(90deg, #8b98a5, #5a5a65); opacity: .5; }
+
+.burnout-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.risk-meter { margin: 6px 0 10px; }
+.risk-meter-track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--bg-elev-2);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.risk-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width .4s ease;
+  background: linear-gradient(90deg, #4ecdc4, #5eead4);
+}
+.risk-meter-fill.band-mid  { background: linear-gradient(90deg, #f5a524, #ffa657); }
+.risk-meter-fill.band-high { background: linear-gradient(90deg, #ef6b5a, #ff8b8b); }
+.risk-meter-fill.band-none { background: var(--bg-elev-3); }
+.risk-meter-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  margin-top: 3px;
+  padding: 0 2px;
+}
+.risk-meter-readout {
+  margin-top: 6px;
+  font-size: 13px;
+}
+.risk-val.band-low  { color: #4ecdc4; }
+.risk-val.band-mid  { color: #f5a524; }
+.risk-val.band-high { color: #ef6b5a; }
+
+.burnout-summary {
+  margin: 10px 0 6px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+/* Inline vibe logger */
+.vibe-logger {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+}
+.vibe-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+  margin-top: 8px;
+}
+.vibe-grid .slider-row {
+  margin: 0;
+}
+.vibe-hint {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-elev-3, rgba(255,255,255,0.04));
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .vibe-grid { grid-template-columns: 1fr; }
+}
 
 

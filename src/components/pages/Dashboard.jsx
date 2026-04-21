@@ -41,7 +41,6 @@ export default function Dashboard({ go }) {
 
   const [toast, setToast] = useState(null);
   const [showAskApex, setShowAskApex] = useState(false);
-  const [showCheckin, setShowCheckin] = useState(false);
 
   // Ollama / plan card. Models + ollamaOk are probed once. The cached plan is
   // read on first mount only — subsequent refreshes keep whatever the user
@@ -245,9 +244,6 @@ export default function Dashboard({ go }) {
               📊 My CP
             </button>
           )}
-          <button className="ghost small" onClick={() => setShowCheckin((v) => !v)}>
-            {showCheckin ? "Hide check-in" : "Quick check-in"}
-          </button>
           <button className="ghost small" onClick={() => setShowAskApex(true)}>Ask Apex ↗</button>
           {typeof risk === "number" ? (
             <div className={`burnout-chip risk-${riskClass}`} title={burnoutReport?.summary || "burnout read"}>
@@ -467,46 +463,30 @@ export default function Dashboard({ go }) {
         onOpenSettings={() => go("settings")}
       />
 
-      {/* Today's read (burnout report) — richer */}
-      {burnoutReport && (
-        <BurnoutReadCard
-          report={burnoutReport}
-          loading={burnoutLoading}
-          onRerun={runBurnoutCheck}
-          onSuggestionToTask={async (s) => {
-            await api.tasks.create({
-              title: s.text || s.type || "burnout suggestion",
-              description: s.link ? "Link: " + s.link : "",
-              category: s.type === "exercise" ? "Health" : s.type === "break" ? "Leisure" : "Personal",
-              priority: 3,
-              estimated_minutes: s.minutes || 15,
-              tags: ["burnout"],
-              links: s.link ? [s.link] : [],
-            });
-            setToast({ kind: "success", title: "Added to tasks", msg: s.text || s.type });
-            setTimeout(() => setToast(null), 3500);
-          }}
-        />
-      )}
-
-      {/* Check-in (collapsible) */}
-      {showCheckin && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="section-label" style={{ marginTop: 0 }}>Burnout check-in</div>
-          <SliderRow label="Sleep quality" kind="sleep"   value={checkin.sleep}   onChange={(v) => setCheckin({ ...checkin, sleep: v })} />
-          <SliderRow label="Clarity"       kind="clarity" value={checkin.clarity} onChange={(v) => setCheckin({ ...checkin, clarity: v })} />
-          <SliderRow label="Dread level"   kind="dread"   value={checkin.dread}   onChange={(v) => setCheckin({ ...checkin, dread: v })} />
-          <SliderRow label="Energy today"  kind="energy"  value={checkin.energy}  onChange={(v) => setCheckin({ ...checkin, energy: v })} />
-          <div style={{ padding: 10, background: "var(--bg-elev-2)", borderRadius: 10, marginTop: 10, fontSize: 13 }}>
-            {energyMsg}
-          </div>
-          <div className="row" style={{ marginTop: 12 }}>
-            <button className="primary" onClick={saveCheckin}>Save check-in</button>
-            <button onClick={() => api.ext.openSpotify()}>🎧 Spotify</button>
-            {checkinSaved && <small className="hint">Saved</small>}
-          </div>
-        </div>
-      )}
+      {/* Today's read (burnout + inline check-in) */}
+      <BurnoutReadCard
+        report={burnoutReport}
+        loading={burnoutLoading}
+        onRerun={runBurnoutCheck}
+        checkin={checkin}
+        setCheckin={setCheckin}
+        saveCheckin={saveCheckin}
+        checkinSaved={checkinSaved}
+        energyMsg={energyMsg}
+        onSuggestionToTask={async (s) => {
+          await api.tasks.create({
+            title: s.text || s.type || "burnout suggestion",
+            description: s.link ? "Link: " + s.link : "",
+            category: s.type === "exercise" ? "Health" : s.type === "break" ? "Leisure" : "Personal",
+            priority: 3,
+            estimated_minutes: s.minutes || 15,
+            tags: ["burnout"],
+            links: s.link ? [s.link] : [],
+          });
+          setToast({ kind: "success", title: "Added to tasks", msg: s.text || s.type });
+          setTimeout(() => setToast(null), 3500);
+        }}
+      />
 
       <div className="grid-2" style={{ marginBottom: 16 }}>
         <Pomodoro tasks={tasks} onLogged={() => refreshActivity()} />
@@ -725,19 +705,20 @@ function ActivitySection({
                   onMouseEnter={() => setHover({ date: d.date, day: d })}
                   onMouseLeave={() => setHover(null)}
                 >
-                  {CATEGORY_KEYS.map((k) =>
-                    hiddenCats.has(k) ? null : (
-                      <div
-                        key={k}
-                        className={`leg ${k}`}
-                        style={{ height: h(d[k] || 0) + "%" }}
-                      />
-                    ),
-                  )}
+                  <div className="trail-day-stack">
+                    {CATEGORY_KEYS.map((k) =>
+                      hiddenCats.has(k) ? null : (
+                        <div
+                          key={k}
+                          className={`leg ${k}`}
+                          style={{ height: h(d[k] || 0) + "%" }}
+                        />
+                      ),
+                    )}
+                  </div>
                   <small className="muted day">
-                    {weekday}
-                    <br />
-                    {d.date.slice(8)}
+                    <span className="wk">{weekday}</span>
+                    <span className="dt">{d.date.slice(8)}</span>
                   </small>
                 </div>
               );
@@ -913,33 +894,106 @@ function relativeAgo(isoOrDateStr) {
 }
 
 // ─── Today's read card ────────────────────────────────────────────────────
-function BurnoutReadCard({ report, loading, onRerun, onSuggestionToTask }) {
+function BurnoutReadCard({
+  report, loading, onRerun, onSuggestionToTask,
+  checkin, setCheckin, saveCheckin, checkinSaved, energyMsg,
+}) {
   const [showFlags, setShowFlags] = useState(false);
-  const risk = report.risk_score;
-  const riskPill = typeof risk === "number"
-    ? <span className={"pill " + (risk >= 7 ? "rose" : risk >= 4 ? "amber" : "teal")}>risk {risk}/10</span>
+  const [showVibe, setShowVibe] = useState(false);
+
+  const risk = report?.risk_score;
+  const hasReport = !!report;
+  const riskBand = typeof risk === "number"
+    ? (risk >= 7 ? "high" : risk >= 4 ? "mid" : "low")
+    : null;
+  const riskLabel = riskBand === "high" ? "elevated" : riskBand === "mid" ? "moderate" : riskBand === "low" ? "steady" : "not checked";
+  const riskPct = typeof risk === "number" ? Math.max(4, Math.min(100, risk * 10)) : 0;
+
+  const flags = Array.isArray(report?.redFlags) ? report.redFlags : [];
+  const suggestions = Array.isArray(report?.suggestions) ? report.suggestions : [];
+  const generatedAt = report?.generated_at || report?.generatedAt || null;
+
+  // Derive a fallback "vibe" score so the meter isn't blank pre-check.
+  const vibeAvg = typeof risk !== "number" && checkin
+    ? ((checkin.sleep + checkin.clarity + checkin.energy + (10 - checkin.dread)) / 4).toFixed(1)
     : null;
 
-  const flags = Array.isArray(report.redFlags) ? report.redFlags : [];
-  const suggestions = Array.isArray(report.suggestions) ? report.suggestions : [];
-
   return (
-    <div className="card" style={{ marginBottom: 16 }}>
-      <div className="row between">
-        <div className="card-title">Today's read</div>
-        <div className="row" style={{ gap: 8 }}>
-          {riskPill}
+    <div className={`card burnout-read-card band-${riskBand || "none"}`} style={{ marginBottom: 16 }}>
+      <div className="burnout-head">
+        <div>
+          <div className="card-title" style={{ margin: 0 }}>Today's read</div>
+          {generatedAt && (
+            <small className="muted">checked {new Date(generatedAt).toLocaleString([], { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</small>
+          )}
+          {!generatedAt && hasReport && <small className="muted">latest read</small>}
+          {!hasReport && <small className="muted">No burnout read yet — log a vibe or hit Re-run.</small>}
+        </div>
+        <div className="row" style={{ gap: 6 }}>
+          <button className="ghost small" onClick={() => setShowVibe((v) => !v)}>
+            {showVibe ? "Hide vibe" : "Log vibe"}
+          </button>
           <button className="ghost small" onClick={onRerun} disabled={loading}>
-            {loading ? "…" : "Re-run"}
+            {loading ? "Analysing…" : hasReport ? "Re-run" : "Run check"}
           </button>
         </div>
       </div>
-      {report.summary && <p style={{ margin: "6px 0" }}>{report.summary}</p>}
 
-      {/* Suggestions — full list with action buttons */}
+      {/* Risk meter */}
+      <div className="risk-meter">
+        <div className="risk-meter-track">
+          <div className={`risk-meter-fill band-${riskBand || "none"}`} style={{ width: riskPct + "%" }} />
+        </div>
+        <div className="risk-meter-labels">
+          <span className="muted">low</span>
+          <span className="muted">moderate</span>
+          <span className="muted">elevated</span>
+        </div>
+        <div className="risk-meter-readout">
+          {typeof risk === "number" ? (
+            <>
+              <strong className={`risk-val band-${riskBand}`}>{risk}/10</strong>
+              <span className="muted"> · {riskLabel}</span>
+            </>
+          ) : vibeAvg ? (
+            <>
+              <strong>vibe {vibeAvg}/10</strong>
+              <span className="muted"> · run a check for burnout score</span>
+            </>
+          ) : (
+            <span className="muted">no signal yet</span>
+          )}
+        </div>
+      </div>
+
+      {report?.summary && <p className="burnout-summary">{report.summary}</p>}
+
+      {/* Inline vibe logger */}
+      {showVibe && checkin && setCheckin && (
+        <div className="vibe-logger">
+          <div className="row between" style={{ alignItems: "baseline" }}>
+            <div className="section-label" style={{ marginTop: 0 }}>Quick vibe check</div>
+            <small className="muted">1–10 · save to feed the next burnout read</small>
+          </div>
+          <div className="vibe-grid">
+            <SliderRow label="Sleep"   kind="sleep"   value={checkin.sleep}   onChange={(v) => setCheckin({ ...checkin, sleep: v })} />
+            <SliderRow label="Clarity" kind="clarity" value={checkin.clarity} onChange={(v) => setCheckin({ ...checkin, clarity: v })} />
+            <SliderRow label="Dread"   kind="dread"   value={checkin.dread}   onChange={(v) => setCheckin({ ...checkin, dread: v })} />
+            <SliderRow label="Energy"  kind="energy"  value={checkin.energy}  onChange={(v) => setCheckin({ ...checkin, energy: v })} />
+          </div>
+          {energyMsg && <div className="vibe-hint">{energyMsg}</div>}
+          <div className="row" style={{ marginTop: 10, gap: 8 }}>
+            <button className="primary small" onClick={saveCheckin}>Save vibe</button>
+            <button className="ghost small" onClick={() => api.ext.openSpotify()}>🎧 Spotify</button>
+            {checkinSaved && <small className="hint">Saved ✓</small>}
+          </div>
+        </div>
+      )}
+
+      {/* Suggestions */}
       {suggestions.length > 0 && (
         <>
-          <div className="section-label" style={{ marginTop: 6 }}>Suggestions ({suggestions.length})</div>
+          <div className="section-label" style={{ marginTop: 10 }}>Suggestions · {suggestions.length}</div>
           <div className="suggestion-list">
             {suggestions.map((s, i) => (
               <div key={i} className="suggestion-row">
@@ -962,7 +1016,7 @@ function BurnoutReadCard({ report, loading, onRerun, onSuggestionToTask }) {
         <>
           <hr className="soft" />
           <div className="row between">
-            <small className="muted">{flags.length} red flag{flags.length === 1 ? "" : "s"}</small>
+            <small className="muted">⚠ {flags.length} red flag{flags.length === 1 ? "" : "s"}</small>
             <button className="ghost xsmall" onClick={() => setShowFlags((v) => !v)}>
               {showFlags ? "hide" : "show"}
             </button>
@@ -975,10 +1029,10 @@ function BurnoutReadCard({ report, loading, onRerun, onSuggestionToTask }) {
         </>
       )}
 
-      {report.tomorrow && (
+      {report?.tomorrow && (
         <>
           <hr className="soft" />
-          <p style={{ margin: 0 }}><strong>Tomorrow:</strong> {report.tomorrow}</p>
+          <p style={{ margin: 0 }}><strong>Tomorrow →</strong> {report.tomorrow}</p>
         </>
       )}
     </div>

@@ -272,33 +272,86 @@ function SyncBar({ label, total, done, ok, err, current, rateLimited }) {
 }
 
 function PersonCard({ p, onOpen, onRetryGh, onRetryCp }) {
+  const liHandle = !p.github_username ? linkedinHandle(p.linkedin_url) : null;
+  const hasCp = !!(p.leetcode_username || p.codeforces_username || p.codechef_username);
+  const hasAnyLink = !!(p.github_username || liHandle || p.linkedin_url || hasCp);
+
   return (
-    <div className="card person-card" style={{ cursor: "pointer", position: "relative" }} onClick={onOpen}>
-      {p.avatar_url ? <img className="avatar" src={p.avatar_url} alt="" /> : <div className="avatar" />}
+    <div
+      className={"card person-card" + (!p.github_username && liHandle ? " li-only" : "")}
+      style={{ cursor: "pointer", position: "relative" }}
+      onClick={onOpen}
+    >
+      {p.avatar_url ? <img className="avatar" src={p.avatar_url} alt="" /> : (
+        <div className="avatar avatar-fallback">{(p.name || "?").slice(0, 1).toUpperCase()}</div>
+      )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="name">{p.name}</div>
-        {p.github_username && <div className="handle">@{p.github_username}</div>}
-        {p.bio && <div className="muted" style={{ fontSize: 12, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.bio}</div>}
-        <div className="tags">
-          {(p.tags || []).slice(0, 4).map((t) => <span key={t} className="pill">{t}</span>)}
-        </div>
-        <div className="tags" style={{ marginTop: 4 }}>
-          {p.leetcode_username   && <span className="pill gray">LC: {p.leetcode_username}</span>}
-          {p.codeforces_username && <span className="pill gray">CF: {p.codeforces_username}</span>}
-          {p.codechef_username   && <span className="pill gray">CC: {p.codechef_username}</span>}
-        </div>
+
+        {/* Primary handle: GitHub first, else LinkedIn */}
+        {p.github_username ? (
+          <div className="handle">
+            <span className="handle-icon" aria-hidden>⌥</span>@{p.github_username}
+          </div>
+        ) : liHandle ? (
+          <div className="handle li">
+            <span className="handle-icon" aria-hidden>in</span>/{liHandle}
+          </div>
+        ) : (
+          <div className="handle muted">no linked profile</div>
+        )}
+
+        {p.bio && (
+          <div
+            className="muted person-bio"
+            style={{ fontSize: 12, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+          >
+            {p.bio}
+          </div>
+        )}
+
+        {hasCp && (
+          <div className="tags" style={{ marginTop: 6 }}>
+            {p.leetcode_username   && <span className="pill gray">LC: {p.leetcode_username}</span>}
+            {p.codeforces_username && <span className="pill gray">CF: {p.codeforces_username}</span>}
+            {p.codechef_username   && <span className="pill gray">CC: {p.codechef_username}</span>}
+          </div>
+        )}
+
         <small className="muted" style={{ display: "block", marginTop: 6 }}>
-          {p.last_scraped_at ? `synced ${new Date(p.last_scraped_at + "Z").toLocaleDateString()}` : "never synced"}
+          {p.github_username
+            ? (p.last_scraped_at ? `synced ${new Date(p.last_scraped_at + "Z").toLocaleDateString()}` : "never synced")
+            : liHandle
+              ? "LinkedIn profile"
+              : hasAnyLink ? "" : "no GitHub / LinkedIn"}
         </small>
       </div>
       <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 4 }}>
         {p.github_username && <button className="ghost small" title="Retry GitHub" onClick={(e) => { e.stopPropagation(); onRetryGh(); }}>↻ GH</button>}
-        {(p.leetcode_username || p.codeforces_username || p.codechef_username) && (
+        {!p.github_username && p.linkedin_url && (
+          <button
+            className="ghost small"
+            title="Open LinkedIn"
+            onClick={(e) => { e.stopPropagation(); api.ext.open(p.linkedin_url); }}
+          >
+            ↗ LinkedIn
+          </button>
+        )}
+        {hasCp && (
           <button className="ghost small" title="Retry CP" onClick={(e) => { e.stopPropagation(); onRetryCp(); }}>↻ CP</button>
         )}
       </div>
     </div>
   );
+}
+
+// Extract a LinkedIn vanity handle from a linkedin_url. Handles the common
+// shapes: https://linkedin.com/in/<handle>/, https://www.linkedin.com/in/<h>,
+// linkedin.com/in/<h>, with or without trailing slashes or query strings.
+function linkedinHandle(url) {
+  if (!url) return null;
+  const m = String(url).match(/linkedin\.com\/in\/([^/?#]+)/i);
+  return m ? decodeURIComponent(m[1]).replace(/\/+$/, "") : null;
 }
 
 function PersonModal({ person, repos, cpStats, activity, onClose, onSyncGh, onSyncCp, onDelete, onChanged, onOpenRepo }) {
