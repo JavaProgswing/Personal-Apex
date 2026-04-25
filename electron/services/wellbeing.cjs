@@ -55,21 +55,34 @@ async function devices() {
 
 // Parse the "Usage stats for user 0" section of `dumpsys usagestats`.
 // Lines look like:
-//   package=com.whatsapp totalTimeUsed="3h 12m"  lastTimeUsed="..."
-// We sum totalTimeUsed across the last 24h window.
-function parseUsagestats(dump) {
+//   time="2026-04-24 01:03:10" type=ACTIVITY_RESUMED package=com.whatsapp
+//
+// Sums per-package foreground time, optionally clipped to a [windowStart,
+// windowEnd] range. Sessions that span the window boundary are split so only
+// the portion inside the window is counted — this is what fixes the
+// "Instagram 2h at 01:04" bug where yesterday's evening usage was being
+// attributed to today.
+function parseUsagestats(dump, windowStart = -Infinity, windowEnd = Infinity) {
   const lines = dump.split(/\r?\n/);
 
   const active = new Map(); // pkg -> start timestamp (ms)
   const usage = new Map(); // pkg -> total ms
 
   function parseTime(str) {
-    // "2026-04-19 18:26:47"
+    // "2026-04-19 18:26:47" — treat as local time (no trailing Z).
     return new Date(str.replace(" ", "T")).getTime();
   }
 
+  // Credit `pkg` for overlap of [start, end] with the window.
+  function credit(pkg, start, end) {
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+    const a = Math.max(start, windowStart);
+    const b = Math.min(end, windowEnd);
+    const dur = b - a;
+    if (dur > 0) usage.set(pkg, (usage.get(pkg) || 0) + dur);
+  }
+
   for (const l of lines) {
-    // Extract fields
     const timeMatch = l.match(/time="([^"]+)"/);
     const typeMatch = l.match(/type=([A-Z_]+)/);
     const pkgMatch = l.match(/package=([\w.]+)/);
@@ -80,39 +93,25 @@ function parseUsagestats(dump) {
     const type = typeMatch[1];
     const pkg = pkgMatch[1];
 
-    // --- CORE LOGIC ---
-
     if (type === "ACTIVITY_RESUMED") {
-      // Start tracking (overwrite if already active)
+      // If another resume fires without a pause, close the previous one at
+      // this time so we don't double-count or drop a session.
+      if (active.has(pkg)) credit(pkg, active.get(pkg), time);
       active.set(pkg, time);
     } else if (type === "ACTIVITY_PAUSED" || type === "ACTIVITY_STOPPED") {
       if (active.has(pkg)) {
-        const start = active.get(pkg);
-        const duration = time - start;
-
-        if (duration > 0) {
-          usage.set(pkg, (usage.get(pkg) || 0) + duration);
-        }
-
+        credit(pkg, active.get(pkg), time);
         active.delete(pkg);
       }
     }
-
-    // Ignore everything else:
-    // FOREGROUND_SERVICE, NOTIFICATION, USER_INTERACTION, etc.
   }
 
-  // --- HANDLE APPS STILL ACTIVE AT END ---
-  const endTime = getLastTimestamp(lines);
+  // Apps still "active" at end of log: close at min(now, windowEnd, lastLog).
+  const lastLog = getLastTimestamp(lines);
+  const now = Date.now();
+  const endTime = Math.min(now, windowEnd, Math.max(lastLog, now));
+  for (const [pkg, start] of active.entries()) credit(pkg, start, endTime);
 
-  for (const [pkg, start] of active.entries()) {
-    const duration = endTime - start;
-    if (duration > 0) {
-      usage.set(pkg, (usage.get(pkg) || 0) + duration);
-    }
-  }
-
-  // --- CONVERT TO MINUTES ---
   return [...usage.entries()]
     .map(([pkg, ms]) => ({
       package: pkg,
@@ -120,6 +119,13 @@ function parseUsagestats(dump) {
     }))
     .filter((x) => x.minutes > 0)
     .sort((a, b) => b.minutes - a.minutes);
+}
+
+// Start of today in local time, as a unix ms timestamp.
+function startOfTodayLocal() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
 }
 
 // Helper: get last timestamp in file
@@ -182,12 +188,16 @@ async function syncNow() {
       error: "adb dumpsys failed: " + (err.stderr || err.message),
     };
   }
-  const pkgs = parseUsagestats(dump);
+  // Clip to today's local window so events from yesterday evening don't
+  // leak into today's totals after midnight.
+  const todayStart = startOfTodayLocal();
+  const now = Date.now();
+  const pkgs = parseUsagestats(dump, todayStart, now);
   if (pkgs.length === 0)
     return {
       ok: false,
       error:
-        "No usage data parsed. On some devices you must grant PACKAGE_USAGE_STATS via `adb shell pm grant`.",
+        "No usage data for today yet. On some devices you must grant PACKAGE_USAGE_STATS via `adb shell pm grant`, or dumpsys hasn't rolled over since midnight.",
     };
 
   // Wipe today's mobile sessions and re-insert — we treat dumpsys as authoritative.
@@ -216,6 +226,7 @@ async function syncNow() {
     device: devs[0].serial,
     count: pkgs.length,
     total_minutes: pkgs.reduce((s, p) => s + p.minutes, 0),
+    window: { start: new Date(todayStart).toISOString(), end: new Date(now).toISOString() },
     top: pkgs
       .sort((a, b) => b.minutes - a.minutes)
       .slice(0, 10)

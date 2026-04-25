@@ -20,7 +20,7 @@ const RANGES = [
 ];
 const PAGE_SIZE = 10;
 
-export default function ActivityFeed({ onOpenPerson }) {
+export default function ActivityFeed({ onOpenPerson, onOpenRepo }) {
   const [days, setDays] = useState(30);
   const [tag, setTag] = useState("");
   const [personId, setPersonId] = useState("");
@@ -262,6 +262,7 @@ export default function ActivityFeed({ onOpenPerson }) {
               loading={loadingCommits.has(r.person_id)}
               onToggle={() => toggleExpand(r)}
               onOpenPerson={() => openPush(r)}
+              onOpenRepo={() => onOpenRepo?.(r)}
             />
           ))}
         </div>
@@ -284,11 +285,49 @@ export default function ActivityFeed({ onOpenPerson }) {
   );
 }
 
-function PushRow({ r, expanded, commits, loading, onToggle, onOpenPerson }) {
+function PushRow({
+  r,
+  expanded,
+  commits,
+  loading,
+  onToggle,
+  onOpenPerson,
+  onOpenRepo,
+}) {
   const when = r.pushed_at ? new Date(r.pushed_at) : null;
+  const repoUrl =
+    r?.url || (r?.full_name ? `https://github.com/${r.full_name}` : "#");
+
+  // Click anywhere on the head → open the in-app project overview
+  // (RepoDetailModal). The "↗" icon and the caret are the only controls
+  // that do something else.
+  const openOverview = (e) => {
+    if (e) {
+      const interactive = e.target?.closest?.(
+        ".push-gh-link, .push-caret, .push-person",
+      );
+      if (interactive) return;
+      e.preventDefault?.();
+    }
+    onOpenRepo?.();
+  };
+
   return (
     <div className={"push-card" + (expanded ? " expanded" : "")}>
-      <div className="push-head" onClick={onToggle} role="button">
+      <div
+        className="push-head"
+        onClick={openOverview}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openOverview();
+          }
+        }}
+        title={`Open ${r.full_name || "repo"} overview`}
+        style={{ cursor: "pointer" }}
+      >
         <div className="push-avatar">
           {r.avatar_url ? (
             <img src={r.avatar_url} alt="" />
@@ -300,17 +339,22 @@ function PushRow({ r, expanded, commits, loading, onToggle, onOpenPerson }) {
         </div>
         <div className="push-body">
           <div className="push-line">
-            <a
-              href={r.url}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                api.ext.open(r.url);
-              }}
-              className="push-repo"
-            >
-              {r.full_name}
-            </a>
+            <span className="push-repo">{r.full_name}</span>
+            {r.url && (
+              <a
+                href={repoUrl}
+                className="push-gh-link"
+                title="Open on GitHub"
+                aria-label={`Open ${r.full_name} on GitHub`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (repoUrl && repoUrl !== "#") api.ext.open(repoUrl);
+                }}
+              >
+                ↗
+              </a>
+            )}
             {r.language && <span className="pill gray">{r.language}</span>}
             {(r.topics || []).slice(0, 2).map((t) => (
               <span key={t} className="pill">
@@ -342,7 +386,27 @@ function PushRow({ r, expanded, commits, loading, onToggle, onOpenPerson }) {
             ))}
           </div>
         </div>
-        <div className={"push-caret" + (expanded ? " open" : "")}>▾</div>
+        <button
+          type="button"
+          className={"push-caret" + (expanded ? " open" : "")}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onToggle();
+          }}
+          title={expanded ? "Hide commits" : "Show commits"}
+          aria-label={expanded ? "Hide commits" : "Show commits"}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "inherit",
+            cursor: "pointer",
+            padding: "4px 8px",
+            font: "inherit",
+          }}
+        >
+          ▾
+        </button>
       </div>
 
       {expanded && (

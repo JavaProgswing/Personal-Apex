@@ -253,8 +253,12 @@ function selfCached() {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
-// Loop over people who have any CP handle. `onProgress` is optional and
-// called after every person completes. Errors don't stop the loop.
+// CP sites (LeetCode especially) rate-limit aggressively, so we cap at 2
+// concurrent workers and keep the 400ms per-call pacing.
+const CP_CONCURRENCY = 2;
+
+// Loop over people who have any CP handle using a small worker pool.
+// `onProgress` is optional and called after every person completes.
 async function fetchAllPeople(onProgress) {
   const people = db._db().prepare(
     `SELECT id, name FROM people WHERE
@@ -263,19 +267,38 @@ async function fetchAllPeople(onProgress) {
        OR codechef_username IS NOT NULL`
   ).all();
   const total = people.length;
-  let done = 0, ok = 0, err = 0;
-  for (const p of people) {
+  let cursor = 0, done = 0, ok = 0, err = 0;
+  const inFlight = new Set();
+
+  function emit(extra = {}) {
+    if (typeof onProgress !== 'function') return;
     try {
-      const r = await fetchAllForPerson(p.id);
-      if (r.ok) ok++; else err++;
-    } catch { err++; }
-    done++;
-    if (typeof onProgress === 'function') {
-      try { onProgress({ total, done, ok, err, current: p.name }); } catch {}
-    }
-    // gentle pacing — LeetCode is strict
-    await sleep(400);
+      onProgress({ total, done, ok, err, inFlight: [...inFlight], ...extra });
+    } catch {}
   }
+
+  async function worker() {
+    while (true) {
+      const idx = cursor++;
+      if (idx >= people.length) return;
+      const p = people[idx];
+      inFlight.add(p.name);
+      emit({ current: p.name });
+      try {
+        const r = await fetchAllForPerson(p.id);
+        if (r.ok) ok++; else err++;
+      } catch { err++; }
+      done++;
+      inFlight.delete(p.name);
+      emit();
+      // gentle pacing per worker — keeps total request rate at ~2.5/sec/worker
+      await sleep(400);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(CP_CONCURRENCY, total) }, () => worker())
+  );
   return { ok: true, total, done, okCount: ok, errCount: err };
 }
 

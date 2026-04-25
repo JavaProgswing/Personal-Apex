@@ -1448,6 +1448,26 @@ function latestBurnoutReport() {
   return row ? { ...row, payload: safeJson(row.payload, {}) } : null;
 }
 
+// Last N burnout reports newest-first. Each row exposes `risk_score` plucked
+// from the JSON payload so the UI can render a trend strip without parsing.
+function recentBurnoutReports(days = 7) {
+  const rows = db
+    .prepare(
+      `SELECT date, payload FROM burnout_reports
+       WHERE date >= date('now', ?)
+       ORDER BY date DESC`
+    )
+    .all(`-${Math.max(1, +days || 7)} days`);
+  return rows.map((r) => {
+    const p = safeJson(r.payload, {});
+    return {
+      date: r.date,
+      risk_score: typeof p.risk_score === "number" ? p.risk_score : null,
+      summary: p.summary || null,
+    };
+  });
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // helpers
 // ───────────────────────────────────────────────────────────────────────────
@@ -1524,6 +1544,7 @@ module.exports = {
   listActivityFeed,
   saveBurnoutReport,
   latestBurnoutReport,
+  recentBurnoutReports,
   getDayNote,
   upsertDayNote,
   listDayNoteDates,

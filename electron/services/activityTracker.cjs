@@ -82,24 +82,52 @@ function getForegroundWindow() {
 }
 
 // Category inference. Keep it conservative; the user can override via
-// Settings → Activity categories.
+// Settings → Activity categories. Browser windows are categorised by the
+// title (which includes the page title and host), so YouTube-in-Chrome
+// reliably ends up as "distraction" while GitHub-in-Chrome is "productive".
 function inferCategory(exe, title) {
   const lower = (exe + ' ' + (title || '')).toLowerCase();
   const cat = db.getSetting('activity.overrides.' + (exe || '').toLowerCase());
   if (cat) return cat;
   const rules = [
-    { cat: 'productive', re: /(code|idea64|webstorm|pycharm|clion|rider|goland|vim|emacs|cursor|sublime|neovim|atom)/ },
-    { cat: 'productive', re: /(terminal|wt|windowsterminal|powershell|cmd|bash|wsl|kitty|alacritty)/ },
-    { cat: 'productive', re: /(docs|sheets|slides|notion|obsidian|typora|word|excel|powerpoint)/ },
-    { cat: 'productive', re: /(leetcode|codeforces|codechef|hackerrank|atcoder)/ },
-    { cat: 'productive', re: /(github|gitlab|bitbucket)/ },
-    { cat: 'distraction', re: /(youtube|netflix|disney|hotstar|primevideo|twitch)/ },
-    { cat: 'distraction', re: /(instagram|facebook|twitter|reddit|tiktok|discord)/ },
-    { cat: 'distraction', re: /(whatsapp|telegram)/ },
-    { cat: 'leisure', re: /(spotify|apple music|vlc|musicbee)/ },
-    { cat: 'leisure', re: /(steam|epicgameslauncher|battle\.net|riot|league|valorant|dota|minecraft)/ },
+    // ── PRODUCTIVE ───────────────────────────────────────────────────
+    // IDEs / editors
+    { cat: 'productive', re: /(code|idea64|webstorm|pycharm|clion|rider|goland|datagrip|rubymine|phpstorm|appcode|androidstudio|xcode|vim|nvim|emacs|cursor|sublime|neovim|atom|fleet|zed)/ },
+    // Terminals
+    { cat: 'productive', re: /(terminal|wt|windowsterminal|powershell|pwsh|cmd|bash|zsh|wsl|kitty|alacritty|hyper|tabby|warp|iterm)/ },
+    // Office / docs / notes / writing
+    { cat: 'productive', re: /(docs\.|sheets\.|slides\.|notion|obsidian|logseq|typora|joplin|onenote|word|excel|powerpoint|keynote|numbers|pages|libreoffice|writer|calc|impress|overleaf)/ },
+    // CP & coding sites (page titles via browser)
+    { cat: 'productive', re: /(leetcode|codeforces|codechef|hackerrank|atcoder|kattis|topcoder)/ },
+    // Source control & code-hosting (page titles)
+    { cat: 'productive', re: /(github|gitlab|bitbucket|sourcegraph|stackoverflow|stack overflow)/ },
+    // Design / engineering
+    { cat: 'productive', re: /(figma|miro|excalidraw|whimsical|drawio|lucidchart)/ },
+    // Data & DB
+    { cat: 'productive', re: /(jupyter|colab|kaggle|tableau|powerbi|dbeaver|postgres|mysql workbench|mongodb compass|redis insight|tableplus)/ },
+    // Reading / docs / dev tools
+    { cat: 'productive', re: /(devdocs|mdn|read the docs|chatgpt|claude\.ai|gemini\.google|perplexity)/ },
+    // ── DISTRACTION ──────────────────────────────────────────────────
+    // Streaming
+    { cat: 'distraction', re: /(youtube|netflix|disney|hotstar|primevideo|twitch|crunchyroll|hulu|jiocinema)/ },
+    // Social
+    { cat: 'distraction', re: /(instagram|facebook|twitter|x\.com|reddit|tiktok|discord|snapchat|threads|pinterest|linkedin)/ },
+    // Messaging that tends to spiral
+    { cat: 'distraction', re: /(whatsapp|telegram|signal|messenger|slack|teams)/ },
+    // News / aggregator timesinks
+    { cat: 'distraction', re: /(hackernews|news\.ycombinator|9gag|imgur|tumblr|quora)/ },
+    // ── LEISURE ──────────────────────────────────────────────────────
+    // Music
+    { cat: 'leisure', re: /(spotify|apple music|tidal|deezer|youtubemusic|youtube music|vlc|musicbee|foobar|pandora|soundcloud)/ },
+    // Games / launchers
+    { cat: 'leisure', re: /(steam|epicgameslauncher|battle\.net|riot|league of legends|valorant|dota|minecraft|origin|gog galaxy|ubisoft|rockstar)/ },
+    // ── REST (explicit) ──────────────────────────────────────────────
+    { cat: 'rest', re: /(meditation|calm|headspace|breathe)/ },
   ];
   for (const r of rules) if (r.re.test(lower)) return r.cat;
+  // Bare browser without a recognisable host ⇒ "neutral" (could be
+  // anything from Wikipedia to a forum). The user can override per-app.
+  if (/(chrome|firefox|brave|edge|opera|vivaldi|arc|safari)/.test(lower)) return 'neutral';
   return 'neutral';
 }
 

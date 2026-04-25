@@ -97,9 +97,27 @@ const ANDROID_MAP = {
   "com.ninjakiwi.bloonstdbattles2": "Bloons TD Battles 2",
   "com.ninjakiwi.bloonstd6": "Bloons TD 6",
   "com.ninjakiwi.bloonstd5": "Bloons TD 5",
+  "com.supercell.brawlstars": "Brawl Stars",
   "com.supercell.clashofclans": "Clash of Clans",
   "com.supercell.clashroyale": "Clash Royale",
   "com.mojang.minecraftpe": "Minecraft",
+  // Launcher packages — every OEM ships a different one, all just "Launcher".
+  "com.miui.home": "Launcher",
+  "com.miui.personalassistant": "Launcher",
+  "com.mi.android.globallauncher": "Launcher",
+  "com.google.android.apps.nexuslauncher": "Launcher",
+  "com.sec.android.app.launcher": "Launcher",
+  "com.oneplus.launcher": "Launcher",
+  "com.oppo.launcher": "Launcher",
+  "com.android.launcher": "Launcher",
+  "com.android.launcher3": "Launcher",
+  "com.nothing.launcher": "Launcher",
+  "com.realme.launcher": "Launcher",
+  "com.huawei.android.launcher": "Launcher",
+  // System dialer variants
+  "com.samsung.android.dialer": "Phone",
+  "com.android.dialer": "Phone",
+  "com.xiaomi.mircs": "Messages",
   "com.roblox.client": "Roblox",
   "com.pubg.imobile": "BGMI",
   "com.tencent.ig": "PUBG Mobile",
@@ -209,8 +227,21 @@ const DISPLAY_MAP = {
   "clashroyale":      "Clash Royale",
   "pubgmobile":       "PUBG Mobile",
   "launcher":         "Launcher",
+  "nexuslauncher":    "Launcher",
+  "trebuchet":        "Launcher",
   "dialer":           "Phone",
+  "phone":            "Phone",
+  "contacts":         "Contacts",
   "systemui":         "System UI",
+  "files":            "Files",
+  "camera":           "Camera",
+  "gallery":          "Gallery",
+  "messaging":        "Messages",
+  "messages":         "Messages",
+  "clock":            "Clock",
+  "calculator":       "Calculator",
+  "settings":         "Settings",
+  "chrome":           "Chrome",
 };
 
 // Words that should render in a specific case even when we title-case.
@@ -352,10 +383,16 @@ export function prettyAppName(raw) {
   if (ANDROID_MAP[s]) return ANDROID_MAP[s];
   if (ANDROID_MAP[lowered]) return ANDROID_MAP[lowered];
 
+  // Bare-leaf display overrides (e.g. the tracker sometimes stores
+  // "Brawlstars" or "Bloonstdbattles2" without the full package id).
+  if (DISPLAY_MAP[lowered]) return DISPLAY_MAP[lowered];
+
   // Looks like a package id (com.foo.bar) → pick the leaf & split.
   const isPkg = /\./.test(s) && /^[a-zA-Z0-9._]+$/.test(s);
   if (isPkg) {
     const leaf = leafOf(s);
+    const leafLower = leaf.toLowerCase();
+    if (DISPLAY_MAP[leafLower]) return DISPLAY_MAP[leafLower];
     const words = splitLeaf(leaf);
     if (words.length) return words.join(" ");
   }
@@ -363,11 +400,18 @@ export function prettyAppName(raw) {
   // Desktop exe/path.
   if (/\.(exe|app|dmg)$/i.test(s)) {
     const base = s.replace(/\.[a-z]+$/i, "");
-    if (DESKTOP_MAP[base.toLowerCase()]) return DESKTOP_MAP[base.toLowerCase()];
+    const baseLower = base.toLowerCase();
+    if (DESKTOP_MAP[baseLower]) return DESKTOP_MAP[baseLower];
+    if (DISPLAY_MAP[baseLower]) return DISPLAY_MAP[baseLower];
     return splitLeaf(base).join(" ") || base;
   }
 
   // Otherwise: treat as a title and polish it lightly.
+  // Try DISPLAY_MAP once more after stripping non-alphanumerics (e.g. the
+  // tracker may pass "Brawl Stars" or "brawl_stars" as-is).
+  const compact = lowered.replace(/[^a-z0-9]/g, "");
+  if (DISPLAY_MAP[compact]) return DISPLAY_MAP[compact];
+
   const words = splitLeaf(s);
   if (words.length) return words.join(" ");
   return s;

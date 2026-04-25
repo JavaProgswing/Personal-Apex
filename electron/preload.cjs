@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld("apex", {
   },
   burnout: {
     latestReport: () => invoke("burnout:latestReport"),
+    recent: (days) => invoke("burnout:recent", days || 7),
   },
   github: {
     fetchUser: (u) => invoke("github:fetchUser", u),

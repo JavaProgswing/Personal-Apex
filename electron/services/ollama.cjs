@@ -439,24 +439,63 @@ Return JSON:
 // Takes the repo metadata + README + (optionally) a list of your OWN repo
 // names so it can suggest which of yours are similar.
 // ───────────────────────────────────────────────────────────────────────────
-async function summarizeRepo({ repo, readme, ownRepos = [], model }) {
+async function summarizeRepo({
+  repo,
+  readme,
+  ownRepos = [],
+  paths = [],
+  manifests = {},
+  treeTruncated = false,
+  model,
+}) {
   const system = buildSystem(`Terse, technical project-explainer. Output ONLY valid JSON.
-Style:
-- Each field under 2 sentences.
+You are summarising a repository the user is curious about. You will be
+given the README, the file tree, and the actual contents of any well-known
+manifest files (package.json, requirements.txt, Cargo.toml, Dockerfile, etc.).
+Use ALL of these to produce a consistent, grounded answer:
+- "tech_stack" must come from the manifests + file extensions, not just guesses.
+- If a Dockerfile or compose file is present, mention it in "architecture".
+- If multiple package.json files exist (monorepo), say so in "architecture".
 - "things_to_learn" = concrete topics/tools the user can go study if they want to build
   something like this (names of specific libraries, papers, or concepts — not vague words).
 - "similar_mine" cites the user's OWN repo names verbatim (from the provided list).
-- "starter_project" is ONE buildable mini-project (1–2 weekend scope) that moves toward this repo.`);
+- "starter_project" is ONE buildable mini-project (1–2 weekend scope) that moves toward this repo.
+- Each field under 2 sentences except the lists.`);
 
-  const readmeSlice = (readme || '').slice(0, 6000);
+  const readmeSlice = (readme || '').slice(0, 5000);
+
+  // Compact path summary — keep up to 80 lines so the model can see the
+  // shape of the project without blowing the context window.
+  const treeSlice = (paths || []).slice(0, 80);
+  const treeBlock = treeSlice.length
+    ? treeSlice.join('\n') + (treeTruncated ? '\n…(tree truncated by GitHub)' : '')
+    : '(no file tree available)';
+
+  // Truncate each manifest to ~1500 chars; cap to ~6 manifests.
+  const manifestEntries = Object.entries(manifests || {}).slice(0, 6);
+  const manifestBlock = manifestEntries.length
+    ? manifestEntries
+        .map(
+          ([p, content]) =>
+            `--- ${p} ---\n${(content || '').slice(0, 1500)}`,
+        )
+        .join('\n\n')
+    : '(no manifest files found)';
+
   const user = `Repo: ${repo?.full_name || repo?.name || 'unknown'}
 Description: ${repo?.description || '(none)'}
-Languages: ${Array.isArray(repo?.languages) ? repo.languages.join(', ') : (repo?.language || 'unknown')}
+Languages (by bytes): ${Array.isArray(repo?.languages) ? repo.languages.join(', ') : (repo?.language || 'unknown')}
 Topics: ${Array.isArray(repo?.topics) ? repo.topics.join(', ') : '(none)'}
 Stars: ${repo?.stargazers_count ?? repo?.stars ?? 0}
-Pushed: ${repo?.pushed_at || '(unknown)'}
+Last push: ${repo?.pushed_at || '(unknown)'}
 
 Yashasvi's own repos (for "similar_mine"): ${ownRepos.slice(0, 50).join(', ')}
+
+File tree (sample):
+${treeBlock}
+
+Manifest files (verbatim, truncated):
+${manifestBlock}
 
 README (truncated):
 ${readmeSlice || '(no README)'}
@@ -464,14 +503,14 @@ ${readmeSlice || '(no README)'}
 Return JSON:
 {
   "oneliner": "≤18 words: what this project is",
-  "architecture": "1-2 sentences on how it works at a high level",
-  "tech_stack": ["Language/Framework", "Key library"],
+  "architecture": "1-2 sentences on how it actually works (cite real files / frameworks you saw)",
+  "tech_stack": ["Language/Framework", "Key library", "Build tool", "Runtime / container if present"],
   "things_to_learn": ["specific topic 1", "specific topic 2", "specific topic 3"],
   "similar_mine": ["repo-name-1", "repo-name-2"],
   "starter_project": "one concrete mini-project Yashasvi could build to level up toward this"
 }`;
 
-  const resp = await chat({ model, system, user, json: true, temperature: 0.3 });
+  const resp = await chat({ model, system, user, json: true, temperature: 0.2 });
   if (!resp.ok) return resp;
   return safeParseJson(resp.content);
 }

@@ -59,6 +59,7 @@ export default function Dashboard({ go }) {
   const [checkinSaved, setCheckinSaved] = useState(false);
   const [burnoutLoading, setBurnoutLoading] = useState(false);
   const [burnoutReport, setBurnoutReport] = useState(null);
+  const [recentBurnout, setRecentBurnout] = useState([]);
 
   // CP moved to a modal; we only keep a boolean for "has any cached CP at all"
   // so the header chip can light up conditionally.
@@ -132,6 +133,8 @@ export default function Dashboard({ go }) {
   }, []);
 
   useEffect(() => {
+    // Tracker heartbeat — short poll so the "tracking" pill + current app
+    // stay in sync with whatever the foreground window actually is.
     pollRef.current = setInterval(() => {
       api.tracker
         .status()
@@ -142,12 +145,34 @@ export default function Dashboard({ go }) {
   }, []);
 
   // Whenever the user picks a different day in the trail, re-fetch top apps
-  // for that date.
+  // for that date. For *today* we additionally re-poll every 60s so the list
+  // updates as the tracker checkpoints the current session.
   useEffect(() => {
-    api.activity
-      .topApps(topAppsDate, 8)
-      .then(setTopApps)
-      .catch(() => setTopApps([]));
+    const today = new Date().toISOString().slice(0, 10);
+    const viewingToday = topAppsDate === today;
+
+    let cancelled = false;
+    const load = () => {
+      api.activity
+        .topApps(topAppsDate, 8)
+        .then((apps) => { if (!cancelled) setTopApps(apps); })
+        .catch(() => { if (!cancelled) setTopApps([]); });
+      if (viewingToday) {
+        api.activity.trend?.(7)
+          .then((tr) => { if (!cancelled) setTrend(tr); })
+          .catch(() => {});
+        api.activity.todayTotals?.()
+          .then((t) => { if (!cancelled) setTodayTotals(t); })
+          .catch(() => {});
+      }
+    };
+    load();
+    if (!viewingToday) return () => { cancelled = true; };
+    const id = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [topAppsDate]);
 
   async function refreshActivity() {
@@ -189,6 +214,10 @@ export default function Dashboard({ go }) {
       });
     if (latest?.payload) setBurnoutReport(latest.payload);
     if (cpCache) setSelfCp(cpCache);
+    // Lightweight: pull last 7 days of risk scores for the trend strip
+    if (api.burnout?.recent) {
+      api.burnout.recent(7).then((rows) => setRecentBurnout(rows || [])).catch(() => {});
+    }
     setTrackerStatus(ts);
     await refreshActivity();
 
@@ -594,33 +623,25 @@ export default function Dashboard({ go }) {
 
       {/* Top grid: Today's plan + Today's classes */}
       <div className="grid-2" style={{ marginTop: 14, marginBottom: 16 }}>
-        <div className="card">
-          <div className="row between">
-            <div className="card-title">Today's plan</div>
-            <div className="row" style={{ gap: 6 }}>
-              <span className={"pill " + (planCard.ollamaOk ? "teal" : "rose")}>
+        <div className="card plan-card">
+          <div className="row between" style={{ alignItems: "center" }}>
+            <div>
+              <div className="card-title" style={{ margin: 0 }}>Today's plan</div>
+              <small className="muted plan-sub">
                 {planCard.ollamaOk === null
-                  ? "…"
+                  ? "Checking Ollama…"
                   : planCard.ollamaOk
-                    ? "ollama"
-                    : "offline"}
-              </span>
-              <select
-                value={planCard.model}
-                onChange={(e) =>
-                  setPlanCard({ ...planCard, model: e.target.value })
-                }
-                style={{ maxWidth: 160 }}
+                    ? (planCard.model ? `via ${planCard.model}` : "Ollama ready")
+                    : "Ollama offline — start it from Settings"}
+              </small>
+            </div>
+            <div className="row plan-actions" style={{ gap: 6 }}>
+              <span
+                className={"pill " + (planCard.ollamaOk ? "teal" : "rose")}
+                title={planCard.ollamaOk ? "Ollama reachable" : "Ollama not reachable"}
               >
-                {planCard.models.length === 0 && (
-                  <option value="">(no models)</option>
-                )}
-                {planCard.models.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
+                {planCard.ollamaOk === null ? "…" : planCard.ollamaOk ? "ollama" : "offline"}
+              </span>
               <button
                 className="ghost xsmall"
                 title="Re-check Ollama"
@@ -647,6 +668,15 @@ export default function Dashboard({ go }) {
               {planCard.plan && (
                 <button
                   className="ghost xsmall"
+                  title="Copy plan as text"
+                  onClick={() => copyPlanToClipboard(planCard.plan, setToast)}
+                >
+                  ⧉
+                </button>
+              )}
+              {planCard.plan && (
+                <button
+                  className="ghost xsmall"
                   title="Clear today's plan"
                   onClick={clearPlan}
                 >
@@ -656,48 +686,72 @@ export default function Dashboard({ go }) {
             </div>
           </div>
           {planCard.error && (
-            <div className="error" style={{ marginTop: 8 }}>
+            <div className="error" style={{ marginTop: 10 }}>
               {planCard.error}
             </div>
           )}
           {!planCard.plan && !planCard.loading && (
-            <div className="muted" style={{ marginTop: 10 }}>
-              {tasks.length === 0
-                ? "Nothing queued — add tasks and hit Plan my day."
-                : "Press Plan my day. A local Ollama model turns your open tasks + check-in into a realistic schedule."}
+            <div className="plan-empty">
+              {tasks.length === 0 ? (
+                <>
+                  <div className="plan-empty-title">Nothing queued yet</div>
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    Add a few tasks then hit{" "}
+                    <strong>Plan my day</strong> — Apex turns them into a
+                    realistic schedule using your check-in + energy.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="plan-empty-title">
+                    {tasks.length} task{tasks.length === 1 ? "" : "s"} ready to plan
+                  </div>
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    Press <strong>Plan my day</strong> for a schedule, or work
+                    through them freestyle.
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          {planCard.loading && (
+            <div className="plan-empty" style={{ marginTop: 12 }}>
+              <div className="plan-empty-title">Drafting your day…</div>
+              <div className="muted" style={{ marginTop: 4 }}>
+                Local model is thinking — usually takes 5–20 seconds.
+              </div>
             </div>
           )}
           {planCard.plan && (
             <>
-              <p className="muted" style={{ margin: "8px 0 14px" }}>
-                {planCard.plan.summary}
-              </p>
-              {(planCard.plan.plan || []).map((p, i) => (
-                <div key={i} className="plan-block">
-                  <div className="row between">
-                    <div>
-                      <div className="when">
-                        {p.start} · {p.duration} min
-                      </div>
-                      <div style={{ fontWeight: 600, marginTop: 2 }}>
-                        {p.title}
-                      </div>
+              {planCard.plan.summary && (
+                <p className="plan-summary">{planCard.plan.summary}</p>
+              )}
+              <div className="plan-timeline">
+                {(planCard.plan.plan || []).map((p, i) => (
+                  <div key={i} className="plan-block">
+                    <div className="plan-time">
+                      <div className="plan-time-start">{p.start}</div>
+                      <div className="plan-time-dur">{p.duration} min</div>
                     </div>
-                    {p.taskId && <span className="pill">task #{p.taskId}</span>}
+                    <div className="plan-block-body">
+                      <div className="plan-block-title">{p.title}</div>
+                      {p.reason && <div className="plan-block-reason">{p.reason}</div>}
+                    </div>
                   </div>
-                  {p.reason && <div className="reason">{p.reason}</div>}
-                </div>
-              ))}
+                ))}
+              </div>
               {(planCard.plan.skip || []).length > 0 && (
-                <>
-                  <hr className="soft" />
-                  <div className="section-label">Skipped today</div>
+                <div className="plan-skip">
+                  <div className="section-label" style={{ marginBottom: 4 }}>
+                    Skipped today
+                  </div>
                   {planCard.plan.skip.map((s, i) => (
-                    <div key={i} className="muted" style={{ margin: "4px 0" }}>
-                      task #{s.taskId} — {s.reason}
+                    <div key={i} className="plan-skip-row">
+                      <span className="muted">—</span> {s.reason}
                     </div>
                   ))}
-                </>
+                </div>
               )}
             </>
           )}
@@ -784,6 +838,43 @@ export default function Dashboard({ go }) {
           </button>
         </div>
       </div>
+
+      {/* Today's read — surfaced near the top so the day's snapshot
+          (burnout band + check-in + suggestions) is the first thing you
+          see after plan/classes. */}
+      <BurnoutReadCard
+        report={burnoutReport}
+        recent={recentBurnout}
+        loading={burnoutLoading}
+        onRerun={runBurnoutCheck}
+        checkin={checkin}
+        setCheckin={setCheckin}
+        saveCheckin={saveCheckin}
+        checkinSaved={checkinSaved}
+        energyMsg={energyMsg}
+        onSuggestionToTask={async (s) => {
+          await api.tasks.create({
+            title: s.text || s.type || "burnout suggestion",
+            description: s.link ? "Link: " + s.link : "",
+            category:
+              s.type === "exercise"
+                ? "Health"
+                : s.type === "break"
+                  ? "Leisure"
+                  : "Personal",
+            priority: 3,
+            estimated_minutes: s.minutes || 15,
+            tags: ["burnout"],
+            links: s.link ? [s.link] : [],
+          });
+          setToast({
+            kind: "success",
+            title: "Added to tasks",
+            msg: s.text || s.type,
+          });
+          setTimeout(() => setToast(null), 3500);
+        }}
+      />
 
       {/* Second row: Tasks + Weekly goals */}
       <div className="grid-2" style={{ marginBottom: 16 }}>
@@ -942,40 +1033,8 @@ export default function Dashboard({ go }) {
         onOpenSettings={() => go("settings")}
       />
 
-      {/* Today's read (burnout + inline check-in) */}
-      <BurnoutReadCard
-        report={burnoutReport}
-        loading={burnoutLoading}
-        onRerun={runBurnoutCheck}
-        checkin={checkin}
-        setCheckin={setCheckin}
-        saveCheckin={saveCheckin}
-        checkinSaved={checkinSaved}
-        energyMsg={energyMsg}
-        onSuggestionToTask={async (s) => {
-          await api.tasks.create({
-            title: s.text || s.type || "burnout suggestion",
-            description: s.link ? "Link: " + s.link : "",
-            category:
-              s.type === "exercise"
-                ? "Health"
-                : s.type === "break"
-                  ? "Leisure"
-                  : "Personal",
-            priority: 3,
-            estimated_minutes: s.minutes || 15,
-            tags: ["burnout"],
-            links: s.link ? [s.link] : [],
-          });
-          setToast({
-            kind: "success",
-            title: "Added to tasks",
-            msg: s.text || s.type,
-          });
-          setTimeout(() => setToast(null), 3500);
-        }}
-      />
-
+      {/* Reflect — Pomodoro, mood trend, journal. Today's read is now
+          surfaced higher (right after plan + classes). */}
       <div className="grid-2" style={{ marginBottom: 16 }}>
         <Pomodoro tasks={tasks} onLogged={() => refreshActivity()} />
         <MoodTrend />
@@ -1090,6 +1149,33 @@ function ActivitySection({
   }, [topApps, source]);
 
   const appTotal = filteredApps.reduce((s, a) => s + (a.minutes || 0), 0);
+
+  // Category breakdown over the (filtered) top apps — used for the at-a-glance
+  // composition strip. Order matches CATEGORY_KEYS so colors stay consistent.
+  const catBreakdown = useMemo(() => {
+    const map = new Map();
+    for (const a of filteredApps) {
+      const k = a.category || "other";
+      map.set(k, (map.get(k) || 0) + (a.minutes || 0));
+    }
+    const total = appTotal || 1;
+    return [...map.entries()]
+      .map(([k, m]) => ({ cat: k, minutes: m, pct: Math.round((m / total) * 100) }))
+      .sort((a, b) => b.minutes - a.minutes);
+  }, [filteredApps, appTotal]);
+
+  // Yesterday's total for the same source filter — used to show a delta.
+  const yesterdayIso = useMemo(() => {
+    const d = new Date(topAppsDate + "T00:00:00");
+    if (Number.isNaN(+d)) return null;
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }, [topAppsDate]);
+  const ydayRow = (trend || []).find((d) => d.date === yesterdayIso);
+  const ydayTotal = ydayRow ? daySum(ydayRow) : null;
+  const dayDelta = (ydayTotal != null && appTotal != null)
+    ? appTotal - ydayTotal
+    : null;
 
   // Breakdown for the selected date: desktop vs mobile minutes (from topApps).
   // Desktop includes the battery-report fallback so the stat pill is accurate
@@ -1320,8 +1406,41 @@ function ActivitySection({
             <div className="section-label" style={{ marginTop: 0 }}>
               Top apps · {isToday ? "today" : topAppsDate}
             </div>
-            <small className="muted">{fmtMinutes(appTotal)}</small>
+            <small className="muted">
+              {fmtMinutes(appTotal)}
+              {dayDelta != null && Math.abs(dayDelta) >= 5 && (
+                <span
+                  style={{
+                    marginLeft: 6,
+                    color: dayDelta > 0 ? "var(--distraction, #E8806B)" : "var(--productive, #7FD99E)",
+                    fontWeight: 500,
+                  }}
+                  title={`Yesterday: ${fmtMinutes(ydayTotal)}`}
+                >
+                  {dayDelta > 0 ? "↑" : "↓"} {fmtMinutes(Math.abs(dayDelta))}
+                </span>
+              )}
+            </small>
           </div>
+
+          {/* Live "currently on" banner — visible only when viewing today and
+              the tracker is actively recording something. Updates roughly every
+              15s via the tracker heartbeat. */}
+          {isToday && trackerStatus?.running && trackerStatus.current?.app && (
+            <div
+              className={`live-now cat-${trackerStatus.current.category || "other"}`}
+              title="Desktop tracker is live"
+            >
+              <span className="pulse-dot" />
+              <span className="live-now-label">Now</span>
+              <strong className="live-now-app">
+                {prettyAppName(trackerStatus.current.app)}
+              </strong>
+              <span className="live-now-min">
+                {trackerStatus.current.minutes || 0}m
+              </span>
+            </div>
+          )}
 
           {/* Source toggle */}
           <div className="source-toggle chip-row" style={{ marginBottom: 8 }}>
@@ -1366,6 +1485,32 @@ function ActivitySection({
             )}
           </div>
 
+          {/* Category composition strip — productive / distraction / leisure /
+              other at a glance. Hidden when there's nothing to show. */}
+          {catBreakdown.length > 0 && appTotal > 0 && (
+            <>
+              <div className="cat-strip" title="App-time composition by category">
+                {catBreakdown.map((c) => (
+                  <div
+                    key={c.cat}
+                    className={`cat-strip-seg cat-${c.cat}`}
+                    style={{ width: c.pct + "%" }}
+                    title={`${c.cat} · ${fmtMinutes(c.minutes)} (${c.pct}%)`}
+                  />
+                ))}
+              </div>
+              <div className="cat-strip-legend">
+                {catBreakdown.slice(0, 4).map((c) => (
+                  <span key={c.cat} className="cat-strip-legend-item">
+                    <i className={`cat-dot cat-${c.cat}`} />
+                    <span className="muted">{c.cat}</span>
+                    <strong>{c.pct}%</strong>
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+
           {filteredApps.length === 0 ? (
             <div className="muted" style={{ padding: "10px 0" }}>
               {topApps.length === 0 ? (
@@ -1408,78 +1553,125 @@ function ActivitySection({
               )}
             </div>
           ) : (
-            filteredApps.map((a) => {
-              const pct = appTotal
-                ? Math.round((a.minutes / appTotal) * 100)
-                : 0;
-              const srcs = (a.sources || a.source || "").toString();
-              return (
-                <div key={a.app} className="app-row">
-                  <div className="row between">
-                    <div
-                      className="top-app-id"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        minWidth: 0,
-                        flex: 1,
-                      }}
-                    >
-                      <span
-                        className={`cat-dot cat-${a.category || "other"}`}
-                      />
-                      <strong
-                        className="top-app-name"
-                        title={a.app}
-                        style={{
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          minWidth: 0,
-                        }}
-                      >
-                        {prettyAppName(a.app)}
-                      </strong>
-                      <small className="muted top-app-cat">
-                        &nbsp;·&nbsp;{a.category || "—"}
-                      </small>
-                      {srcs && (
-                        <span
-                          className={
-                            "src-tag " +
-                            (srcs.includes("mobile") && srcs.includes("desktop")
-                              ? "both"
-                              : srcs.includes("mobile")
-                                ? "mobile"
-                                : "desktop")
-                          }
-                          style={{ marginLeft: 6 }}
-                          title={`source: ${srcs}`}
-                        >
-                          {srcs.includes("mobile") && srcs.includes("desktop")
-                            ? "both"
-                            : srcs.includes("mobile")
-                              ? "mobile"
-                              : "desktop"}
-                        </span>
-                      )}
-                    </div>
-                    <span className="pill">
-                      {fmtMinutes(a.minutes)} · {pct}%
-                    </span>
-                  </div>
-                  <div className="bar">
-                    <div
-                      className={`bar-fill cat-${a.category || "other"}`}
-                      style={{ width: pct + "%" }}
-                    />
-                  </div>
-                </div>
-              );
-            })
+            <div className="app-rows">
+              {filteredApps.map((a) => (
+                <AppRow
+                  key={a.app}
+                  app={a}
+                  appTotal={appTotal}
+                  source={source}
+                  isToday={isToday}
+                />
+              ))}
+            </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// One row in Top apps · today. Shows app name, minutes, percent bar, and
+// a category chip that doubles as a quick "re-categorise" control: click
+// the chip and a small popover lets you override the category for this
+// app. Override is persisted via api.tracker.categorize so future ticks
+// use the new label.
+function AppRow({ app: a, appTotal, source, isToday }) {
+  const [editing, setEditing] = useState(false);
+  const [override, setOverride] = useState(null);
+  const pct = appTotal ? Math.round((a.minutes / appTotal) * 100) : 0;
+  const srcs = (a.sources || a.source || "").toString();
+  const srcKind =
+    srcs.includes("mobile") && srcs.includes("desktop")
+      ? "both"
+      : srcs.includes("mobile")
+        ? "mobile"
+        : srcs.includes("desktop") || srcs.includes("battery")
+          ? "desktop"
+          : null;
+  const catLabel = override || a.category || "other";
+  const showSrc = source === "all" && !!srcKind;
+  const hideCat =
+    (catLabel === "mobile" && srcKind === "mobile") || catLabel === "other";
+
+  // Mobile data has no override path — categorize-via-tracker only applies
+  // to desktop-tracked exes. We still show the chip read-only.
+  const canEdit = srcKind !== "mobile" && api.tracker?.categorize;
+  const opts = ["productive", "neutral", "distraction", "leisure", "rest"];
+
+  async function save(cat) {
+    setEditing(false);
+    if (!canEdit) return;
+    setOverride(cat);
+    try {
+      await api.tracker.categorize(a.app, cat);
+    } catch {
+      /* swallow — UI optimistic */
+    }
+  }
+
+  return (
+    <div className={`app-row cat-${catLabel}`}>
+      <div className="app-row-main">
+        <span className={`cat-dot cat-${catLabel}`} title={catLabel} />
+        <strong className="top-app-name" title={a.app}>
+          {prettyAppName(a.app)}
+        </strong>
+        <div className="app-row-tags">
+          {!hideCat && (
+            <button
+              type="button"
+              className={`cat-tag cat-${catLabel}` + (canEdit ? " editable" : "")}
+              disabled={!canEdit}
+              onClick={() => canEdit && setEditing((e) => !e)}
+              title={canEdit ? "Click to recategorise" : catLabel}
+            >
+              {catLabel}
+            </button>
+          )}
+          {showSrc && (
+            <span
+              className={"src-tag " + srcKind}
+              title={`source: ${srcs}`}
+            >
+              {srcKind}
+            </span>
+          )}
+        </div>
+        <span className="app-row-time">
+          <strong>{fmtMinutes(a.minutes)}</strong>
+          <small className="muted">{pct}%</small>
+        </span>
+      </div>
+      {editing && (
+        <div className="cat-edit-row">
+          {opts.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={
+                "cat-tag cat-" + c + (c === catLabel ? " active" : "")
+              }
+              onClick={() => save(c)}
+            >
+              {c}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="cat-edit-cancel"
+            onClick={() => setEditing(false)}
+            title="Cancel"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      <div className="bar app-row-bar">
+        <div
+          className={`bar-fill cat-${catLabel}`}
+          style={{ width: Math.max(3, pct) + "%" }}
+        />
       </div>
     </div>
   );
@@ -1532,6 +1724,7 @@ function relativeAgo(isoOrDateStr) {
 // ─── Today's read card ────────────────────────────────────────────────────
 function BurnoutReadCard({
   report,
+  recent = [],
   loading,
   onRerun,
   onSuggestionToTask,
@@ -1570,6 +1763,41 @@ function BurnoutReadCard({
     ? report.suggestions
     : [];
   const generatedAt = report?.generated_at || report?.generatedAt || null;
+
+  // Recent risk history — newest first from server, render oldest → newest.
+  // Pad to 7 days so the bar chart always has the same width.
+  const trendBars = useMemo(() => {
+    const map = new Map((recent || []).map((r) => [r.date, r]));
+    const out = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const iso = d.toISOString().slice(0, 10);
+      const r = map.get(iso);
+      const score = r && typeof r.risk_score === "number" ? r.risk_score : null;
+      out.push({
+        date: iso,
+        score,
+        band: score == null ? "none"
+          : score >= 7 ? "high"
+          : score >= 4 ? "mid" : "low",
+        label: d.toLocaleDateString(undefined, { weekday: "narrow" }),
+      });
+    }
+    return out;
+  }, [recent]);
+
+  // Yesterday's score → delta marker on the score
+  const ydayScore = useMemo(() => {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    const iso = y.toISOString().slice(0, 10);
+    const r = (recent || []).find((x) => x.date === iso);
+    return r && typeof r.risk_score === "number" ? r.risk_score : null;
+  }, [recent]);
+  const riskDelta = (typeof risk === "number" && typeof ydayScore === "number")
+    ? risk - ydayScore
+    : null;
 
   // Derive a fallback "vibe" score so the meter isn't blank pre-check.
   const vibeAvg =
@@ -1614,37 +1842,85 @@ function BurnoutReadCard({
         </div>
       </div>
 
-      {/* Risk meter */}
-      <div className="risk-meter">
-        <div className="risk-meter-track">
-          <div
-            className={`risk-meter-fill band-${riskBand || "none"}`}
-            style={{ width: riskPct + "%" }}
-          />
-        </div>
-        <div className="risk-meter-labels">
-          <span className="muted">low</span>
-          <span className="muted">moderate</span>
-          <span className="muted">elevated</span>
-        </div>
-        <div className="risk-meter-readout">
+      {/* Risk hero — score on the left, summary on the right */}
+      <div className={`risk-hero band-${riskBand || "none"}`}>
+        <div className="risk-hero-score">
           {typeof risk === "number" ? (
             <>
-              <strong className={`risk-val band-${riskBand}`}>{risk}/10</strong>
-              <span className="muted"> · {riskLabel}</span>
+              <div className={`risk-big band-${riskBand}`}>
+                <span className="risk-big-num">{risk}</span>
+                <span className="risk-big-denom">/10</span>
+              </div>
+              <div className={`risk-band band-${riskBand}`}>{riskLabel}</div>
             </>
           ) : vibeAvg ? (
             <>
-              <strong>vibe {vibeAvg}/10</strong>
-              <span className="muted"> · run a check for burnout score</span>
+              <div className="risk-big band-none">
+                <span className="risk-big-num">{vibeAvg}</span>
+                <span className="risk-big-denom">/10</span>
+              </div>
+              <div className="risk-band band-none">vibe</div>
             </>
           ) : (
-            <span className="muted">no signal yet</span>
+            <>
+              <div className="risk-big band-none">
+                <span className="risk-big-num">—</span>
+              </div>
+              <div className="risk-band band-none">no signal</div>
+            </>
+          )}
+        </div>
+        <div className="risk-hero-body">
+          {report?.summary ? (
+            <p className="burnout-summary">{report.summary}</p>
+          ) : vibeAvg ? (
+            <p className="burnout-summary muted">
+              Run a check to turn this vibe into a burnout read.
+            </p>
+          ) : (
+            <p className="burnout-summary muted">
+              Log a quick vibe or run a check — Apex will read your activity
+              history and flag what's worth watching.
+            </p>
+          )}
+          <div className="risk-meter-track">
+            <div
+              className={`risk-meter-fill band-${riskBand || "none"}`}
+              style={{ width: riskPct + "%" }}
+            />
+          </div>
+          {riskDelta != null && Math.abs(riskDelta) >= 0.5 && (
+            <small className="muted" style={{ marginTop: 6, display: "block" }}>
+              {riskDelta > 0 ? "↑" : "↓"} {Math.abs(riskDelta).toFixed(1)} vs yesterday
+              ({ydayScore.toFixed?.(1) ?? ydayScore})
+            </small>
           )}
         </div>
       </div>
 
-      {report?.summary && <p className="burnout-summary">{report.summary}</p>}
+      {/* 7-day risk-score trend */}
+      {trendBars.some((b) => b.score != null) && (
+        <div style={{ marginTop: 12 }}>
+          <div className="section-label" style={{ marginTop: 0, marginBottom: 4 }}>
+            Last 7 days
+          </div>
+          <div className="risk-trend">
+            {trendBars.map((b) => (
+              <div
+                key={b.date}
+                className={`risk-trend-bar band-${b.band}`}
+                style={{ height: b.score == null ? 4 : Math.max(6, (b.score / 10) * 28) + "px" }}
+                title={b.score == null ? `${b.date}: no check` : `${b.date}: ${b.score}/10`}
+              />
+            ))}
+          </div>
+          <div className="risk-trend-axis">
+            {trendBars.map((b, i) => (
+              <span key={i}>{b.label}</span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Inline vibe logger */}
       {showVibe && checkin && setCheckin && (
@@ -2993,6 +3269,40 @@ function fmtMinutes(m) {
   const h = Math.floor(m / 60);
   const mn = m % 60;
   return h ? `${h}h ${mn}m` : `${mn}m`;
+}
+
+// Copy today's plan as plain-text so the user can paste it into notes /
+// chat / wherever. Falls back gracefully if the clipboard API is missing.
+function copyPlanToClipboard(plan, setToast) {
+  try {
+    const blocks = (plan?.plan || []).map(
+      (p) => `• ${p.start} · ${p.duration}m — ${p.title}${p.reason ? ` (${p.reason})` : ""}`,
+    );
+    const skip = (plan?.skip || []).map((s) => `  – skip: ${s.reason || "—"}`);
+    const lines = [];
+    if (plan?.summary) lines.push(plan.summary, "");
+    lines.push(...blocks);
+    if (skip.length) {
+      lines.push("", "Skipped:");
+      lines.push(...skip);
+    }
+    const text = lines.join("\n");
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    setToast?.({ kind: "success", title: "Plan copied", msg: "Paste it anywhere." });
+    setTimeout(() => setToast?.(null), 2500);
+  } catch {
+    setToast?.({ kind: "error", title: "Copy failed", msg: "Try again." });
+    setTimeout(() => setToast?.(null), 2500);
+  }
 }
 function fmtMinutesShort(m) {
   if (!m) return "0m";

@@ -45,6 +45,60 @@ export default function People() {
     return () => { off1?.(); off2?.(); };
   }, []);
 
+  // Auto-sync on mount if data is stale. We kick off GH and CP syncs in
+  // parallel; each one runs its own concurrent worker pool internally so
+  // people are processed simultaneously rather than one-by-one.
+  // "Stale" = last sync more than 6 hours ago (or never). Stored in
+  // localStorage so it survives navigation but resets on quit.
+  useEffect(() => {
+    const STALE_MS = 6 * 60 * 60 * 1000; // 6h
+    let cancelled = false;
+    (async () => {
+      const lastGh = +localStorage.getItem("apex.people.lastAutoGh") || 0;
+      const lastCp = +localStorage.getItem("apex.people.lastAutoCp") || 0;
+      const now = Date.now();
+      const tasks = [];
+      if (now - lastGh > STALE_MS) {
+        localStorage.setItem("apex.people.lastAutoGh", String(now));
+        tasks.push(
+          (async () => {
+            setGhSync({ active: true, total: 0, done: 0, current: null, rateLimited: false, resetAt: null });
+            try {
+              const res = await api.people.syncAll();
+              if (cancelled) return;
+              setGhSync((s) => ({ ...s, active: false }));
+              setStatus({ msg: `GitHub auto-sync: ${res.filter((r) => r.ok).length} / ${res.length} ok` });
+            } catch (e) {
+              if (!cancelled) setGhSync((s) => ({ ...s, active: false }));
+            }
+          })()
+        );
+      }
+      if (now - lastCp > STALE_MS) {
+        localStorage.setItem("apex.people.lastAutoCp", String(now));
+        tasks.push(
+          (async () => {
+            setCpSync({ active: true, total: 0, done: 0, ok: 0, err: 0, current: null });
+            try {
+              const res = await api.cp.fetchAll();
+              if (cancelled) return;
+              setCpSync((s) => ({ ...s, active: false }));
+              setStatus((cur) => cur ?? { msg: `CP auto-sync: ${res.okCount} / ${res.total} ok` });
+            } catch {
+              if (!cancelled) setCpSync((s) => ({ ...s, active: false }));
+            }
+          })()
+        );
+      }
+      if (tasks.length) {
+        await Promise.all(tasks);
+        if (!cancelled) reload();
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function reload() {
     // Server only knows about q/tag; source/only are client-side pills.
     setPeople(await api.people.list({ q: filter.q, tag: filter.tag }));
@@ -200,7 +254,34 @@ export default function People() {
       </div>
 
       {/* Recent activity feed */}
-      <ActivityFeed onOpenPerson={openPerson} />
+      <ActivityFeed
+        onOpenPerson={openPerson}
+        onOpenRepo={(r) =>
+          setOpenRepo({
+            repo: {
+              id: r.id,
+              name: r.name,
+              full_name: r.full_name,
+              description: r.description,
+              url: r.url,
+              language: r.language,
+              languages: r.languages,
+              topics: r.topics,
+              stars: r.stars,
+              forks: r.forks,
+              pushed_at: r.pushed_at,
+              person_id: r.person_id,
+            },
+            person: {
+              id: r.person_id,
+              name: r.person_name,
+              github_username: r.github_username,
+              avatar_url: r.avatar_url,
+              tags: r.person_tags,
+            },
+          })
+        }
+      />
 
       {/* Grouped grid */}
       {paged.map((g) => (
@@ -892,7 +973,12 @@ function RepoDetailModal({ repo, person, onClose }) {
         if (savedModel && (mResp?.models || []).includes(savedModel)) setModel(savedModel);
         else if (mResp?.models?.length) setModel(mResp.models[0]);
         // If we already have a cached summary, show it.
-        if (d?.summary) setAiSummary(d.summary);
+        // The IPC returns `{ ok, ...detail, cached, cachedModel }` where
+        // `cached` is the previously-saved Ollama JSON payload.
+        if (d?.cached) {
+          setAiSummary(d.cached);
+          if (d.cachedModel) setModel(d.cachedModel);
+        }
       } finally { setLoading(false); }
     })();
   }, [repo.id]);
@@ -982,42 +1068,62 @@ function RepoDetailModal({ repo, person, onClose }) {
               {aiLoading && <div className="muted">Thinking…</div>}
               {aiErr && <div className="error">{aiErr}</div>}
               {aiSummary && (
-                <>
-                  <div className="row between">
+                <div className="ai-summary">
+                  <div className="ai-summary-head">
                     <strong>Summary</strong>
-                    <button className="ghost small" onClick={runSummary} disabled={aiLoading || !ollamaOk}>↻ Re-summarize</button>
+                    <button
+                      className="ghost small"
+                      onClick={runSummary}
+                      disabled={aiLoading || !ollamaOk}
+                      title="Re-run Ollama summary"
+                    >
+                      ↻ Re-summarize
+                    </button>
                   </div>
-                  {aiSummary.summary && <p style={{ margin: "6px 0" }}>{aiSummary.summary}</p>}
-                  {Array.isArray(aiSummary.techStack) && aiSummary.techStack.length > 0 && (
-                    <div className="chip-row">
-                      {aiSummary.techStack.map((t, i) => <span key={i} className="chip">{t}</span>)}
+                  {/* Ollama returns: { oneliner, architecture, tech_stack[],
+                      things_to_learn[], similar_mine[], starter_project } */}
+                  {aiSummary.oneliner && (
+                    <p className="ai-summary-lead">{aiSummary.oneliner}</p>
+                  )}
+                  {aiSummary.architecture && (
+                    <div className="ai-summary-block">
+                      <div className="section-label">Architecture</div>
+                      <p className="ai-summary-text">{aiSummary.architecture}</p>
                     </div>
                   )}
-                  {Array.isArray(aiSummary.guidance) && aiSummary.guidance.length > 0 && (
-                    <>
-                      <div className="section-label" style={{ marginTop: 10 }}>How to explore it</div>
-                      <ul style={{ paddingLeft: 18, margin: "4px 0" }}>
-                        {aiSummary.guidance.map((g, i) => <li key={i}>{g}</li>)}
-                      </ul>
-                    </>
-                  )}
-                  {Array.isArray(aiSummary.learn) && aiSummary.learn.length > 0 && (
-                    <>
-                      <div className="section-label">Worth learning</div>
+                  {Array.isArray(aiSummary.tech_stack) && aiSummary.tech_stack.length > 0 && (
+                    <div className="ai-summary-block">
+                      <div className="section-label">Tech stack</div>
                       <div className="chip-row">
-                        {aiSummary.learn.map((l, i) => <span key={i} className="chip">{l}</span>)}
+                        {aiSummary.tech_stack.map((t, i) => (
+                          <span key={i} className="chip">{t}</span>
+                        ))}
                       </div>
-                    </>
+                    </div>
                   )}
-                  {Array.isArray(aiSummary.similarToYours) && aiSummary.similarToYours.length > 0 && (
-                    <>
-                      <div className="section-label">Similar to things you've built</div>
-                      <ul style={{ paddingLeft: 18, margin: "4px 0" }}>
-                        {aiSummary.similarToYours.map((s, i) => <li key={i}>{s}</li>)}
+                  {Array.isArray(aiSummary.things_to_learn) && aiSummary.things_to_learn.length > 0 && (
+                    <div className="ai-summary-block">
+                      <div className="section-label">Worth learning</div>
+                      <ul className="ai-summary-list">
+                        {aiSummary.things_to_learn.map((l, i) => <li key={i}>{l}</li>)}
                       </ul>
-                    </>
+                    </div>
                   )}
-                </>
+                  {Array.isArray(aiSummary.similar_mine) && aiSummary.similar_mine.length > 0 && (
+                    <div className="ai-summary-block">
+                      <div className="section-label">Similar to things you've built</div>
+                      <ul className="ai-summary-list">
+                        {aiSummary.similar_mine.map((s, i) => <li key={i}>{s}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {aiSummary.starter_project && (
+                    <div className="ai-summary-block">
+                      <div className="section-label">Starter project idea</div>
+                      <p className="ai-summary-text">{aiSummary.starter_project}</p>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 

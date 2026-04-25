@@ -116,9 +116,12 @@ app.whenReady().then(async () => {
   // run. Nothing to do here.
   createWindow();
 
-  // Auto-resume activity tracker if the user had it enabled.
+  // Auto-resume activity tracker. Default = on: if the setting has never been
+  // written, we still start it so "today's apps" isn't empty on first launch.
+  // Only explicit "0" (user turned it off) suppresses the auto-start.
   try {
-    if (db.getSetting("activity.tracking") === "1") {
+    const pref = db.getSetting("activity.tracking");
+    if (pref !== "0") {
       activityTracker.start((ch, p) => emit(ch, p));
     }
   } catch (e) { console.warn("[tracker] autostart skipped:", e.message); }
@@ -337,6 +340,7 @@ ipcMain.handle("ollama:best", async () => ({ model: await ollama.autoPickBest() 
 ipcMain.handle("ollama:start", () => ollama.ensureRunning({ timeoutMs: 15000 }));
 ipcMain.handle("ollama:ping", () => ollama.ping().then((ok) => ({ ok })));
 ipcMain.handle("burnout:latestReport", () => db.latestBurnoutReport());
+ipcMain.handle("burnout:recent", (_e, days) => db.recentBurnoutReports(days || 7));
 
 // --- github ---
 ipcMain.handle("github:fetchUser", (_e, username) =>
@@ -450,6 +454,9 @@ ipcMain.handle("repo:summarize", async (_e, { repoId, ownRepos, model }) => {
       repo: { ...detail.repo, languages: Object.keys(detail.languages || {}) },
       readme: detail.readme,
       ownRepos: ownRepos || [],
+      paths: detail.paths || [],
+      manifests: detail.manifests || {},
+      treeTruncated: !!detail.treeTruncated,
       model,
     });
     if (res.ok) db.saveRepoSummary(repoId, res, res.model || model || null);
