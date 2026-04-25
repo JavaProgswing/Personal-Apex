@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../../lib/api.js";
 import Pomodoro from "../Pomodoro.jsx";
-import MoodTrend from "../MoodTrend.jsx";
-import TimeLog from "../TimeLog.jsx";
 import { MarkdownBlock } from "../../lib/markdown.jsx";
 import { prettyAppName } from "../../lib/appName.js";
 
@@ -621,141 +619,21 @@ export default function Dashboard({ go }) {
         </div>
       )}
 
-      {/* Top grid: Today's plan + Today's classes */}
-      <div className="grid-2" style={{ marginTop: 14, marginBottom: 16 }}>
-        <div className="card plan-card">
-          <div className="row between" style={{ alignItems: "center" }}>
-            <div>
-              <div className="card-title" style={{ margin: 0 }}>Today's plan</div>
-              <small className="muted plan-sub">
-                {planCard.ollamaOk === null
-                  ? "Checking Ollama…"
-                  : planCard.ollamaOk
-                    ? (planCard.model ? `via ${planCard.model}` : "Ollama ready")
-                    : "Ollama offline — start it from Settings"}
-              </small>
-            </div>
-            <div className="row plan-actions" style={{ gap: 6 }}>
-              <span
-                className={"pill " + (planCard.ollamaOk ? "teal" : "rose")}
-                title={planCard.ollamaOk ? "Ollama reachable" : "Ollama not reachable"}
-              >
-                {planCard.ollamaOk === null ? "…" : planCard.ollamaOk ? "ollama" : "offline"}
-              </span>
-              <button
-                className="ghost xsmall"
-                title="Re-check Ollama"
-                onClick={refreshOllama}
-              >
-                ↻
-              </button>
-              <button
-                className="primary small"
-                disabled={
-                  !planCard.ollamaOk ||
-                  !planCard.model ||
-                  planCard.loading ||
-                  tasks.length === 0
-                }
-                onClick={runPlan}
-              >
-                {planCard.loading
-                  ? "Thinking…"
-                  : planCard.plan
-                    ? "Replan"
-                    : "Plan my day"}
-              </button>
-              {planCard.plan && (
-                <button
-                  className="ghost xsmall"
-                  title="Copy plan as text"
-                  onClick={() => copyPlanToClipboard(planCard.plan, setToast)}
-                >
-                  ⧉
-                </button>
-              )}
-              {planCard.plan && (
-                <button
-                  className="ghost xsmall"
-                  title="Clear today's plan"
-                  onClick={clearPlan}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          </div>
-          {planCard.error && (
-            <div className="error" style={{ marginTop: 10 }}>
-              {planCard.error}
-            </div>
-          )}
-          {!planCard.plan && !planCard.loading && (
-            <div className="plan-empty">
-              {tasks.length === 0 ? (
-                <>
-                  <div className="plan-empty-title">Nothing queued yet</div>
-                  <div className="muted" style={{ marginTop: 4 }}>
-                    Add a few tasks then hit{" "}
-                    <strong>Plan my day</strong> — Apex turns them into a
-                    realistic schedule using your check-in + energy.
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="plan-empty-title">
-                    {tasks.length} task{tasks.length === 1 ? "" : "s"} ready to plan
-                  </div>
-                  <div className="muted" style={{ marginTop: 4 }}>
-                    Press <strong>Plan my day</strong> for a schedule, or work
-                    through them freestyle.
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-          {planCard.loading && (
-            <div className="plan-empty" style={{ marginTop: 12 }}>
-              <div className="plan-empty-title">Drafting your day…</div>
-              <div className="muted" style={{ marginTop: 4 }}>
-                Local model is thinking — usually takes 5–20 seconds.
-              </div>
-            </div>
-          )}
-          {planCard.plan && (
-            <>
-              {planCard.plan.summary && (
-                <p className="plan-summary">{planCard.plan.summary}</p>
-              )}
-              <div className="plan-timeline">
-                {(planCard.plan.plan || []).map((p, i) => (
-                  <div key={i} className="plan-block">
-                    <div className="plan-time">
-                      <div className="plan-time-start">{p.start}</div>
-                      <div className="plan-time-dur">{p.duration} min</div>
-                    </div>
-                    <div className="plan-block-body">
-                      <div className="plan-block-title">{p.title}</div>
-                      {p.reason && <div className="plan-block-reason">{p.reason}</div>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {(planCard.plan.skip || []).length > 0 && (
-                <div className="plan-skip">
-                  <div className="section-label" style={{ marginBottom: 4 }}>
-                    Skipped today
-                  </div>
-                  {planCard.plan.skip.map((s, i) => (
-                    <div key={i} className="plan-skip-row">
-                      <span className="muted">—</span> {s.reason}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
+      {/* Top row: Today (Plan + Tasks tabs) | Today's classes | Weekly goals.
+          Plan and Tasks are merged into one card because they're answers to
+          the same question — what am I doing today? */}
+      <div className="grid-3 dashboard-top-row" style={{ marginTop: 14, marginBottom: 16 }}>
+        <TodayCard
+          tasks={tasks}
+          doneToday={doneToday}
+          planCard={planCard}
+          runPlan={runPlan}
+          clearPlan={clearPlan}
+          refreshOllama={refreshOllama}
+          toggleTask={toggleTask}
+          go={go}
+          setToast={setToast}
+        />
 
         <div className="card">
           <div className="row between">
@@ -837,109 +715,8 @@ export default function Dashboard({ go }) {
             Open Upcoming →
           </button>
         </div>
-      </div>
 
-      {/* Today's read — surfaced near the top so the day's snapshot
-          (burnout band + check-in + suggestions) is the first thing you
-          see after plan/classes. */}
-      <BurnoutReadCard
-        report={burnoutReport}
-        recent={recentBurnout}
-        loading={burnoutLoading}
-        onRerun={runBurnoutCheck}
-        checkin={checkin}
-        setCheckin={setCheckin}
-        saveCheckin={saveCheckin}
-        checkinSaved={checkinSaved}
-        energyMsg={energyMsg}
-        onSuggestionToTask={async (s) => {
-          await api.tasks.create({
-            title: s.text || s.type || "burnout suggestion",
-            description: s.link ? "Link: " + s.link : "",
-            category:
-              s.type === "exercise"
-                ? "Health"
-                : s.type === "break"
-                  ? "Leisure"
-                  : "Personal",
-            priority: 3,
-            estimated_minutes: s.minutes || 15,
-            tags: ["burnout"],
-            links: s.link ? [s.link] : [],
-          });
-          setToast({
-            kind: "success",
-            title: "Added to tasks",
-            msg: s.text || s.type,
-          });
-          setTimeout(() => setToast(null), 3500);
-        }}
-      />
-
-      {/* Second row: Tasks + Weekly goals */}
-      <div className="grid-2" style={{ marginBottom: 16 }}>
-        <div className="card">
-          <div className="row between">
-            <div className="card-title">Today's tasks</div>
-            <span className="pill">
-              {doneToday}/{tasks.length} done
-            </span>
-          </div>
-          {tasks.length === 0 && (
-            <div className="muted">Nothing queued. Add some in Tasks →</div>
-          )}
-          {tasks.slice(0, 7).map((t) => (
-            <div
-              key={t.id}
-              className={"todo-row" + (t.completed ? " done" : "")}
-            >
-              <input
-                type="checkbox"
-                checked={!!t.completed}
-                onChange={() => toggleTask(t.id)}
-              />
-              <div>
-                <div className="title">{t.title}</div>
-                <div className="sub">
-                  {t.kind === "habit" && <span className="pill">habit</span>}
-                  {t.course_code && (
-                    <span className="pill">{t.course_code}</span>
-                  )}
-                  {t.category && <span className="pill">{t.category}</span>}
-                  {t.deadline && (
-                    <> · due {new Date(t.deadline).toLocaleDateString()}</>
-                  )}
-                  {t.estimated_minutes && <> · ~{t.estimated_minutes} min</>}
-                </div>
-              </div>
-              <div className="right">
-                {t.priority <= 2 && (
-                  <span className="pill rose">P{t.priority}</span>
-                )}
-                {t.priority === 3 && <span className="pill amber">P3</span>}
-                {t.priority >= 4 && (
-                  <span className="pill gray">P{t.priority}</span>
-                )}
-              </div>
-            </div>
-          ))}
-          <hr className="soft" />
-          <div className="row">
-            <button onClick={() => go("tasks")} className="ghost">
-              Manage tasks →
-            </button>
-            <button
-              onClick={runPlan}
-              className="ghost"
-              disabled={
-                !planCard.ollamaOk || !planCard.model || planCard.loading
-              }
-            >
-              {planCard.plan ? "Replan" : "Plan my day"}
-            </button>
-          </div>
-        </div>
-
+        {/* Weekly goals — third column of the top row. */}
         <div className="card">
           <div className="row between">
             <div className="card-title">Weekly goals</div>
@@ -983,6 +760,12 @@ export default function Dashboard({ go }) {
             </small>
           </div>
         </div>
+      </div>
+
+      {/* Reflect row — focus timer + private journal. */}
+      <div className="grid-2" style={{ marginBottom: 16 }}>
+        <Pomodoro tasks={tasks} onLogged={() => refreshActivity()} />
+        <DayNoteCard model={planCard.model} ollamaOk={planCard.ollamaOk} />
       </div>
 
       {/* Unified Activity section — stats, trail, top apps, tracker controls */}
@@ -1032,17 +815,6 @@ export default function Dashboard({ go }) {
         }}
         onOpenSettings={() => go("settings")}
       />
-
-      {/* Reflect — Pomodoro, mood trend, journal. Today's read is now
-          surfaced higher (right after plan + classes). */}
-      <div className="grid-2" style={{ marginBottom: 16 }}>
-        <Pomodoro tasks={tasks} onLogged={() => refreshActivity()} />
-        <MoodTrend />
-      </div>
-
-      <DayNoteCard model={planCard.model} ollamaOk={planCard.ollamaOk} />
-
-      <TimeLog />
 
       {showAskApex && (
         <AskApexDrawer
@@ -1567,6 +1339,281 @@ function ActivitySection({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── TodayCard ───────────────────────────────────────────────────────────
+// Merges "Today's plan" and "Today's tasks" into one tabbed card. The Plan
+// tab is the AI schedule; the Tasks tab is the manual checklist of the
+// next ~7 open items. Both share state with the Dashboard's planCard so
+// running a plan from this card updates the same backing store.
+function TodayCard({
+  tasks,
+  doneToday,
+  planCard,
+  runPlan,
+  clearPlan,
+  refreshOllama,
+  toggleTask,
+  go,
+  setToast,
+}) {
+  const [tab, setTab] = useState("tasks");
+  const openTasks = (tasks || []).filter((t) => !t.completed);
+  const visible = tab === "tasks" ? (tasks || []).slice(0, 7) : null;
+
+  return (
+    <div className="card today-card">
+      <div className="row between today-head" style={{ alignItems: "center" }}>
+        <div>
+          <div className="card-title" style={{ margin: 0 }}>Today</div>
+          <small className="muted today-sub">
+            {doneToday}/{tasks.length} done
+            {planCard.plan && (
+              <>
+                {" · "}AI plan ready
+              </>
+            )}
+          </small>
+        </div>
+        <div className="today-tabs">
+          <button
+            type="button"
+            className={"today-tab" + (tab === "tasks" ? " active" : "")}
+            onClick={() => setTab("tasks")}
+          >
+            Tasks
+          </button>
+          <button
+            type="button"
+            className={"today-tab" + (tab === "plan" ? " active" : "")}
+            onClick={() => setTab("plan")}
+            title={planCard.ollamaOk ? "AI day plan" : "Ollama is offline"}
+          >
+            Plan {planCard.plan ? "✓" : ""}
+          </button>
+        </div>
+      </div>
+
+      {tab === "tasks" ? (
+        <>
+          {tasks.length === 0 ? (
+            <div className="muted today-empty">
+              Nothing queued — add some in <a href="#" onClick={(e) => { e.preventDefault(); go("tasks"); }}>Tasks →</a>
+            </div>
+          ) : (
+            <div className="today-task-list">
+              {visible.map((t) => (
+                <div
+                  key={t.id}
+                  className={"today-task" + (t.completed ? " done" : "")}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!t.completed}
+                    onChange={() => toggleTask(t.id)}
+                    aria-label={`Toggle ${t.title}`}
+                  />
+                  <div className="today-task-body">
+                    <div className="today-task-title">{t.title}</div>
+                    <div className="today-task-sub">
+                      {t.kind === "habit" && (
+                        <span className="pill">habit</span>
+                      )}
+                      {t.course_code && (
+                        <span className="pill gray">{t.course_code}</span>
+                      )}
+                      {t.category && (
+                        <span className="pill gray">{t.category}</span>
+                      )}
+                      {t.deadline && (
+                        <span className="today-task-meta">
+                          due {new Date(t.deadline).toLocaleDateString()}
+                        </span>
+                      )}
+                      {t.estimated_minutes && (
+                        <span className="today-task-meta">
+                          ~{t.estimated_minutes}m
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <span
+                    className={
+                      "pill " +
+                      (t.priority <= 2
+                        ? "rose"
+                        : t.priority === 3
+                          ? "amber"
+                          : "gray")
+                    }
+                    title={`Priority P${t.priority}`}
+                  >
+                    P{t.priority}
+                  </span>
+                </div>
+              ))}
+              {tasks.length > 7 && (
+                <div className="muted today-more">
+                  +{tasks.length - 7} more
+                </div>
+              )}
+            </div>
+          )}
+          <hr className="soft" />
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            <button onClick={() => go("tasks")} className="ghost small">
+              Manage tasks →
+            </button>
+            <button
+              onClick={() => {
+                setTab("plan");
+                if (!planCard.plan && planCard.ollamaOk && openTasks.length) runPlan();
+              }}
+              className="ghost small"
+              disabled={
+                !planCard.ollamaOk || !planCard.model || planCard.loading
+              }
+              title={planCard.ollamaOk ? "Generate an AI day plan" : "Ollama is offline"}
+            >
+              {planCard.plan ? "View plan" : "Plan my day"}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="row plan-actions" style={{ gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+            <small className="muted plan-sub" style={{ flex: 1 }}>
+              {planCard.ollamaOk === null
+                ? "Checking Ollama…"
+                : planCard.ollamaOk
+                  ? planCard.model
+                    ? `via ${planCard.model}`
+                    : "Ollama ready"
+                  : "Ollama offline — start it from Settings"}
+            </small>
+            <span
+              className={"pill " + (planCard.ollamaOk ? "teal" : "rose")}
+              title={planCard.ollamaOk ? "Ollama reachable" : "Ollama not reachable"}
+            >
+              {planCard.ollamaOk === null ? "…" : planCard.ollamaOk ? "ollama" : "offline"}
+            </span>
+            <button
+              className="ghost xsmall"
+              title="Re-check Ollama"
+              onClick={refreshOllama}
+            >
+              ↻
+            </button>
+            <button
+              className="primary small"
+              disabled={
+                !planCard.ollamaOk ||
+                !planCard.model ||
+                planCard.loading ||
+                tasks.length === 0
+              }
+              onClick={runPlan}
+            >
+              {planCard.loading
+                ? "Thinking…"
+                : planCard.plan
+                  ? "Replan"
+                  : "Plan my day"}
+            </button>
+            {planCard.plan && (
+              <button
+                className="ghost xsmall"
+                title="Copy plan as text"
+                onClick={() => copyPlanToClipboard(planCard.plan, setToast)}
+              >
+                ⧉
+              </button>
+            )}
+            {planCard.plan && (
+              <button
+                className="ghost xsmall"
+                title="Clear today's plan"
+                onClick={clearPlan}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {planCard.error && (
+            <div className="error" style={{ marginTop: 6 }}>
+              {planCard.error}
+            </div>
+          )}
+          {!planCard.plan && !planCard.loading && (
+            <div className="plan-empty">
+              {tasks.length === 0 ? (
+                <>
+                  <div className="plan-empty-title">Nothing queued yet</div>
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    Add a few tasks then hit <strong>Plan my day</strong> —
+                    Apex turns them into a realistic schedule.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="plan-empty-title">
+                    {tasks.length} task{tasks.length === 1 ? "" : "s"} ready
+                  </div>
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    Press <strong>Plan my day</strong> for a schedule, or
+                    work through them freestyle in the Tasks tab.
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          {planCard.loading && (
+            <div className="plan-empty" style={{ marginTop: 6 }}>
+              <div className="plan-empty-title">Drafting your day…</div>
+              <div className="muted" style={{ marginTop: 4 }}>
+                Local model is thinking — usually 5–20 seconds.
+              </div>
+            </div>
+          )}
+          {planCard.plan && (
+            <>
+              {planCard.plan.summary && (
+                <p className="plan-summary">{planCard.plan.summary}</p>
+              )}
+              <div className="plan-timeline">
+                {(planCard.plan.plan || []).map((p, i) => (
+                  <div key={i} className="plan-block">
+                    <div className="plan-time">
+                      <div className="plan-time-start">{p.start}</div>
+                      <div className="plan-time-dur">{p.duration} min</div>
+                    </div>
+                    <div className="plan-block-body">
+                      <div className="plan-block-title">{p.title}</div>
+                      {p.reason && (
+                        <div className="plan-block-reason">{p.reason}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {(planCard.plan.skip || []).length > 0 && (
+                <div className="plan-skip">
+                  <div className="section-label" style={{ marginBottom: 4 }}>
+                    Skipped today
+                  </div>
+                  {planCard.plan.skip.map((s, i) => (
+                    <div key={i} className="plan-skip-row">
+                      <span className="muted">—</span> {s.reason}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }
