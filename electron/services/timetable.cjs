@@ -116,14 +116,77 @@ function dayOrderFor(iso) {
   return ((anchorOrder - 1 + (weekdays - 1)) % 5) + 1;
 }
 
+// Apply per-date class_overrides on top of the timetable rows for ISO date.
+// status semantics:
+//   'cancelled' → row is dropped
+//   'moved' / 'replaced' → row's start/end/subject/room/etc. fields are
+//     replaced by override values when set (NULL means "keep original")
+//   'added'   → extra-only one-off class for the day (class_id is NULL)
+// All resulting rows expose `override_status` so the UI can badge them.
+function applyOverrides(isoDate, baseClasses) {
+  const overrides = db.listClassOverrides(isoDate) || [];
+  if (overrides.length === 0) return baseClasses;
+  const byClassId = new Map();
+  const extras = [];
+  for (const o of overrides) {
+    if (o.class_id) byClassId.set(o.class_id, o);
+    else extras.push(o);
+  }
+  const out = [];
+  for (const c of baseClasses) {
+    const o = byClassId.get(c.id);
+    if (!o) {
+      out.push({ ...c, override_status: null });
+      continue;
+    }
+    if (o.status === 'cancelled') continue;
+    out.push({
+      ...c,
+      subject: o.subject ?? c.subject,
+      code: o.code ?? c.code,
+      start_time: o.start_time ?? c.start_time,
+      end_time: o.end_time ?? c.end_time,
+      room: o.room ?? c.room,
+      faculty: o.faculty ?? c.faculty,
+      kind: o.kind ?? c.kind,
+      note: o.note ?? c.note,
+      override_status: o.status,
+      override_id: o.id,
+    });
+  }
+  // Append extras and re-sort by start_time so they slot in.
+  for (const e of extras) {
+    out.push({
+      id: `extra-${e.id}`,
+      class_id: null,
+      override_id: e.id,
+      override_status: 'added',
+      day_order: null,
+      subject: e.subject,
+      code: e.code,
+      start_time: e.start_time,
+      end_time: e.end_time,
+      room: e.room,
+      faculty: e.faculty,
+      kind: e.kind || 'lecture',
+      note: e.note,
+    });
+  }
+  out.sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''));
+  return out;
+}
+
 function today() {
   const dayOrder = computeTodayDayOrder();
-  const classes = dayOrder ? db.classesForDayOrder(dayOrder) : [];
+  const baseClasses = dayOrder ? db.classesForDayOrder(dayOrder) : [];
+  const isoToday = new Date().toISOString().slice(0, 10);
+  const classes = applyOverrides(isoToday, baseClasses);
   return { dayOrder, classes };
 }
 
 // 7-day lookahead used by the Upcoming page. Each entry is a day with its
-// day-order classes and any tasks due on that date.
+// day-order classes (with overrides applied for that date) and any tasks
+// due on that date.
 function upcoming(days = 7) {
   const out = [];
   const base = new Date();
@@ -132,7 +195,8 @@ function upcoming(days = 7) {
     d.setDate(base.getDate() + offset);
     const iso = d.toISOString().slice(0, 10);
     const dayOrder = dayOrderFor(iso);
-    const classes = dayOrder ? db.classesForDayOrder(dayOrder) : [];
+    const baseClasses = dayOrder ? db.classesForDayOrder(dayOrder) : [];
+    const classes = applyOverrides(iso, baseClasses);
     const deadlines = db._db()
       .prepare(
         `SELECT id, title, category, course_code, priority, deadline, kind

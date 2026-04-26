@@ -259,6 +259,52 @@ CREATE TABLE IF NOT EXISTS activity_feed (
 CREATE INDEX IF NOT EXISTS idx_feed_person ON activity_feed(person_id);
 CREATE INDEX IF NOT EXISTS idx_feed_at ON activity_feed(at);
 
+-- ────────────────────────────────────────────────────────────────────────────
+-- Live timer — singleton row that tracks "what am I doing right now" with a
+-- countdown the user can extend or stop early. When stopped or expired, an
+-- entry is written into activity_sessions (source='timer') so it shows up in
+-- the day's totals + Top apps strip.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS live_timer (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  kind TEXT,                              -- task | habit | leisure | rest | exercise | sleep | study | break | transit | distraction | other
+  category TEXT,                          -- maps to activity category: productive | distraction | leisure | rest | neutral
+  title TEXT NOT NULL,                    -- "what" (free text)
+  description TEXT,                       -- optional context
+  task_id INTEGER,                        -- optional FK to tasks(id) when started from a task
+  started_at TEXT NOT NULL,               -- ISO
+  planned_minutes INTEGER NOT NULL,
+  extended_minutes INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
+);
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- Per-date class overrides — cancel, move, replace, or add a class for a
+-- single ISO date without touching the underlying timetable. Read by
+-- schedule.today/forDayOrder when computing the effective schedule.
+-- A row with status='cancelled' hides the class for that date.
+-- A row with class_id NULL is an extra-only class for the date.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS class_overrides (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL,                     -- YYYY-MM-DD
+  class_id INTEGER,                       -- nullable: NULL = extra one-off class
+  status TEXT NOT NULL,                   -- cancelled | moved | replaced | added
+  subject TEXT,                           -- override / extra-class subject
+  code TEXT,
+  start_time TEXT,                        -- HH:MM
+  end_time TEXT,
+  room TEXT,
+  faculty TEXT,
+  kind TEXT,                              -- lecture | lab | tutorial
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_class_overrides_date ON class_overrides(date);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_class_overrides_date_class
+  ON class_overrides(date, class_id) WHERE class_id IS NOT NULL;
+
 -- Private per-day journal notes. `summary` is an optional AI-generated
 -- distillation the user has opted in to feed back as context for Ask Apex /
 -- burnout reports. `private` is a belt-and-braces flag — when true the row

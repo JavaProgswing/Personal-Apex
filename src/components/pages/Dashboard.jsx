@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../../lib/api.js";
-import Pomodoro from "../Pomodoro.jsx";
+import LiveTimer from "../LiveTimer.jsx";
 import { MarkdownBlock } from "../../lib/markdown.jsx";
 import { prettyAppName } from "../../lib/appName.js";
 
@@ -75,6 +75,10 @@ export default function Dashboard({ go }) {
 
   const [toast, setToast] = useState(null);
   const [showAskApex, setShowAskApex] = useState(false);
+  // Per-day class overrides — click a row to edit/cancel, or "+ Extra
+  // class" to add a one-off entry to today's schedule.
+  const [editingClass, setEditingClass] = useState(null);
+  const [addingExtra, setAddingExtra] = useState(false);
 
   // Ollama / plan card. Models + ollamaOk are probed once. The cached plan is
   // read on first mount only — subsequent refreshes keep whatever the user
@@ -524,10 +528,7 @@ export default function Dashboard({ go }) {
             {streak.streak}-day streak
           </p>
         </div>
-        <div
-          className="row"
-          style={{ gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}
-        >
+        <div className="dashboard-actions">
           {cpHasAny && (
             <button
               className="ghost small"
@@ -544,67 +545,52 @@ export default function Dashboard({ go }) {
           >
             Copy brief
           </button>
-          <button className="ghost small" onClick={() => setShowAskApex(true)}>
+          <button className="primary small" onClick={() => setShowAskApex(true)}>
             Ask Apex
           </button>
-          {typeof risk === "number" ? (
-            <div
-              className={`burnout-chip risk-${riskClass}`}
-              title={burnoutReport?.summary || "burnout read"}
-            >
-              <span className="dot" />
-              burnout {risk}/10
-              <button
-                className="ghost xsmall"
-                disabled={burnoutLoading}
-                onClick={runBurnoutCheck}
-              >
-                ↻
-              </button>
-            </div>
-          ) : (
-            <button
-              className="ghost small"
-              disabled={burnoutLoading}
-              onClick={runBurnoutCheck}
-            >
-              {burnoutLoading ? "Analysing…" : "Burnout check"}
-            </button>
-          )}
+          <BurnoutChip
+            risk={risk}
+            riskClass={riskClass}
+            report={burnoutReport}
+            loading={burnoutLoading}
+            onRerun={runBurnoutCheck}
+            onSuggestionToTask={async (s) => {
+              await api.tasks.create({
+                title: s.text || s.type || "burnout suggestion",
+                description: s.link ? "Link: " + s.link : "",
+                category:
+                  s.type === "exercise" ? "Health"
+                  : s.type === "break" ? "Leisure"
+                  : "Personal",
+                priority: 3,
+                estimated_minutes: s.minutes || 15,
+                tags: ["burnout"],
+                links: s.link ? [s.link] : [],
+              });
+              setToast({
+                kind: "success",
+                title: "Added to tasks",
+                msg: s.text || s.type,
+              });
+              setTimeout(() => setToast(null), 3000);
+            }}
+          />
         </div>
       </div>
 
-      {/* Now strip — currently foreground app */}
-      {trackerStatus?.running && trackerStatus?.current && (
-        <div className="now-strip">
-          <span className="pulse" />
-          <div style={{ flex: 1 }}>
-            <strong>{prettyAppName(trackerStatus.current.app)}</strong>
-            <small className="muted">
-              &nbsp;·&nbsp;{trackerStatus.current.category}&nbsp;·&nbsp;
-              {trackerStatus.current.minutes || 0} min
-            </small>
-          </div>
-          <small
-            className="muted"
-            style={{
-              maxWidth: "50%",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {trackerStatus.current.title?.slice(0, 80)}
-          </small>
-        </div>
-      )}
+      {/* Live timer — universal "what am I doing now" with countdown,
+          extend, and cancel/stop. Takes over the now-strip slot. The
+          desktop tracker still runs underneath (its current foreground
+          app shows up in Top apps), but the live timer is the explicit
+          time the user has agreed to spend on something. */}
+      <LiveTimer tasks={tasks} onChanged={() => refreshActivity()} />
       {trackerStatus && !trackerStatus.running && (
-        <div className="now-strip idle">
+        <div className="now-strip idle" style={{ marginTop: 8 }}>
           <span className="dot" />
           <div style={{ flex: 1 }}>
             <small className="muted">
-              Activity tracker is off — enable in Settings → Activity to see
-              what eats your hours.
+              Passive tracker is off — turn it on in Settings → Activity to
+              also auto-track foreground apps.
             </small>
           </div>
           <button
@@ -665,6 +651,7 @@ export default function Dashboard({ go }) {
                   const [xh, xm] = (x.end_time || "0:0").split(":").map(Number);
                   return (xh || 0) * 60 + (xm || 0) <= nowM;
                 });
+            const overrideStatus = c.override_status || null;
             return (
               <div
                 key={c.id}
@@ -672,19 +659,24 @@ export default function Dashboard({ go }) {
                   "class-row" +
                   (isCurrent ? " now" : "") +
                   (isPast ? " past" : "") +
-                  (isNext ? " next" : "")
+                  (isNext ? " next" : "") +
+                  (overrideStatus ? " overridden" : "")
                 }
+                onClick={() => setEditingClass(c)}
+                title="Click to edit / cancel for today"
                 style={{
                   display: "flex",
                   gap: 10,
                   margin: "8px 0",
                   alignItems: "center",
                   opacity: isPast ? 0.55 : 1,
-                  padding: isCurrent ? "6px 8px" : "0",
-                  borderRadius: isCurrent ? 8 : 0,
+                  padding: isCurrent ? "6px 8px" : "4px 6px",
+                  borderRadius: 8,
                   background: isCurrent
                     ? "color-mix(in srgb, var(--accent) 12%, transparent)"
                     : undefined,
+                  cursor: "pointer",
+                  transition: "background 120ms ease",
                 }}
               >
                 <span className="pill mono" style={{ minWidth: 92, textAlign: "center" }}>
@@ -699,6 +691,15 @@ export default function Dashboard({ go }) {
                     {isCurrent && <span className="pill teal">now</span>}
                     {isNext && <span className="pill amber">next</span>}
                     {isPast && <small className="muted">done</small>}
+                    {overrideStatus === "moved" && (
+                      <span className="pill amber" title="Moved for today">moved</span>
+                    )}
+                    {overrideStatus === "replaced" && (
+                      <span className="pill amber" title="Replaced for today">replaced</span>
+                    )}
+                    {overrideStatus === "added" && (
+                      <span className="pill teal" title="One-off extra class">extra</span>
+                    )}
                   </div>
                   <div className="sub muted">
                     {c.code ?? ""} {c.room ? `· ${c.room}` : ""}{" "}
@@ -707,13 +708,31 @@ export default function Dashboard({ go }) {
                 </div>
                 {c.kind === "lab" && <span className="pill rose">lab</span>}
                 {c.kind === "tutorial" && <span className="pill amber">tut</span>}
+                <button
+                  type="button"
+                  className="ghost xsmall class-row-edit"
+                  onClick={(e) => { e.stopPropagation(); setEditingClass(c); }}
+                  title="Edit / cancel for today"
+                  aria-label="Edit class"
+                >
+                  ✎
+                </button>
               </div>
             );
           })}
           <hr className="soft" />
-          <button className="ghost" onClick={() => go("upcoming")}>
-            Open Upcoming →
-          </button>
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            <button className="ghost" onClick={() => go("upcoming")}>
+              Open Upcoming →
+            </button>
+            <button
+              className="ghost small"
+              onClick={() => setAddingExtra(true)}
+              title="Add a one-off class for today"
+            >
+              + Extra class
+            </button>
+          </div>
         </div>
 
         {/* Weekly goals — third column of the top row. */}
@@ -726,47 +745,58 @@ export default function Dashboard({ go }) {
             </span>
           </div>
           {goals.length === 0 && (
-            <div className="muted">Set some in Settings → Goals.</div>
+            <div className="muted goal-empty">
+              No goals yet — set some in <a href="#" onClick={(e) => { e.preventDefault(); go("settings"); }}>Settings → Goals</a>.
+            </div>
           )}
-          {goals.map((g) => {
-            const pct = Math.min(
-              100,
-              Math.round(((g.progress ?? 0) / (g.target || 1)) * 100),
-            );
-            return (
-              <div key={g.id} className="goal-row" style={{ marginTop: 10 }}>
-                <div className="row between">
-                  <strong>{g.title}</strong>
-                  <small className="muted">
-                    {g.progress ?? 0} / {g.target}
-                  </small>
+          <div className="goal-list">
+            {goals.map((g) => {
+              const pct = Math.min(
+                100,
+                Math.round(((g.progress ?? 0) / (g.target || 1)) * 100),
+              );
+              const hit = (g.progress ?? 0) >= g.target;
+              return (
+                <div key={g.id} className={"goal-row" + (hit ? " hit" : "")}>
+                  <div className="goal-row-head">
+                    <strong className="goal-row-title">{g.title}</strong>
+                    <span className="goal-row-count">
+                      {g.progress ?? 0}<span className="muted">/{g.target}</span>
+                    </span>
+                  </div>
+                  <div className="goal-row-track">
+                    <div className="bar goal-bar">
+                      <div className="bar-fill" style={{ width: `${pct}%` }} />
+                    </div>
+                    <button
+                      className="ghost xsmall goal-bump"
+                      onClick={() => bumpGoal(g)}
+                      title="Mark one more"
+                      disabled={hit}
+                    >
+                      +1
+                    </button>
+                  </div>
                 </div>
-                <div className="bar">
-                  <div className="bar-fill" style={{ width: `${pct}%` }} />
-                </div>
-                <button className="ghost small" onClick={() => bumpGoal(g)}>
-                  +1
-                </button>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
           <hr className="soft" />
-          <div className="row">
-            <button className="ghost" onClick={() => go("settings")}>
+          <div className="row between" style={{ alignItems: "center" }}>
+            <button className="ghost small" onClick={() => go("settings")}>
               Edit goals
             </button>
-            <small className="hint">
-              {streak.weekDone} / 7 days active this week
+            <small className="muted">
+              {streak.weekDone} / 7 active days
             </small>
           </div>
         </div>
       </div>
 
-      {/* Reflect row — focus timer + private journal. */}
-      <div className="grid-2" style={{ marginBottom: 16 }}>
-        <Pomodoro tasks={tasks} onLogged={() => refreshActivity()} />
-        <DayNoteCard model={planCard.model} ollamaOk={planCard.ollamaOk} />
-      </div>
+      {/* Reflect row — private journal. The focus timer was retired in
+          favour of LiveTimer at the top, which subsumes its functionality
+          (task selection + auto-log + AI awareness). */}
+      <DayNoteCard model={planCard.model} ollamaOk={planCard.ollamaOk} />
 
       {/* Unified Activity section — stats, trail, top apps, tracker controls */}
       <ActivitySection
@@ -856,7 +886,281 @@ export default function Dashboard({ go }) {
           </button>
         </div>
       )}
+
+      {editingClass && (
+        <ClassEditModal
+          classRow={editingClass}
+          dateIso={new Date().toISOString().slice(0, 10)}
+          onClose={() => setEditingClass(null)}
+          onSaved={async () => {
+            setEditingClass(null);
+            await refresh();
+          }}
+        />
+      )}
+      {addingExtra && (
+        <ClassEditModal
+          classRow={null}
+          dateIso={new Date().toISOString().slice(0, 10)}
+          onClose={() => setAddingExtra(false)}
+          onSaved={async () => {
+            setAddingExtra(false);
+            await refresh();
+          }}
+        />
+      )}
     </>
+  );
+}
+
+// ─── ClassEditModal ──────────────────────────────────────────────────────
+// One-day-only edits to the timetable. Open from a class row to:
+//   • cancel the class (status='cancelled')
+//   • move it (different time)
+//   • replace it (different subject + time)
+//   • restore to default (clear override)
+// Or open in "add extra class" mode (no classRow passed) to insert a
+// one-off entry into today's schedule.
+function ClassEditModal({ classRow, dateIso, onClose, onSaved }) {
+  const isExtra = !classRow;
+  const isExistingExtra = classRow?.override_status === "added";
+  const [mode, setMode] = useState(
+    isExtra ? "add" : classRow.override_status || "edit",
+  );
+  const [form, setForm] = useState({
+    subject: classRow?.subject || "",
+    code: classRow?.code || "",
+    start_time: classRow?.start_time || "09:00",
+    end_time: classRow?.end_time || "10:00",
+    room: classRow?.room || "",
+    faculty: classRow?.faculty || "",
+    kind: classRow?.kind || "lecture",
+    note: classRow?.note || "",
+  });
+
+  async function save() {
+    if (isExtra) {
+      await api.schedule.addExtraClass(dateIso, form);
+      onSaved();
+      return;
+    }
+    if (mode === "cancelled") {
+      await api.schedule.setOverride(dateIso, classRow.id, {
+        status: "cancelled",
+      });
+      onSaved();
+      return;
+    }
+    // moved or replaced — push the patch through. We only send fields the
+    // user changed so blanks are interpreted as "keep original".
+    const patch = { status: mode === "replaced" ? "replaced" : "moved" };
+    if (form.subject && form.subject !== classRow.subject) patch.subject = form.subject;
+    if (form.code && form.code !== classRow.code) patch.code = form.code;
+    if (form.start_time && form.start_time !== classRow.start_time)
+      patch.start_time = form.start_time;
+    if (form.end_time && form.end_time !== classRow.end_time)
+      patch.end_time = form.end_time;
+    if (form.room && form.room !== classRow.room) patch.room = form.room;
+    if (form.faculty && form.faculty !== classRow.faculty) patch.faculty = form.faculty;
+    if (form.kind && form.kind !== classRow.kind) patch.kind = form.kind;
+    if (form.note && form.note !== classRow.note) patch.note = form.note;
+    await api.schedule.setOverride(dateIso, classRow.id, patch);
+    onSaved();
+  }
+
+  async function clearOverride() {
+    if (isExistingExtra && classRow?.override_id) {
+      await api.schedule.deleteOverrideById(classRow.override_id);
+    } else if (classRow?.id) {
+      await api.schedule.clearOverride(dateIso, classRow.id);
+    }
+    onSaved();
+  }
+
+  const title = isExtra
+    ? "Add a one-off class"
+    : `${classRow.subject} · just for today`;
+
+  return (
+    <div
+      className="modal-scrim"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="modal" style={{ maxWidth: 540 }}>
+        <div className="row between" style={{ alignItems: "center" }}>
+          <div>
+            <h3 style={{ margin: 0 }}>{title}</h3>
+            <small className="muted">
+              {isExtra
+                ? "This class will only show up on " + dateIso + "."
+                : "Changes apply only to " +
+                  dateIso +
+                  ". Default schedule isn't affected."}
+            </small>
+          </div>
+          <button className="ghost" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        {!isExtra && (
+          <div
+            className="row"
+            style={{ gap: 6, flexWrap: "wrap", marginTop: 12 }}
+          >
+            <button
+              type="button"
+              className={"chip" + (mode === "moved" ? " active" : "")}
+              onClick={() => setMode("moved")}
+            >
+              Move
+            </button>
+            <button
+              type="button"
+              className={"chip" + (mode === "replaced" ? " active" : "")}
+              onClick={() => setMode("replaced")}
+            >
+              Replace
+            </button>
+            <button
+              type="button"
+              className={"chip" + (mode === "cancelled" ? " active" : "")}
+              onClick={() => setMode("cancelled")}
+              style={{
+                borderColor: mode === "cancelled" ? "#ff8577" : undefined,
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {(isExtra || mode === "moved" || mode === "replaced") && (
+          <>
+            <div className="grid-2" style={{ marginTop: 10 }}>
+              <div className="form-row">
+                <label>Subject</label>
+                <input
+                  value={form.subject}
+                  onChange={(e) => setForm({ ...form, subject: e.target.value })}
+                  placeholder="e.g. PQT"
+                />
+              </div>
+              <div className="form-row">
+                <label>Course code</label>
+                <input
+                  value={form.code}
+                  onChange={(e) => setForm({ ...form, code: e.target.value })}
+                  placeholder="optional"
+                />
+              </div>
+            </div>
+            <div className="grid-2">
+              <div className="form-row">
+                <label>Start</label>
+                <input
+                  type="time"
+                  value={form.start_time}
+                  onChange={(e) =>
+                    setForm({ ...form, start_time: e.target.value })
+                  }
+                />
+              </div>
+              <div className="form-row">
+                <label>End</label>
+                <input
+                  type="time"
+                  value={form.end_time}
+                  onChange={(e) =>
+                    setForm({ ...form, end_time: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid-2">
+              <div className="form-row">
+                <label>Room</label>
+                <input
+                  value={form.room}
+                  onChange={(e) => setForm({ ...form, room: e.target.value })}
+                  placeholder="optional"
+                />
+              </div>
+              <div className="form-row">
+                <label>Kind</label>
+                <select
+                  value={form.kind}
+                  onChange={(e) => setForm({ ...form, kind: e.target.value })}
+                >
+                  <option value="lecture">lecture</option>
+                  <option value="lab">lab</option>
+                  <option value="tutorial">tutorial</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-row">
+              <label>Note</label>
+              <input
+                value={form.note}
+                onChange={(e) => setForm({ ...form, note: e.target.value })}
+                placeholder="e.g. moved from 2pm — heard from group chat"
+              />
+            </div>
+          </>
+        )}
+
+        {!isExtra && mode === "cancelled" && (
+          <div
+            className="muted"
+            style={{
+              marginTop: 12,
+              padding: 12,
+              border: "1px dashed var(--border)",
+              borderRadius: 8,
+            }}
+          >
+            Hide this class from today's schedule. The default timetable
+            isn't touched — clear the override to bring it back.
+          </div>
+        )}
+
+        <div
+          className="row"
+          style={{ marginTop: 16, justifyContent: "space-between", gap: 8 }}
+        >
+          <div>
+            {classRow?.override_status && (
+              <button
+                className="ghost"
+                onClick={clearOverride}
+                title="Clear today's override and use the default schedule"
+              >
+                Reset to default
+              </button>
+            )}
+          </div>
+          <div className="row" style={{ gap: 8 }}>
+            <button onClick={onClose}>Close</button>
+            <button
+              className="primary"
+              onClick={save}
+              disabled={
+                (isExtra && !form.subject.trim()) ||
+                (mode === "moved" &&
+                  form.start_time === classRow?.start_time &&
+                  form.end_time === classRow?.end_time)
+              }
+            >
+              {isExtra
+                ? "Add class"
+                : mode === "cancelled"
+                  ? "Cancel for today"
+                  : "Save for today"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1343,6 +1647,133 @@ function ActivitySection({
   );
 }
 
+// ─── BurnoutChip ─────────────────────────────────────────────────────────
+// Compact, useful burnout surface that lives in the header. When idle:
+// "Burnout check" CTA. When a report exists: a coloured chip with the
+// risk band; clicking it opens a popover with the AI summary, red flags,
+// and one-click "Add suggestion to tasks".
+function BurnoutChip({
+  risk,
+  riskClass,
+  report,
+  loading,
+  onRerun,
+  onSuggestionToTask,
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  if (typeof risk !== "number") {
+    return (
+      <button
+        className="ghost small"
+        disabled={loading}
+        onClick={onRerun}
+        title="Run a quick burnout read on the day"
+      >
+        {loading ? "Analysing…" : "Burnout check"}
+      </button>
+    );
+  }
+
+  const summary = report?.summary || null;
+  const flags = Array.isArray(report?.redFlags) ? report.redFlags : [];
+  const suggestions = Array.isArray(report?.suggestions)
+    ? report.suggestions
+    : [];
+
+  return (
+    <div className="burnout-chip-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className={`burnout-chip risk-${riskClass} clickable` + (open ? " open" : "")}
+        onClick={() => setOpen((v) => !v)}
+        title={summary || "Open burnout details"}
+      >
+        <span className="dot" />
+        <span className="burnout-chip-label">burnout {risk}/10</span>
+        <span className="burnout-chip-caret">▾</span>
+      </button>
+      {open && (
+        <div className="burnout-popover">
+          <div className="burnout-popover-head">
+            <div>
+              <strong>Burnout read · {risk}/10</strong>
+              {report?.generated_at && (
+                <small className="muted" style={{ marginLeft: 8 }}>
+                  {new Date(report.generated_at).toLocaleString()}
+                </small>
+              )}
+            </div>
+            <div className="row" style={{ gap: 6 }}>
+              <button
+                className="ghost xsmall"
+                disabled={loading}
+                onClick={(e) => { e.stopPropagation(); onRerun(); }}
+                title="Re-run burnout check"
+              >
+                ↻
+              </button>
+              <button
+                className="ghost xsmall"
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          {summary && <p className="burnout-popover-summary">{summary}</p>}
+          {flags.length > 0 && (
+            <div className="burnout-popover-block">
+              <div className="section-label">Red flags</div>
+              <ul className="burnout-popover-list">
+                {flags.slice(0, 4).map((f, i) => (
+                  <li key={i}>{typeof f === "string" ? f : f.text || JSON.stringify(f)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {suggestions.length > 0 && (
+            <div className="burnout-popover-block">
+              <div className="section-label">Try this</div>
+              <ul className="burnout-popover-list suggestions">
+                {suggestions.slice(0, 4).map((s, i) => (
+                  <li key={i} className="suggestion-line">
+                    <span>{s.text || s.type || ""}</span>
+                    <button
+                      className="ghost xsmall"
+                      onClick={() => onSuggestionToTask?.(s)}
+                      title="Add as a task"
+                    >
+                      + Task
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {!summary && flags.length === 0 && suggestions.length === 0 && (
+            <div className="muted" style={{ marginTop: 8 }}>
+              Re-run the check to refresh insights.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── TodayCard ───────────────────────────────────────────────────────────
 // Merges "Today's plan" and "Today's tasks" into one tabbed card. The Plan
 // tab is the AI schedule; the Tasks tab is the manual checklist of the
@@ -1439,6 +1870,25 @@ function TodayCard({
                       )}
                     </div>
                   </div>
+                  {!t.completed && (
+                    <button
+                      type="button"
+                      className="today-task-start"
+                      title="Start a timer for this task"
+                      onClick={async () => {
+                        await api.timer.start({
+                          kind: t.kind === "habit" ? "habit" : "task",
+                          category: "productive",
+                          title: t.title,
+                          description: t.description || null,
+                          task_id: t.id,
+                          planned_minutes: t.estimated_minutes || 25,
+                        });
+                      }}
+                    >
+                      ▶
+                    </button>
+                  )}
                   <span
                     className={
                       "pill " +

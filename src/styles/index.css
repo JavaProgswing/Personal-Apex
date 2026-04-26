@@ -1258,11 +1258,31 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   font-size: 14px;
 }
+/* Repo name — a button so the click target is unambiguous and doesn't
+   depend on event bubbling. Styled to look like an inline link. */
 .push-repo {
-  color: var(--text); font-weight: 600; text-decoration: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
   border-bottom: 1px dotted var(--border);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
 }
-.push-repo:hover { border-bottom-color: var(--accent); color: var(--accent); }
+.push-repo:hover {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+.push-repo:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 .push-stars {
   margin-left: auto; color: var(--text-faint); font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -2272,6 +2292,501 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   v0.8 — Push card expand panel (live commits + AI summary)
+   ═══════════════════════════════════════════════════════════════════════ */
+.push-expanded-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.push-expanded-actions .ghost.small {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.push-expanded-actions .ghost.small:not(:disabled):hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.push-themes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 4px;
+}
+.push-themes .pill {
+  font-size: 10px;
+  padding: 1px 7px;
+  background: rgba(124,124,255,0.10);
+  color: #c7d2fe;
+  border-color: transparent;
+}
+.push-summary {
+  margin: 4px 0 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg-elev);
+}
+.push-summary p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.push-summary small { display: block; margin-top: 6px; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   v0.8 — Dashboard header actions + burnout popover
+   ═══════════════════════════════════════════════════════════════════════ */
+.dashboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  max-width: 70%;
+}
+.dashboard-actions .ghost.small,
+.dashboard-actions .primary.small {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+/* Burnout chip — now an interactive button that opens a popover. */
+.burnout-chip-wrap {
+  position: relative;
+}
+.burnout-chip.clickable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.burnout-chip.clickable:hover { border-color: #3a3a45; }
+.burnout-chip.clickable.open { background: var(--bg-elev-2); border-color: var(--accent); }
+.burnout-chip.clickable .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.burnout-chip.risk-low .dot    { background: #5fe0d3; }
+.burnout-chip.risk-mid .dot    { background: #ffbd78; }
+.burnout-chip.risk-high .dot   { background: #ff8577; }
+.burnout-chip.clickable .burnout-chip-caret {
+  font-size: 9px;
+  opacity: 0.7;
+  transition: transform 180ms ease;
+}
+.burnout-chip.clickable.open .burnout-chip-caret { transform: rotate(180deg); }
+
+.burnout-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 360px;
+  max-width: 92vw;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: var(--shadow-md);
+  z-index: 50;
+  animation: burnout-pop-in 160ms ease-out;
+}
+@keyframes burnout-pop-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.burnout-popover-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.burnout-popover-head strong { font-size: 13px; }
+.burnout-popover-summary {
+  margin: 10px 0 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.burnout-popover-block { margin-top: 12px; }
+.burnout-popover-block .section-label {
+  margin: 0 0 6px 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+}
+.burnout-popover-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+.burnout-popover-list.suggestions { padding-left: 0; list-style: none; }
+.burnout-popover-list .suggestion-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.burnout-popover-list .suggestion-line .ghost.xsmall {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.burnout-popover-list .suggestion-line .ghost.xsmall:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   v0.8 — Weekly goals card breathing room
+   ═══════════════════════════════════════════════════════════════════════ */
+.goal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.goal-empty {
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--bg-elev);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.goal-row {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--bg-elev);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.goal-row:hover { border-color: #3a3a45; }
+.goal-row.hit {
+  border-color: rgba(78,205,196,0.45);
+  background: linear-gradient(135deg, rgba(78,205,196,0.06), transparent 60%), var(--bg-elev);
+}
+.goal-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.goal-row-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.goal-row.hit .goal-row-title { color: #5fe0d3; }
+.goal-row-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.goal-row-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.goal-bar {
+  flex: 1;
+  height: 6px;
+}
+.goal-bar .bar-fill {
+  background: var(--grad-accent);
+}
+.goal-row.hit .goal-bar .bar-fill {
+  background: linear-gradient(90deg, #4ecdc4, #5fe0d3);
+}
+.goal-bump {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.goal-bump:not(:disabled):hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.goal-bump:disabled { opacity: 0.35; cursor: default; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   v0.7 — Class row edit-for-today affordance
+   ═══════════════════════════════════════════════════════════════════════ */
+.class-row {
+  position: relative;
+}
+.class-row:hover { background: var(--bg-elev-2); }
+.class-row .class-row-edit {
+  opacity: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: opacity 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.class-row:hover .class-row-edit { opacity: 1; }
+.class-row .class-row-edit:hover {
+  color: var(--accent);
+  border-color: var(--border);
+}
+.class-row.overridden { border-left: 3px solid rgba(255,166,87,0.55); padding-left: 6px !important; }
+.class-row.overridden.now,
+.class-row.overridden:has(.pill.teal) { border-left-color: rgba(94,234,212,0.55); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   v0.7 — LiveTimer (universal "what am I doing now" timer)
+   ═══════════════════════════════════════════════════════════════════════ */
+.live-timer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+  transition: border-color 180ms ease, background 180ms ease;
+}
+.live-timer.idle {
+  justify-content: space-between;
+}
+.live-timer-idle-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.live-timer-idle-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Category tinting — soft left-edge band + matching ring colour. */
+.live-timer.running.cat-productive  { border-color: rgba(78,205,196,0.45); }
+.live-timer.running.cat-distraction { border-color: rgba(239,107,90,0.45); }
+.live-timer.running.cat-leisure     { border-color: rgba(255,166,87,0.45); }
+.live-timer.running.cat-rest        { border-color: rgba(94,234,212,0.45); }
+.live-timer.running.cat-neutral     { border-color: rgba(139,152,165,0.40); }
+
+.live-timer.running::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+}
+.live-timer.running.cat-productive::before  { background: linear-gradient(180deg, #4ecdc4, #5fe0d3); }
+.live-timer.running.cat-distraction::before { background: linear-gradient(180deg, #ef6b5a, #ff8577); }
+.live-timer.running.cat-leisure::before     { background: linear-gradient(180deg, #ffa657, #ffbd78); }
+.live-timer.running.cat-rest::before        { background: linear-gradient(180deg, #5eead4, #6feedb); }
+.live-timer.running.cat-neutral::before     { background: linear-gradient(180deg, #8b98a5, #a1adb9); }
+
+.live-timer.low { animation: timer-pulse 1.8s ease-in-out infinite; }
+.live-timer.over { border-color: rgba(255,133,119,0.7) !important; }
+
+@keyframes timer-pulse {
+  0%, 100% { box-shadow: var(--shadow-sm); }
+  50% { box-shadow: 0 0 0 3px rgba(255,166,87,0.20), var(--shadow-md); }
+}
+
+.live-timer-ring { flex-shrink: 0; }
+.live-timer-ring .ring-track {
+  fill: none;
+  stroke: var(--bg-elev-2);
+  stroke-width: 5;
+}
+.live-timer-ring .ring-progress {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  transition: stroke-dasharray 600ms ease;
+}
+.live-timer-ring.cat-productive .ring-progress  { stroke: #5fe0d3; }
+.live-timer-ring.cat-distraction .ring-progress { stroke: #ff8577; }
+.live-timer-ring.cat-leisure .ring-progress     { stroke: #ffbd78; }
+.live-timer-ring.cat-rest .ring-progress        { stroke: #6feedb; }
+.live-timer-ring.cat-neutral .ring-progress     { stroke: #a1adb9; }
+
+.live-timer-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.live-timer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.live-timer-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.live-timer-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.live-timer-meta {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Category-coloured kind pill in the live-timer head. */
+.pill.cat-productive-pill  { background: rgba(78,205,196,0.14);  color: #79e2da; border-color: transparent; }
+.pill.cat-distraction-pill { background: rgba(239,107,90,0.16);  color: #ff8e82; border-color: transparent; }
+.pill.cat-leisure-pill     { background: rgba(255,166,87,0.16);  color: #ffc087; border-color: transparent; }
+.pill.cat-rest-pill        { background: rgba(94,234,212,0.16);  color: #6feedb; border-color: transparent; }
+.pill.cat-neutral-pill     { background: rgba(139,152,165,0.16); color: #b0bcc8; border-color: transparent; }
+
+.live-timer-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.live-timer-time {
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+  line-height: 1;
+  color: var(--text);
+}
+.live-timer-time.low  { color: #ffbd78; }
+.live-timer-time.over { color: #ff8577; }
+.live-timer-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.live-timer-actions .ghost.xsmall {
+  padding: 3px 8px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.live-timer-actions .ghost.xsmall:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.live-timer-actions .primary.small {
+  padding: 4px 10px;
+  font-size: 12px;
+  height: 26px;
+}
+
+/* Start-timer modal — kind picker grid + duration chips. */
+.kind-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px;
+  margin-top: 4px;
+}
+.kind-btn {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 8px 6px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 120ms ease;
+}
+.kind-btn:hover {
+  color: var(--text);
+  border-color: #3a3a45;
+}
+.kind-btn.active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--bg-elev-2);
+}
+.kind-btn.cat-productive.active  { border-color: #5fe0d3; box-shadow: inset 0 0 0 1px rgba(95,224,211,0.4); }
+.kind-btn.cat-distraction.active { border-color: #ff8577; box-shadow: inset 0 0 0 1px rgba(255,133,119,0.4); }
+.kind-btn.cat-leisure.active     { border-color: #ffbd78; box-shadow: inset 0 0 0 1px rgba(255,189,120,0.4); }
+.kind-btn.cat-rest.active        { border-color: #6feedb; box-shadow: inset 0 0 0 1px rgba(111,238,219,0.4); }
+.kind-btn.cat-neutral.active     { border-color: #a1adb9; box-shadow: inset 0 0 0 1px rgba(161,173,185,0.4); }
+
+@media (max-width: 720px) {
+  .live-timer { flex-wrap: wrap; }
+  .live-timer-clock { width: 100%; align-items: stretch; }
+  .live-timer-actions { justify-content: flex-start; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    v0.6 — Dashboard refactor (TodayCard tabs, top-row 3-col)
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -2338,11 +2853,31 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
 }
 .today-task {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 7px 4px;
   border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.today-task-start {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 120ms ease;
+}
+.today-task-start:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  transform: scale(1.05);
 }
 .today-task:last-child { border-bottom: none; }
 .today-task input[type="checkbox"] {
@@ -2488,6 +3023,14 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
   text-align: center;
 }
 .task-row-delete:hover { color: #ff8577; }
+.task-row-start {
+  color: var(--accent) !important;
+  border-color: rgba(124,124,255,0.40) !important;
+}
+.task-row-start:hover {
+  background: rgba(124,124,255,0.10) !important;
+  border-color: var(--accent) !important;
+}
 
 /* Compact horizontal priority control replacing the old vertical stack —
    the arrows no longer collide with the chip. */

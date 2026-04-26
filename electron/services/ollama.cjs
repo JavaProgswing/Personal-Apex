@@ -259,16 +259,30 @@ async function chat({ model, system, user, json = false, temperature = 0.4, imag
 // ───────────────────────────────────────────────────────────────────────────
 // planDay — produce a structured day plan respecting classes, energy, dread.
 // ───────────────────────────────────────────────────────────────────────────
-async function planDay({ tasks, checkin, energyCap, dayOrder, classes, model }) {
+async function planDay({
+  tasks,
+  checkin,
+  energyCap,
+  dayOrder,
+  classes,
+  activeTimer,
+  recentTimerSessions,
+  nowIso,
+  model,
+}) {
   const system = buildSystem(`You are Apex, a calm, precise personal day planner.
 Output ONLY valid JSON. No preamble. No markdown.
 Hard constraints:
 - Never schedule deep work during classes or labs; block those times out.
+- Respect cancelled/moved classes — only schedule around what's effectively today.
 - Respect energy: if energy<=4, cap any single deep-work block at 60 min.
 - If dread>=7, the FIRST item in the plan must be an easy win (<=25 min).
 - Insert a 10-minute walk/break after every 90 min deep work.
 - Always include at least one Leisure slot (20–30 min) — not optional.
 - Chain hard+easy: pair one hard problem with one easy follow-up when possible.
+- If there's an ACTIVE timer right now, plan AROUND it: don't double-book the
+  next ~timer-remaining minutes; pick up afterwards.
+- Skip slots that already happened (before "now").
 - Prefer a realistic plan over an ambitious one; leave 20% slack.
 Output style:
 - "summary": one sentence — read of the day + what today is for.
@@ -276,12 +290,34 @@ Output style:
 - "skip": only for tasks you actively recommend pushing, each with a reason.`);
 
   const classLines = (classes || [])
-    .map((c) => `${c.start_time}–${c.end_time} ${c.subject}${c.room ? ' (' + c.room + ')' : ''}`)
+    .map((c) => {
+      const sub = c.override_status === 'added' ? `${c.subject} (extra)` : c.subject;
+      return `${c.start_time}–${c.end_time} ${sub}${c.room ? ' (' + c.room + ')' : ''}${c.override_status === 'moved' || c.override_status === 'replaced' ? ' [overridden]' : ''}`;
+    })
+    .join('; ');
+
+  // Active timer summary so the model doesn't double-book the present.
+  let timerLine = '(none)';
+  if (activeTimer) {
+    const start = new Date(activeTimer.started_at).getTime();
+    const elapsed = Math.max(0, Math.round((Date.now() - start) / 60000));
+    const total = (activeTimer.planned_minutes || 0) + (activeTimer.extended_minutes || 0);
+    const remaining = Math.max(0, total - elapsed);
+    timerLine = `"${activeTimer.title}" (${activeTimer.kind || 'task'}) — ${elapsed}m elapsed of ${total}m, ${remaining}m remaining`;
+  }
+
+  // Compact summary of what was already done today (timer-logged).
+  const recentBlock = (recentTimerSessions || [])
+    .slice(0, 6)
+    .map((s) => `${s.app || s.title || 'untitled'} — ${s.minutes}m (${s.category})`)
     .join('; ');
 
   const user = `Today's context:
+- Now: ${nowIso || new Date().toISOString()}
 - Day order: ${dayOrder ?? 'weekend'}
-- Classes today: ${classLines || '(none / weekend)'}
+- Effective classes today (overrides applied): ${classLines || '(none / weekend)'}
+- Active timer right now: ${timerLine}
+- Already done today (recent timer/activity): ${recentBlock || '(nothing logged)'}
 - Burnout check-in: ${checkin ? JSON.stringify(checkin) : 'not submitted'}
 - Energy cap (minutes of deep work): ${energyCap ?? 90}
 
@@ -516,6 +552,51 @@ Return JSON:
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// summarizeRecentChanges — given a list of recent commits to a repo, produce
+// a short "what changed in the last N days" summary. Used by the Classmate
+// Activity push-card expand pane so you can see at a glance what someone
+// has been shipping without combing through commit messages by hand.
+// ───────────────────────────────────────────────────────────────────────────
+async function summarizeRecentChanges({ repo, commits, model }) {
+  const list = (commits || []).slice(0, 30);
+  if (list.length === 0) {
+    return { ok: true, summary: '(no recent commits)', themes: [] };
+  }
+
+  const system = buildSystem(`Concise, factual change-log summariser. Output ONLY valid JSON.
+- "summary" is 2–4 sentences describing what's been worked on, grounded in the commit messages.
+- "themes" is a short array of high-level buckets (max 5): "refactor", "bugfix", "new feature", "tests", "docs", "config", "deps", etc — only those that actually fit.
+- "highlight" is the single most interesting commit (cite by message, not sha).
+- Never invent commits or features. If the messages are noisy/uninformative, say so.`);
+
+  const messages = list
+    .map((c) => {
+      const date = c.date ? c.date.slice(0, 10) : '';
+      const msg = (c.message || '').split('\n')[0].slice(0, 140);
+      return `${date} ${c.sha.slice(0, 7)} — ${msg}`;
+    })
+    .join('\n');
+
+  const user = `Repo: ${repo?.full_name || repo?.name || 'unknown'}
+${repo?.description ? `Description: ${repo.description}` : ''}
+
+Recent commits (newest first, max 30):
+${messages}
+
+Return JSON:
+{
+  "summary": "2-4 sentences on what's been worked on",
+  "themes": ["refactor", "bugfix", ...],
+  "highlight": "single most interesting commit, by message"
+}`;
+
+  const resp = await chat({ model, system, user, json: true, temperature: 0.2 });
+  if (!resp.ok) return resp;
+  const parsed = safeParseJson(resp.content);
+  return parsed.ok ? { ok: true, ...parsed } : parsed;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // ocrTimetable — vision-OCR one or more timetable images.
 // Each image is expected to depict (part of) a weekly class schedule.
 // Returns rows matching the classes table schema.
@@ -593,6 +674,7 @@ function safeParseJson(content) {
 
 module.exports = {
   listModels, chat, planDay, burnoutSuggest, eveningReview, burnoutCheck, summarizeRepo,
+  summarizeRecentChanges,
   ocrTimetable, autoPickBest, resolveModel, personalContext, buildSystem,
   ping, ensureRunning,
 };

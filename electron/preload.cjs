@@ -70,6 +70,19 @@ contextBridge.exposeInMainWorld("apex", {
     pickImages: () => invoke("schedule:pickImages"),
     parseImages: (payload) => invoke("schedule:parseImages", payload),
     importImageRows: (rows) => invoke("schedule:importImageRows", rows),
+    overridesForDate: (iso) => invoke("schedule:overridesForDate", iso),
+    setOverride: (iso, classId, patch) => invoke("schedule:setOverride", iso, classId, patch),
+    addExtraClass: (iso, payload) => invoke("schedule:addExtraClass", iso, payload),
+    clearOverride: (iso, classId) => invoke("schedule:clearOverride", iso, classId),
+    deleteOverrideById: (id) => invoke("schedule:deleteOverrideById", id),
+  },
+  timer: {
+    active: () => invoke("timer:active"),
+    start: (p) => invoke("timer:start", p),
+    extend: (mins) => invoke("timer:extend", mins),
+    stop: () => invoke("timer:stop"),
+    cancel: () => invoke("timer:cancel"),
+    onUpdate: (h) => on("timer:update", h),
   },
   // kept for backwards-compat; UI should use schedule.*
   timetable: {
@@ -175,6 +188,8 @@ contextBridge.exposeInMainWorld("apex", {
     detail: (repoId) => invoke("repo:detail", repoId),
     summarize: (args) => invoke("repo:summarize", args),
     listByPerson: (personId) => invoke("repo:listByPerson", personId),
+    recentCommits: (args) => invoke("repo:recentCommits", args),
+    summarizeRecentChanges: (args) => invoke("repo:summarizeRecentChanges", args),
   },
   ext: {
     open: (url) => invoke("ext:open", url),

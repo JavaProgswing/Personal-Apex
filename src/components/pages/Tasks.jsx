@@ -428,6 +428,24 @@ function TaskRow({ t, onToggle, onEdit, onDelete, onSnooze, onBumpPriority }) {
         <div className="task-row-buttons">
           {!isInterest && !t.completed && (
             <button
+              className="ghost small task-row-start"
+              onClick={async () => {
+                await api.timer.start({
+                  kind: t.kind === "habit" ? "habit" : "task",
+                  category: "productive",
+                  title: t.title,
+                  description: t.description || null,
+                  task_id: t.id,
+                  planned_minutes: t.estimated_minutes || 25,
+                });
+              }}
+              title="Start a live timer for this task"
+            >
+              ▶ Start
+            </button>
+          )}
+          {!isInterest && !t.completed && (
+            <button
               className="ghost small"
               onClick={() => onSnooze(t, 1)}
               title="Snooze deadline by 1 day"

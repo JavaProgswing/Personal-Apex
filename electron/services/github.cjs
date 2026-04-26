@@ -394,8 +394,33 @@ async function fetchRepoDetail(repoId) {
   };
 }
 
+// Live commits for a single repo. Hits /repos/:owner/:repo/commits with an
+// optional `since` (ISO timestamp). Returns a compact array — sha, message,
+// author, date, html_url. Capped at `limit` so we don't hammer the API.
+async function fetchCommits(fullName, { since, until, limit = 20 } = {}) {
+  if (!fullName) return [];
+  const params = [`per_page=${Math.min(100, +limit || 20)}`];
+  if (since) params.push(`since=${encodeURIComponent(since)}`);
+  if (until) params.push(`until=${encodeURIComponent(until)}`);
+  try {
+    const data = await gh(`/repos/${fullName}/commits?${params.join('&')}`);
+    if (!Array.isArray(data)) return [];
+    return data.slice(0, limit).map((c) => ({
+      sha: c.sha,
+      message: c.commit?.message || '',
+      author: c.commit?.author?.name || c.author?.login || null,
+      date: c.commit?.author?.date || c.commit?.committer?.date || null,
+      url: c.html_url || `https://github.com/${fullName}/commit/${c.sha}`,
+    }));
+  } catch (err) {
+    if (err.code === 'NOT_FOUND') return [];
+    if (err.code === 'RATE_LIMIT') throw err;
+    return [];
+  }
+}
+
 module.exports = {
   fetchUser, fetchRepos, fetchLanguages, fetchReadme, fetchRecentActivity,
-  fetchRepoDetail, fetchTree, fetchFileContent,
+  fetchRepoDetail, fetchTree, fetchFileContent, fetchCommits,
   syncPerson, syncAll, rateLimit,
 };

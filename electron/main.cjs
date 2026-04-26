@@ -325,7 +325,27 @@ ipcMain.handle("timetable:today", () => timetable.today());
 
 // --- ollama ---
 ipcMain.handle("ollama:listModels", () => ollama.listModels());
-ipcMain.handle("ollama:plan", (_e, ctx) => ollama.planDay(ctx));
+ipcMain.handle("ollama:plan", (_e, ctx) => {
+  // Augment plan context with live-timer + today's effective schedule so the
+  // model plans around what's actually happening right now.
+  const activeTimer = db.getActiveTimer();
+  const isoToday = new Date().toISOString().slice(0, 10);
+  const recent = db._db()
+    .prepare(
+      `SELECT app, category, minutes, started_at, ended_at, note
+         FROM activity_sessions
+        WHERE date = ? AND source = 'timer'
+        ORDER BY started_at DESC
+        LIMIT 12`,
+    )
+    .all(isoToday);
+  return ollama.planDay({
+    ...(ctx || {}),
+    activeTimer,
+    recentTimerSessions: recent,
+    nowIso: new Date().toISOString(),
+  });
+});
 ipcMain.handle("ollama:chat", (_e, { model, system, user }) =>
   // Wrap the UI-supplied role prompt with the shared personal-context layer
   // so even Ask-Apex gets the profile + house rules.
@@ -406,6 +426,92 @@ ipcMain.handle("activity:trend", (_e, days) => db.activityTrend(days ?? 7));
 ipcMain.handle("activity:topApps", (_e, isoDate, limit) => db.topAppsOn(isoDate ?? today(), limit ?? 10));
 ipcMain.handle("activity:feed", (_e, opts) => db.listActivityFeed(opts || {}));
 
+// --- live timer (universal "what am I doing now") ---
+// Singleton row in live_timer + a broadcast on change so any component can
+// react. Stopping/expiring writes the elapsed time into activity_sessions
+// so it shows up in Top apps / week totals.
+function broadcastTimer(payload) {
+  emit("timer:update", payload);
+}
+ipcMain.handle("timer:active", () => db.getActiveTimer());
+ipcMain.handle("timer:start", (_e, p) => {
+  // If something is already running, finish it cleanly first.
+  const existing = db.getActiveTimer();
+  if (existing) finishTimerToActivity(existing, "interrupted");
+  const row = db.startTimer(p || {});
+  broadcastTimer(row);
+  return row;
+});
+ipcMain.handle("timer:extend", (_e, mins) => {
+  const row = db.extendTimer(+mins || 5);
+  broadcastTimer(row);
+  return row;
+});
+ipcMain.handle("timer:stop", () => {
+  const row = db.getActiveTimer();
+  if (!row) return { ok: false, error: "No active timer" };
+  const out = finishTimerToActivity(row, "stopped");
+  db.clearTimer();
+  broadcastTimer(null);
+  return { ok: true, logged: out };
+});
+ipcMain.handle("timer:cancel", () => {
+  const row = db.getActiveTimer();
+  if (!row) return { ok: false };
+  // Cancel = discard. Only log if more than 60s elapsed so accidental
+  // cancels don't pollute the activity stream.
+  const minutes = elapsedMinutes(row);
+  let logged = null;
+  if (minutes >= 1) logged = finishTimerToActivity(row, "cancelled");
+  db.clearTimer();
+  broadcastTimer(null);
+  return { ok: true, logged };
+});
+
+function elapsedMinutes(timer) {
+  const start = new Date(timer.started_at).getTime();
+  return Math.max(0, Math.round((Date.now() - start) / 60000));
+}
+function finishTimerToActivity(timer, reason) {
+  const minutes = elapsedMinutes(timer);
+  if (minutes < 1) return null;
+  const now = new Date();
+  const noteParts = [];
+  if (timer.description) noteParts.push(timer.description);
+  if (reason && reason !== "stopped") noteParts.push(`(${reason})`);
+  const id = db.upsertActivitySession({
+    date: db.dbPath ? undefined : undefined, // let helper default to today
+    source: "timer",
+    app: timer.title || timer.kind || "timer",
+    window_title: timer.kind || null,
+    category: timer.category || db.categoryForTimerKind(timer.kind),
+    started_at: timer.started_at,
+    ended_at: now.toISOString(),
+    minutes,
+    note: noteParts.join(" "),
+  });
+  return { id, minutes };
+}
+
+// --- per-date class overrides (cancel/move/replace/add for one day) ---
+ipcMain.handle("schedule:overridesForDate", (_e, isoDate) =>
+  db.listClassOverrides(isoDate),
+);
+ipcMain.handle("schedule:setOverride", (_e, isoDate, classId, patch) =>
+  db.setClassOverride(isoDate, classId, patch || {}),
+);
+ipcMain.handle("schedule:addExtraClass", (_e, isoDate, payload) =>
+  db.addExtraClass(isoDate, payload || {}),
+);
+ipcMain.handle("schedule:clearOverride", (_e, isoDate, classId) => {
+  db.clearClassOverride(isoDate, classId || null);
+  return { ok: true };
+});
+ipcMain.handle("schedule:deleteOverrideById", (_e, id) => {
+  db.deleteClassOverrideById(id);
+  return { ok: true };
+});
+
 // --- desktop active-window tracker ---
 ipcMain.handle("tracker:start", () => activityTracker.start((ch, p) => emit(ch, p)));
 ipcMain.handle("tracker:stop", () => activityTracker.stop());
@@ -466,6 +572,36 @@ ipcMain.handle("repo:summarize", async (_e, { repoId, ownRepos, model }) => {
   }
 });
 ipcMain.handle("repo:listByPerson", (_e, personId) => db.listRepos(personId));
+// Live commits via the GitHub API for the push-card expand panel.
+// Defaults to the last 14 days; capped at 20 commits per call.
+ipcMain.handle("repo:recentCommits", async (_e, { fullName, days, limit } = {}) => {
+  try {
+    const sinceDays = Math.max(1, Math.min(60, +days || 14));
+    const since = new Date(Date.now() - sinceDays * 24 * 3600 * 1000).toISOString();
+    const commits = await github.fetchCommits(fullName, {
+      since,
+      limit: Math.max(5, Math.min(40, +limit || 20)),
+    });
+    return { ok: true, commits };
+  } catch (err) {
+    return { ok: false, error: err.message, code: err.code };
+  }
+});
+// Ask Ollama "what changed in the last N days" — given live commits.
+ipcMain.handle("repo:summarizeRecentChanges", async (_e, { repoId, fullName, days, model } = {}) => {
+  try {
+    const sinceDays = Math.max(1, Math.min(60, +days || 14));
+    const since = new Date(Date.now() - sinceDays * 24 * 3600 * 1000).toISOString();
+    const commits = await github.fetchCommits(fullName, { since, limit: 30 });
+    const repoRow = repoId
+      ? db._db().prepare(`SELECT id, name, full_name, description FROM repos WHERE id = ?`).get(repoId)
+      : { full_name: fullName };
+    const res = await ollama.summarizeRecentChanges({ repo: repoRow, commits, model });
+    return { ...(res || {}), commits };
+  } catch (err) {
+    return { ok: false, error: err.message, code: err.code };
+  }
+});
 
 // --- external links ---
 ipcMain.handle("ext:open", (_e, url) => shell.openExternal(url));

@@ -30,8 +30,15 @@ export default function ActivityFeed({ onOpenPerson, onOpenRepo }) {
   const [loading, setLoading] = useState(false);
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [expanded, setExpanded] = useState(new Set()); // repo ids
-  const [commitsByPerson, setCommitsByPerson] = useState({}); // { personId: rows }
+  const [commitsByPerson, setCommitsByPerson] = useState({}); // { personId: rows } (cached gh events)
   const [loadingCommits, setLoadingCommits] = useState(new Set());
+  // Live commits + AI summary, keyed per-repo. Live commits are fetched
+  // straight from the GitHub API on first expand, so we never have to fall
+  // back to "no cached individual commits" again.
+  const [liveCommitsByRepo, setLiveCommitsByRepo] = useState({});
+  const [loadingLiveByRepo, setLoadingLiveByRepo] = useState(new Set());
+  const [summaryByRepo, setSummaryByRepo] = useState({});
+  const [summaryLoadingByRepo, setSummaryLoadingByRepo] = useState(new Set());
 
   useEffect(() => {
     (async () => {
@@ -106,27 +113,84 @@ export default function ActivityFeed({ onOpenPerson, onOpenRepo }) {
     nextExpanded.add(id);
     setExpanded(nextExpanded);
 
+    // Fetch in parallel:
+    //   • cached gh events (per-person feed, used as fallback)
+    //   • live commits from the GitHub REST API for this repo
+    const tasks = [];
     if (!commitsByPerson[repo.person_id] && api.activity.feed) {
-      const next = new Set(loadingCommits);
-      next.add(repo.person_id);
-      setLoadingCommits(next);
-      try {
-        const rows =
-          (await api.activity.feed({
-            personId: repo.person_id,
-            days: Math.max(days, 30),
-            limit: 80,
-          })) || [];
-        setCommitsByPerson((prev) => ({ ...prev, [repo.person_id]: rows }));
-      } catch {
-        setCommitsByPerson((prev) => ({ ...prev, [repo.person_id]: [] }));
-      } finally {
-        setLoadingCommits((prev) => {
-          const s = new Set(prev);
-          s.delete(repo.person_id);
-          return s;
-        });
-      }
+      tasks.push(loadCachedFeed(repo));
+    }
+    if (!liveCommitsByRepo[id] && api.repo?.recentCommits && repo.full_name) {
+      tasks.push(loadLiveCommits(repo));
+    }
+    await Promise.allSettled(tasks);
+  }
+
+  async function loadCachedFeed(repo) {
+    const next = new Set(loadingCommits);
+    next.add(repo.person_id);
+    setLoadingCommits(next);
+    try {
+      const rows =
+        (await api.activity.feed({
+          personId: repo.person_id,
+          days: Math.max(days, 30),
+          limit: 80,
+        })) || [];
+      setCommitsByPerson((prev) => ({ ...prev, [repo.person_id]: rows }));
+    } catch {
+      setCommitsByPerson((prev) => ({ ...prev, [repo.person_id]: [] }));
+    } finally {
+      setLoadingCommits((prev) => {
+        const s = new Set(prev);
+        s.delete(repo.person_id);
+        return s;
+      });
+    }
+  }
+
+  async function loadLiveCommits(repo) {
+    setLoadingLiveByRepo((prev) => new Set(prev).add(repo.id));
+    try {
+      const sinceDays = Math.max(days, 14);
+      const res = await api.repo.recentCommits({
+        fullName: repo.full_name,
+        days: sinceDays,
+        limit: 20,
+      });
+      const commits = res?.ok ? res.commits : [];
+      setLiveCommitsByRepo((prev) => ({ ...prev, [repo.id]: commits }));
+    } catch {
+      setLiveCommitsByRepo((prev) => ({ ...prev, [repo.id]: [] }));
+    } finally {
+      setLoadingLiveByRepo((prev) => {
+        const s = new Set(prev);
+        s.delete(repo.id);
+        return s;
+      });
+    }
+  }
+
+  async function summariseRepo(repo) {
+    setSummaryLoadingByRepo((prev) => new Set(prev).add(repo.id));
+    try {
+      const res = await api.repo.summarizeRecentChanges({
+        repoId: repo.id,
+        fullName: repo.full_name,
+        days: Math.max(days, 14),
+      });
+      setSummaryByRepo((prev) => ({ ...prev, [repo.id]: res || { ok: false } }));
+    } catch (err) {
+      setSummaryByRepo((prev) => ({
+        ...prev,
+        [repo.id]: { ok: false, error: err?.message || "Failed" },
+      }));
+    } finally {
+      setSummaryLoadingByRepo((prev) => {
+        const s = new Set(prev);
+        s.delete(repo.id);
+        return s;
+      });
     }
   }
 
@@ -222,7 +286,9 @@ export default function ActivityFeed({ onOpenPerson, onOpenRepo }) {
                   key={r.id}
                   r={r}
                   expanded={expanded.has(r.id)}
-                  commits={
+                  liveCommits={liveCommitsByRepo[r.id] ?? null}
+                  liveLoading={loadingLiveByRepo.has(r.id)}
+                  cachedCommits={
                     commitsByPerson[r.person_id]
                       ? commitsByPerson[r.person_id].filter(
                           (c) =>
@@ -232,9 +298,13 @@ export default function ActivityFeed({ onOpenPerson, onOpenRepo }) {
                         )
                       : null
                   }
-                  loading={loadingCommits.has(r.person_id)}
+                  cachedLoading={loadingCommits.has(r.person_id)}
+                  summary={summaryByRepo[r.id] ?? null}
+                  summaryLoading={summaryLoadingByRepo.has(r.id)}
+                  onSummarise={() => summariseRepo(r)}
                   onToggle={() => toggleExpand(r)}
                   onOpenPerson={() => openPush(r)}
+                  onOpenRepo={() => onOpenRepo?.(r)}
                 />
               ))}
             </div>
@@ -249,7 +319,9 @@ export default function ActivityFeed({ onOpenPerson, onOpenRepo }) {
               key={r.id}
               r={r}
               expanded={expanded.has(r.id)}
-              commits={
+              liveCommits={liveCommitsByRepo[r.id] ?? null}
+              liveLoading={loadingLiveByRepo.has(r.id)}
+              cachedCommits={
                 commitsByPerson[r.person_id]
                   ? commitsByPerson[r.person_id].filter(
                       (c) =>
@@ -259,7 +331,10 @@ export default function ActivityFeed({ onOpenPerson, onOpenRepo }) {
                     )
                   : null
               }
-              loading={loadingCommits.has(r.person_id)}
+              cachedLoading={loadingCommits.has(r.person_id)}
+              summary={summaryByRepo[r.id] ?? null}
+              summaryLoading={summaryLoadingByRepo.has(r.id)}
+              onSummarise={() => summariseRepo(r)}
               onToggle={() => toggleExpand(r)}
               onOpenPerson={() => openPush(r)}
               onOpenRepo={() => onOpenRepo?.(r)}
@@ -288,8 +363,13 @@ export default function ActivityFeed({ onOpenPerson, onOpenRepo }) {
 function PushRow({
   r,
   expanded,
-  commits,
-  loading,
+  liveCommits,
+  liveLoading,
+  cachedCommits,
+  cachedLoading,
+  summary,
+  summaryLoading,
+  onSummarise,
   onToggle,
   onOpenPerson,
   onOpenRepo,
@@ -303,8 +383,11 @@ function PushRow({
   // that do something else.
   const openOverview = (e) => {
     if (e) {
+      // Children that have their own click handlers — let them run instead
+      // of double-firing the parent. .push-repo also calls onOpenRepo, so
+      // skipping here just avoids redundancy.
       const interactive = e.target?.closest?.(
-        ".push-gh-link, .push-caret, .push-person",
+        ".push-repo, .push-gh-link, .push-caret, .push-person",
       );
       if (interactive) return;
       e.preventDefault?.();
@@ -339,7 +422,18 @@ function PushRow({
         </div>
         <div className="push-body">
           <div className="push-line">
-            <span className="push-repo">{r.full_name}</span>
+            <button
+              type="button"
+              className="push-repo"
+              title={`Open ${r.full_name} overview`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onOpenRepo?.();
+              }}
+            >
+              {r.full_name}
+            </button>
             {r.url && (
               <a
                 href={repoUrl}
@@ -411,20 +505,57 @@ function PushRow({
 
       {expanded && (
         <div className="push-expanded">
-          {loading && <div className="muted">Loading commits…</div>}
-          {!loading && (!commits || commits.length === 0) && (
-            <div className="muted">
-              No recent individual commits cached for this repo. The
-              repo-level push timestamp is the most detail we have.
+          {/* AI summary action row — sits at the top of the expand panel. */}
+          <div className="push-expanded-actions">
+            <button
+              type="button"
+              className="ghost small"
+              onClick={onSummarise}
+              disabled={summaryLoading}
+              title="Have Ollama summarise the recent commits"
+            >
+              {summaryLoading
+                ? "Summarising…"
+                : summary?.ok
+                  ? "↻ Re-summarise"
+                  : "✨ Summarise recent changes"}
+            </button>
+            {summary?.themes && summary.themes.length > 0 && (
+              <div className="push-themes">
+                {summary.themes.slice(0, 5).map((t, i) => (
+                  <span key={i} className="pill">{t}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {summary?.ok && summary.summary && (
+            <div className="push-summary">
+              <p>{summary.summary}</p>
+              {summary.highlight && (
+                <small className="muted">
+                  <strong>Highlight: </strong>{summary.highlight}
+                </small>
+              )}
             </div>
           )}
-          {!loading && commits && commits.length > 0 && (
+          {summary && !summary.ok && summary.error && (
+            <div className="error" style={{ fontSize: 12 }}>
+              Couldn't summarise: {summary.error}
+            </div>
+          )}
+
+          {/* Commit list — live commits from the GitHub API take priority,
+              cached gh events are a fallback. */}
+          <div className="section-label" style={{ marginTop: 10 }}>
+            Recent commits
+          </div>
+          {liveLoading && <div className="muted">Loading commits from GitHub…</div>}
+          {!liveLoading && Array.isArray(liveCommits) && liveCommits.length > 0 && (
             <ul className="commit-list">
-              {commits.slice(0, 8).map((c) => (
-                <li key={c.id} className="commit-row">
-                  <span className="commit-kind">
-                    {c.kind === "push" ? "▸" : "•"}
-                  </span>
+              {liveCommits.slice(0, 12).map((c) => (
+                <li key={c.sha} className="commit-row">
+                  <span className="commit-kind">▸</span>
                   <a
                     href={c.url}
                     onClick={(e) => {
@@ -434,15 +565,53 @@ function PushRow({
                     className="commit-msg"
                     title={c.message || ""}
                   >
-                    {truncate(c.message || "(no message)", 140)}
+                    {truncate((c.message || "").split("\n")[0] || "(no message)", 160)}
                   </a>
                   <span className="commit-when muted">
-                    {c.at ? relativeTime(new Date(c.at)) : ""}
+                    {c.date ? relativeTime(new Date(c.date)) : ""}
                   </span>
                 </li>
               ))}
             </ul>
           )}
+          {!liveLoading &&
+            Array.isArray(liveCommits) &&
+            liveCommits.length === 0 &&
+            cachedCommits &&
+            cachedCommits.length > 0 && (
+              <ul className="commit-list">
+                {cachedCommits.slice(0, 8).map((c) => (
+                  <li key={c.id} className="commit-row">
+                    <span className="commit-kind">
+                      {c.kind === "push" ? "▸" : "•"}
+                    </span>
+                    <a
+                      href={c.url}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (c.url) api.ext.open(c.url);
+                      }}
+                      className="commit-msg"
+                      title={c.message || ""}
+                    >
+                      {truncate(c.message || "(no message)", 160)}
+                    </a>
+                    <span className="commit-when muted">
+                      {c.at ? relativeTime(new Date(c.at)) : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          {!liveLoading &&
+            (!liveCommits || liveCommits.length === 0) &&
+            (!cachedCommits || cachedCommits.length === 0) &&
+            !cachedLoading && (
+              <div className="muted">
+                Couldn't pull commits — repo may be private, rate-limited, or
+                empty for the chosen window.
+              </div>
+            )}
         </div>
       )}
     </div>

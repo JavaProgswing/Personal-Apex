@@ -1469,6 +1469,184 @@ function recentBurnoutReports(days = 7) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// live_timer — a singleton row tracking what the user is doing right now.
+// At most one timer is active at a time. When stopped or expired, the caller
+// is expected to also write into activity_sessions so the day's totals
+// reflect it.
+// ───────────────────────────────────────────────────────────────────────────
+function getActiveTimer() {
+  const row = db.prepare(`SELECT * FROM live_timer WHERE id = 1`).get();
+  return row || null;
+}
+function startTimer(p) {
+  const now = p.started_at || new Date().toISOString();
+  const planned = Math.max(1, Math.round(+p.planned_minutes || 25));
+  db.prepare(`DELETE FROM live_timer WHERE id = 1`).run();
+  db.prepare(
+    `INSERT INTO live_timer
+       (id, kind, category, title, description, task_id, started_at, planned_minutes, extended_minutes)
+     VALUES (1, ?, ?, ?, ?, ?, ?, ?, 0)`,
+  ).run(
+    p.kind || "task",
+    p.category || categoryForTimerKind(p.kind),
+    p.title || "Focus",
+    p.description || null,
+    p.task_id || null,
+    now,
+    planned,
+  );
+  return getActiveTimer();
+}
+function extendTimer(byMinutes) {
+  const m = Math.max(1, Math.round(+byMinutes || 0));
+  if (!m) return getActiveTimer();
+  db.prepare(
+    `UPDATE live_timer SET extended_minutes = extended_minutes + ? WHERE id = 1`,
+  ).run(m);
+  return getActiveTimer();
+}
+function clearTimer() {
+  db.prepare(`DELETE FROM live_timer WHERE id = 1`).run();
+}
+
+// Map a user-facing timer kind to the activity_sessions category used by the
+// dashboard's Top apps strip + stats. Keep this in sync with the categories
+// emitted by activityTracker.inferCategory.
+function categoryForTimerKind(kind) {
+  switch ((kind || "").toLowerCase()) {
+    case "task":
+    case "study":
+    case "deep":
+    case "deepwork":
+    case "deep work":
+    case "project":
+    case "academic":
+    case "academics":
+      return "productive";
+    case "distraction":
+    case "social-media":
+    case "social media":
+      return "distraction";
+    case "leisure":
+    case "gaming":
+    case "social":
+    case "music":
+      return "leisure";
+    case "rest":
+    case "sleep":
+    case "nap":
+    case "meditation":
+      return "rest";
+    case "exercise":
+    case "workout":
+    case "outdoor":
+    case "walk":
+      return "rest"; // count restorative movement as rest in the strip
+    case "break":
+    case "transit":
+    case "commute":
+    case "errand":
+      return "neutral";
+    case "habit":
+      return "productive";
+    default:
+      return "neutral";
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// class_overrides — per-date edits to the timetable. status is one of
+// 'cancelled' | 'moved' | 'replaced' | 'added'. class_id can be null for
+// 'added' rows (extra one-off class for the day).
+// ───────────────────────────────────────────────────────────────────────────
+function listClassOverrides(date) {
+  return db
+    .prepare(
+      `SELECT * FROM class_overrides WHERE date = ? ORDER BY start_time ASC`,
+    )
+    .all(date);
+}
+function setClassOverride(date, classId, patch) {
+  if (!classId) throw new Error("setClassOverride requires a classId");
+  const existing = db
+    .prepare(`SELECT id FROM class_overrides WHERE date = ? AND class_id = ?`)
+    .get(date, classId);
+  const status = patch.status || "moved";
+  if (existing) {
+    db.prepare(
+      `UPDATE class_overrides
+         SET status = ?, subject = ?, code = ?, start_time = ?, end_time = ?,
+             room = ?, faculty = ?, kind = ?, note = ?
+       WHERE id = ?`,
+    ).run(
+      status,
+      patch.subject ?? null,
+      patch.code ?? null,
+      patch.start_time ?? null,
+      patch.end_time ?? null,
+      patch.room ?? null,
+      patch.faculty ?? null,
+      patch.kind ?? null,
+      patch.note ?? null,
+      existing.id,
+    );
+    return existing.id;
+  }
+  const info = db
+    .prepare(
+      `INSERT INTO class_overrides
+         (date, class_id, status, subject, code, start_time, end_time, room, faculty, kind, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      date,
+      classId,
+      status,
+      patch.subject ?? null,
+      patch.code ?? null,
+      patch.start_time ?? null,
+      patch.end_time ?? null,
+      patch.room ?? null,
+      patch.faculty ?? null,
+      patch.kind ?? null,
+      patch.note ?? null,
+    );
+  return info.lastInsertRowid;
+}
+function addExtraClass(date, p) {
+  const info = db
+    .prepare(
+      `INSERT INTO class_overrides
+         (date, class_id, status, subject, code, start_time, end_time, room, faculty, kind, note)
+       VALUES (?, NULL, 'added', ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      date,
+      p.subject || "(unnamed)",
+      p.code ?? null,
+      p.start_time ?? null,
+      p.end_time ?? null,
+      p.room ?? null,
+      p.faculty ?? null,
+      p.kind ?? "lecture",
+      p.note ?? null,
+    );
+  return info.lastInsertRowid;
+}
+function clearClassOverride(date, classId) {
+  if (classId) {
+    db.prepare(
+      `DELETE FROM class_overrides WHERE date = ? AND class_id = ?`,
+    ).run(date, classId);
+  } else {
+    db.prepare(`DELETE FROM class_overrides WHERE date = ?`).run(date);
+  }
+}
+function deleteClassOverrideById(id) {
+  db.prepare(`DELETE FROM class_overrides WHERE id = ?`).run(id);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // helpers
 // ───────────────────────────────────────────────────────────────────────────
 function isoDate(d) {
@@ -1545,6 +1723,17 @@ module.exports = {
   saveBurnoutReport,
   latestBurnoutReport,
   recentBurnoutReports,
+  // live timer + class overrides
+  getActiveTimer,
+  startTimer,
+  extendTimer,
+  clearTimer,
+  categoryForTimerKind,
+  listClassOverrides,
+  setClassOverride,
+  addExtraClass,
+  clearClassOverride,
+  deleteClassOverrideById,
   getDayNote,
   upsertDayNote,
   listDayNoteDates,
