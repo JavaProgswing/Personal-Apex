@@ -94,6 +94,7 @@ contextBridge.exposeInMainWorld("apex", {
     plan: (ctx) => invoke("ollama:plan", ctx),
     chat: (p) => invoke("ollama:chat", p),
     burnoutSuggest: (ctx) => invoke("ollama:burnoutSuggest", ctx),
+    recommend: (opts) => invoke("ollama:recommend", opts),
     burnoutCheck: (ctx) => invoke("ollama:burnoutCheck", ctx),
     eveningReview: (ctx) => invoke("ollama:eveningReview", ctx),
     best: () => invoke("ollama:best"),
@@ -127,6 +128,7 @@ contextBridge.exposeInMainWorld("apex", {
     self: () => invoke("cp:self"),
     selfCached: () => invoke("cp:selfCached"),
     leaderboard: (platform) => invoke("cp:leaderboard", platform),
+    summarize: (args) => invoke("cp:summarize", args),
     onProgress: (h) => on("cp:progress", h),
   },
   ntl: {
@@ -190,6 +192,11 @@ contextBridge.exposeInMainWorld("apex", {
     listByPerson: (personId) => invoke("repo:listByPerson", personId),
     recentCommits: (args) => invoke("repo:recentCommits", args),
     summarizeRecentChanges: (args) => invoke("repo:summarizeRecentChanges", args),
+    chat: (args) => invoke("repo:chat", args),
+  },
+  commit: {
+    detail: (args) => invoke("commit:detail", args),
+    chat: (args) => invoke("commit:chat", args),
   },
   ext: {
     open: (url) => invoke("ext:open", url),

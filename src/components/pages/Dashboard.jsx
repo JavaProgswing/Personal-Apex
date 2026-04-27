@@ -575,6 +575,49 @@ export default function Dashboard({ go }) {
               setTimeout(() => setToast(null), 3000);
             }}
           />
+          <RecommendChip
+            ollamaOk={planCard.ollamaOk}
+            model={planCard.model}
+            tasks={tasks}
+            onAddTask={async (rec) => {
+              await api.tasks.create({
+                title: rec.text || "recommendation",
+                description: rec.reason ? rec.reason : "",
+                category: rec.kind === "cp" ? "DSA"
+                  : rec.kind === "class-prep" ? "Academics"
+                  : rec.kind === "break" || rec.kind === "health" ? "Health"
+                  : "Personal",
+                priority: 3,
+                estimated_minutes: rec.estimated_minutes || 15,
+                tags: ["apex"],
+                links: [],
+              });
+              setToast({
+                kind: "success",
+                title: "Added to tasks",
+                msg: rec.text || rec.kind,
+              });
+              setTimeout(() => setToast(null), 3000);
+            }}
+            onStartTimer={async (rec) => {
+              const isCp = rec.kind === "cp";
+              const isBreak = rec.kind === "break" || rec.kind === "health";
+              await api.timer.start({
+                kind: isCp ? "study" : isBreak ? "break" : "task",
+                category: isBreak ? "neutral" : "productive",
+                title: rec.text || rec.kind || "recommendation",
+                description: rec.reason || null,
+                task_id: rec.taskId || null,
+                planned_minutes: rec.estimated_minutes || 25,
+              });
+              setToast({
+                kind: "success",
+                title: "Timer started",
+                msg: rec.text || rec.kind,
+              });
+              setTimeout(() => setToast(null), 2500);
+            }}
+          />
         </div>
       </div>
 
@@ -1767,6 +1810,167 @@ function BurnoutChip({
             <div className="muted" style={{ marginTop: 8 }}>
               Re-run the check to refresh insights.
             </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── RecommendChip ───────────────────────────────────────────────────────
+// "What should I do next?" chip that lives next to the burnout chip in the
+// header. On open, calls ollama:recommend (which assembles tasks + classes
+// + active timer + recent activity + CP + burnout server-side) and renders
+// 2–4 actionable items with quick "+ Task" / "▶ Start" buttons.
+function RecommendChip({ ollamaOk, model, tasks, onAddTask, onStartTimer }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [recs, setRecs] = useState([]);
+  const [err, setErr] = useState(null);
+  const [generatedAt, setGeneratedAt] = useState(null);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  async function refresh() {
+    if (!ollamaOk) {
+      setErr("Ollama is offline.");
+      return;
+    }
+    setLoading(true);
+    setErr(null);
+    try {
+      const res = await api.ollama.recommend({ model });
+      if (!res?.ok) {
+        setErr(res?.error || "Couldn't get recommendations.");
+        setRecs([]);
+      } else {
+        setRecs(Array.isArray(res.recommendations) ? res.recommendations : []);
+        setGeneratedAt(new Date());
+      }
+    } catch (e) {
+      setErr(e?.message || "Failed to get recommendations.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // First-open auto-fetch.
+  useEffect(() => {
+    if (open && recs.length === 0 && !loading && !err) refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  return (
+    <div className="recommend-chip-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className={"recommend-chip" + (open ? " open" : "")}
+        onClick={() => setOpen((v) => !v)}
+        disabled={!ollamaOk}
+        title={
+          ollamaOk
+            ? "Get a quick recommendation from Apex"
+            : "Ollama is offline"
+        }
+      >
+        <span className="recommend-spark" aria-hidden>✨</span>
+        <span>What now?</span>
+        <span className="recommend-caret">▾</span>
+      </button>
+      {open && (
+        <div className="recommend-popover">
+          <div className="recommend-popover-head">
+            <strong>What should I do now?</strong>
+            <div className="row" style={{ gap: 6 }}>
+              <button
+                className="ghost xsmall"
+                onClick={(e) => { e.stopPropagation(); refresh(); }}
+                disabled={loading}
+                title="Re-roll recommendations"
+              >
+                ↻
+              </button>
+              <button
+                className="ghost xsmall"
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          {generatedAt && (
+            <small className="muted" style={{ display: "block", marginBottom: 6 }}>
+              {generatedAt.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </small>
+          )}
+          {loading && <div className="muted">Thinking…</div>}
+          {err && !loading && <div className="error">{err}</div>}
+          {!loading && !err && recs.length === 0 && (
+            <div className="muted">
+              Nothing to recommend right now — re-run after you've logged a bit.
+            </div>
+          )}
+          {!loading && recs.length > 0 && (
+            <ul className="recommend-list">
+              {recs.slice(0, 4).map((r, i) => {
+                const linkedTask = r.taskId
+                  ? (tasks || []).find((t) => t.id === r.taskId)
+                  : null;
+                return (
+                  <li key={i} className={"recommend-item rec-" + (r.kind || "other")}>
+                    <div className="recommend-item-body">
+                      <div className="recommend-text">{r.text}</div>
+                      <div className="recommend-meta muted">
+                        <span className={"pill rec-pill rec-" + (r.kind || "other")}>
+                          {r.kind || "other"}
+                        </span>
+                        {r.estimated_minutes ? (
+                          <span>· ~{r.estimated_minutes}m</span>
+                        ) : null}
+                        {linkedTask && (
+                          <span title={linkedTask.title}>
+                            · linked: {linkedTask.title.slice(0, 40)}
+                          </span>
+                        )}
+                        {r.reason && <span className="rec-reason">· {r.reason}</span>}
+                      </div>
+                    </div>
+                    <div className="recommend-item-actions">
+                      <button
+                        type="button"
+                        className="ghost xsmall"
+                        onClick={() => onStartTimer?.(r)}
+                        title="Start a live timer for this"
+                      >
+                        ▶ Start
+                      </button>
+                      {!r.taskId && (
+                        <button
+                          type="button"
+                          className="ghost xsmall"
+                          onClick={() => onAddTask?.(r)}
+                          title="Save as a task"
+                        >
+                          + Task
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
       )}

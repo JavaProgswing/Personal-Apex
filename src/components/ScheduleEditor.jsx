@@ -84,34 +84,69 @@ export default function ScheduleEditor() {
 function ImageImportModal({ onClose, onImported }) {
   const [paths, setPaths] = useState([]);
   const [hint, setHint] = useState("");
-  const [models, setModels] = useState([]);
+  const [allModels, setAllModels] = useState([]);
+  const [models, setModels] = useState([]); // vision-capable subset
   const [model, setModel] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [rows, setRows] = useState([]);
+  const [modelUsed, setModelUsed] = useState("");
+
+  const VISION_RE = /vision|llava|minicpm-v|bakllava|moondream|qwen2-vl|qwen2\.5-vl|cogvlm/i;
+
+  async function refreshModels() {
+    const r = await api.ollama.listModels();
+    const all = r?.models || [];
+    const vision = all.filter((m) => VISION_RE.test(m));
+    setAllModels(all);
+    setModels(vision);
+    if (vision.length > 0 && (!model || !vision.includes(model))) {
+      setModel(vision[0]);
+    }
+  }
 
   useEffect(() => {
-    api.ollama.listModels().then((r) => {
-      const list = (r?.models || []).filter((m) => /vision|llava|minicpm-v|bakllava/i.test(m));
-      setModels(list.length > 0 ? list : r?.models || []);
-      if (list.length > 0) setModel(list[0]);
-    });
+    refreshModels();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function pick() {
     const picked = await api.schedule.pickImages();
     if (Array.isArray(picked)) setPaths(picked);
   }
+
   async function extract() {
-    if (paths.length === 0) { setErr("Pick at least one image first."); return; }
-    setLoading(true); setErr(""); setRows([]);
+    if (paths.length === 0) {
+      setErr("Pick at least one image first.");
+      return;
+    }
+    if (models.length === 0) {
+      setErr(
+        "No vision model installed. Open a terminal and run `ollama pull llama3.2-vision` " +
+        "(or `ollama pull minicpm-v` for a smaller alternative), then click Refresh.",
+      );
+      return;
+    }
+    setLoading(true);
+    setErr("");
+    setRows([]);
+    setModelUsed("");
     try {
       const res = await api.schedule.parseImages({ imagePaths: paths, model, hint });
       if (!res?.ok) {
-        setErr(res?.error || "OCR failed. Make sure you have a vision model installed (e.g. `ollama pull llama3.2-vision`).");
+        setErr(
+          res?.error ||
+            "OCR failed. Make sure you have a vision model installed (e.g. `ollama pull llama3.2-vision`).",
+        );
       } else {
         setRows(res.rows || []);
-        if ((res.rows || []).length === 0) setErr("The model returned no classes. Try a clearer image or a different model.");
+        setModelUsed(res.modelUsed || res.model || "");
+        if ((res.rows || []).length === 0) {
+          setErr(
+            "The model returned no classes. Try a clearer image, a different vision model, " +
+            "or add a hint below to nudge it.",
+          );
+        }
       }
     } finally {
       setLoading(false);
@@ -151,24 +186,98 @@ function ImageImportModal({ onClose, onImported }) {
         </div>
 
         <div className="form-row">
-          <label>Vision model</label>
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
-            {models.length === 0 && <option value="">(none installed — run `ollama pull llama3.2-vision`)</option>}
-            {models.map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
+          <label>
+            Vision model
+            <button
+              type="button"
+              className="ghost xsmall"
+              style={{ marginLeft: 8 }}
+              onClick={refreshModels}
+              title="Re-fetch the installed-models list"
+            >
+              ↻ Refresh
+            </button>
+          </label>
+          {models.length === 0 ? (
+            <div
+              className="error"
+              style={{
+                padding: 10,
+                borderRadius: 8,
+                background: "rgba(239,107,90,0.10)",
+                border: "1px solid rgba(239,107,90,0.30)",
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              <strong>No vision model installed.</strong> Reading a timetable
+              image needs one. In a terminal, run:
+              <pre
+                style={{
+                  margin: "6px 0 4px",
+                  padding: "6px 8px",
+                  background: "var(--bg-elev-2)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  fontSize: 11,
+                }}
+              >
+                ollama pull llama3.2-vision
+              </pre>
+              {allModels.length > 0 && (
+                <small className="muted">
+                  Currently installed: {allModels.slice(0, 6).join(", ")}
+                  {allModels.length > 6 ? ` +${allModels.length - 6} more` : ""}
+                </small>
+              )}
+            </div>
+          ) : (
+            <select value={model} onChange={(e) => setModel(e.target.value)}>
+              {models.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div className="form-row">
-          <label>Hint <small className="muted">(optional — e.g. "Day orders 1-3 are in the first image")</small></label>
-          <input value={hint} onChange={(e) => setHint(e.target.value)} placeholder="Context the model might need…" />
+          <label>
+            Hint{" "}
+            <small className="muted">
+              (optional — e.g. "Day orders 1-3 are in the first image")
+            </small>
+          </label>
+          <input
+            value={hint}
+            onChange={(e) => setHint(e.target.value)}
+            placeholder="Context the model might need…"
+          />
         </div>
 
         <div className="row" style={{ gap: 6, marginTop: 8 }}>
-          <button className="primary" onClick={extract} disabled={loading || paths.length === 0 || !model}>
+          <button
+            className="primary"
+            onClick={extract}
+            disabled={loading || paths.length === 0 || models.length === 0}
+            title={
+              models.length === 0
+                ? "Install a vision model first"
+                : "Run OCR on the picked images"
+            }
+          >
             {loading ? "Reading…" : "Read timetable"}
           </button>
           {rows.length > 0 && (
-            <button className="primary" onClick={commit}>Replace schedule ({rows.length})</button>
+            <button className="primary" onClick={commit}>
+              Replace schedule ({rows.length})
+            </button>
+          )}
+          {modelUsed && (
+            <small className="muted" style={{ marginLeft: "auto" }}>
+              via <strong>{modelUsed}</strong>
+            </small>
           )}
         </div>
 

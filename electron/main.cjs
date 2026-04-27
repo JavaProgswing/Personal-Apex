@@ -351,6 +351,51 @@ ipcMain.handle("ollama:chat", (_e, { model, system, user }) =>
   // so even Ask-Apex gets the profile + house rules.
   ollama.chat({ model, system: ollama.buildSystem(system || "You are Apex, a helpful personal assistant."), user }),
 );
+// What should I do next? Pulls all relevant state on the backend so the
+// renderer can fire-and-forget without assembling 6 different fetches.
+ipcMain.handle("ollama:recommend", async (_e, opts = {}) => {
+  try {
+    const isoToday = new Date().toISOString().slice(0, 10);
+    const tasks = db.listTasks({ kind: "task", completed: false }) || [];
+    const tt = timetable.today();
+    const activeTimer = db.getActiveTimer();
+    const recentTimerSessions = db._db()
+      .prepare(
+        `SELECT app, category, minutes, started_at, ended_at
+           FROM activity_sessions
+          WHERE date = ? AND source = 'timer'
+          ORDER BY started_at DESC LIMIT 8`,
+      )
+      .all(isoToday);
+    const todayTotals = db.activityTotalsOn(isoToday);
+    const burnoutRow = db.latestBurnoutReport();
+    const burnoutReport = burnoutRow
+      ? { ...burnoutRow.payload, generated_at: burnoutRow.created_at }
+      : null;
+    const weeklyGoals = db.listWeeklyGoals();
+    // Best-effort CP self snapshot from cache.
+    let cpSelf = null;
+    try {
+      const cpRow = db.getSetting("cp.self.snapshot");
+      cpSelf = cpRow ? JSON.parse(cpRow) : null;
+    } catch { cpSelf = null; }
+
+    return await ollama.recommendNow({
+      classes: tt.classes || [],
+      tasks,
+      activeTimer,
+      recentTimerSessions,
+      todayTotals,
+      burnoutReport,
+      weeklyGoals,
+      cpSelf,
+      nowIso: new Date().toISOString(),
+      model: opts.model,
+    });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 ipcMain.handle("ollama:burnoutSuggest", (_e, ctx) => ollama.burnoutSuggest(ctx));
 ipcMain.handle("ollama:burnoutCheck", (_e, ctx) => ollama.burnoutCheck(ctx));
 ipcMain.handle("ollama:eveningReview", (_e, ctx) => ollama.eveningReview(ctx));
@@ -587,6 +632,106 @@ ipcMain.handle("repo:recentCommits", async (_e, { fullName, days, limit } = {}) 
     return { ok: false, error: err.message, code: err.code };
   }
 });
+// Project Q&A — gathers the same rich context as summarizeRepo + recent
+// commits and asks Ollama. The renderer keeps the conversation; we just
+// answer the latest question.
+ipcMain.handle("repo:chat", async (_e, { repoId, fullName, question, history, model } = {}) => {
+  try {
+    let detail = null;
+    let cachedSummary = null;
+    if (repoId) {
+      detail = await github.fetchRepoDetail(repoId);
+      const cached = db.getRepoSummary(repoId);
+      cachedSummary = cached?.payload || null;
+    } else if (fullName) {
+      const dbh = db._db();
+      const repo = dbh.prepare(`SELECT * FROM repos WHERE full_name = ?`).get(fullName);
+      if (repo) detail = await github.fetchRepoDetail(repo.id);
+    }
+    const repoForCtx = detail?.repo
+      ? { ...detail.repo, languages: Object.keys(detail.languages || {}) }
+      : { full_name: fullName };
+
+    // Recent commits for grounding "what's been done" questions.
+    let recentCommits = [];
+    try {
+      recentCommits = await github.fetchCommits(repoForCtx.full_name, { limit: 25 });
+    } catch { /* swallow */ }
+
+    return await ollama.chatAboutRepo({
+      repo: repoForCtx,
+      readme: detail?.readme || null,
+      paths: detail?.paths || [],
+      manifests: detail?.manifests || {},
+      treeTruncated: !!detail?.treeTruncated,
+      recentCommits,
+      cachedSummary,
+      history,
+      question,
+      model,
+    });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// Per-commit chat — fetches the commit detail (with diffs) and asks Ollama.
+ipcMain.handle("commit:detail", async (_e, { fullName, sha } = {}) => {
+  try {
+    const detail = await github.fetchCommitDetail(fullName, sha);
+    if (!detail) return { ok: false, error: "Commit not found or not accessible." };
+    return { ok: true, ...detail };
+  } catch (err) {
+    return { ok: false, error: err.message, code: err.code };
+  }
+});
+ipcMain.handle("commit:chat", async (_e, { fullName, sha, question, history, model } = {}) => {
+  try {
+    const commit = await github.fetchCommitDetail(fullName, sha);
+    if (!commit) return { ok: false, error: "Commit not found." };
+    const dbh = db._db();
+    const repoRow = dbh.prepare(`SELECT * FROM repos WHERE full_name = ?`).get(fullName);
+    return await ollama.chatAboutCommit({
+      repo: repoRow || { full_name: fullName },
+      commit,
+      history,
+      question,
+      model,
+    });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// CP per-person Ollama summary. Caller passes a personId; we pull the
+// stats + cached recent submissions and ask the model for topics +
+// strengths. For "self" the renderer can pass personId=null and the
+// snapshot from cp.self.
+ipcMain.handle("cp:summarize", async (_e, { personId, name, model } = {}) => {
+  try {
+    let person, stats = {}, submissions = [];
+    if (personId) {
+      const dbh = db._db();
+      person = dbh.prepare(`SELECT id, name FROM people WHERE id = ?`).get(personId);
+      stats = (db.listCpStats?.(personId) || []).reduce((acc, row) => {
+        try { acc[row.platform] = JSON.parse(row.stats || '{}'); } catch {}
+        return acc;
+      }, {});
+      submissions = db.recentCpSubmissions?.({ personId, limit: 60 }) || [];
+    } else {
+      person = { name: name || "you" };
+      try {
+        const raw = db.getSetting("cp.self.snapshot");
+        if (raw) stats = JSON.parse(raw);
+      } catch { /* ignore */ }
+      submissions = db.recentCpSubmissions?.({ self: true, limit: 60 }) || [];
+    }
+    return await ollama.summarizeCpActivity({ person, stats, submissions, model });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 // Ask Ollama "what changed in the last N days" — given live commits.
 ipcMain.handle("repo:summarizeRecentChanges", async (_e, { repoId, fullName, days, model } = {}) => {
   try {

@@ -419,8 +419,42 @@ async function fetchCommits(fullName, { since, until, limit = 20 } = {}) {
   }
 }
 
+// Single-commit detail (with file diffs). Used by the per-commit chat.
+// GitHub returns at most ~300 files in commit detail; we cap our slice
+// even tighter to keep prompts sane.
+async function fetchCommitDetail(fullName, sha) {
+  if (!fullName || !sha) return null;
+  try {
+    const data = await gh(`/repos/${fullName}/commits/${sha}`);
+    if (!data) return null;
+    return {
+      sha: data.sha,
+      message: data.commit?.message || '',
+      author: data.commit?.author?.name || data.author?.login || null,
+      author_name: data.commit?.author?.name,
+      date: data.commit?.author?.date || data.commit?.committer?.date || null,
+      url: data.html_url || `https://github.com/${fullName}/commit/${data.sha}`,
+      stats: data.stats || null,
+      files: Array.isArray(data.files)
+        ? data.files.slice(0, 12).map((f) => ({
+            filename: f.filename,
+            status: f.status,
+            additions: f.additions,
+            deletions: f.deletions,
+            changes: f.changes,
+            patch: (f.patch || '').slice(0, 4000),
+          }))
+        : [],
+    };
+  } catch (err) {
+    if (err.code === 'NOT_FOUND') return null;
+    if (err.code === 'RATE_LIMIT') throw err;
+    return null;
+  }
+}
+
 module.exports = {
   fetchUser, fetchRepos, fetchLanguages, fetchReadme, fetchRecentActivity,
-  fetchRepoDetail, fetchTree, fetchFileContent, fetchCommits,
+  fetchRepoDetail, fetchTree, fetchFileContent, fetchCommits, fetchCommitDetail,
   syncPerson, syncAll, rateLimit,
 };

@@ -859,6 +859,29 @@ function LeaderboardModal({ onClose }) {
   const [data, setData] = useState({ leetcode: null, codeforces: null, codechef: null });
   const [sort, setSort] = useState("leetcode"); // which platform drives ranking
   const [loading, setLoading] = useState(true);
+  // CP summaries — keyed per person_id. Each entry is the result of
+  // api.cp.summarize for that person, plus a loading flag.
+  const [summaries, setSummaries] = useState({});
+  const [summariseLoading, setSummariseLoading] = useState(new Set());
+
+  async function summarisePerson(personId, name) {
+    setSummariseLoading((prev) => new Set(prev).add(personId));
+    try {
+      const res = await api.cp.summarize({ personId });
+      setSummaries((prev) => ({ ...prev, [personId]: res || { ok: false } }));
+    } catch (e) {
+      setSummaries((prev) => ({
+        ...prev,
+        [personId]: { ok: false, error: e?.message || "Failed" },
+      }));
+    } finally {
+      setSummariseLoading((prev) => {
+        const s = new Set(prev);
+        s.delete(personId);
+        return s;
+      });
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -910,20 +933,83 @@ function LeaderboardModal({ onClose }) {
         {loading && <div className="muted" style={{ padding: 12 }}>Loading…</div>}
         {!loading && rows.length === 0 && <div className="muted" style={{ padding: 12 }}>No data. Add CP handles in People and sync.</div>}
 
-        {rows.map((r, i) => (
-          <div key={r.person_id} className="row" style={{ alignItems: "center", gap: 10, margin: "8px 0" }}>
-            <span className="pill">{i + 1}</span>
-            {r.avatar_url ? <img className="avatar" src={r.avatar_url} alt="" style={{ width: 32, height: 32 }} /> : <div className="avatar" style={{ width: 32, height: 32 }} />}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="title">{r.person_name}</div>
-              <div className="sub muted row" style={{ gap: 10, flexWrap: "wrap" }}>
-                <span>LC: {statCell(r.leetcode, "leetcode")}</span>
-                <span>CF: {statCell(r.codeforces, "codeforces")}</span>
-                <span>CC: {statCell(r.codechef, "codechef")}</span>
+        {rows.map((r, i) => {
+          const sumLoading = summariseLoading.has(r.person_id);
+          const summary = summaries[r.person_id];
+          return (
+            <div key={r.person_id} className="cp-leaderboard-row">
+              <div className="cp-leaderboard-head">
+                <span className="pill">{i + 1}</span>
+                {r.avatar_url ? (
+                  <img
+                    className="avatar"
+                    src={r.avatar_url}
+                    alt=""
+                    style={{ width: 32, height: 32 }}
+                  />
+                ) : (
+                  <div className="avatar" style={{ width: 32, height: 32 }} />
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="title">{r.person_name}</div>
+                  <div
+                    className="sub muted row"
+                    style={{ gap: 10, flexWrap: "wrap" }}
+                  >
+                    <span>LC: {statCell(r.leetcode, "leetcode")}</span>
+                    <span>CF: {statCell(r.codeforces, "codeforces")}</span>
+                    <span>CC: {statCell(r.codechef, "codechef")}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="ghost small"
+                  onClick={() => summarisePerson(r.person_id, r.person_name)}
+                  disabled={sumLoading}
+                  title="Ollama summary of recent topics + strengths"
+                >
+                  {sumLoading
+                    ? "…"
+                    : summary?.ok
+                      ? "↻ Re-summarise"
+                      : "✨ Summarise"}
+                </button>
               </div>
+              {summary && summary.ok && (
+                <div className="cp-summary-block">
+                  {summary.summary && (
+                    <p className="cp-summary-text">{summary.summary}</p>
+                  )}
+                  {Array.isArray(summary.topics) && summary.topics.length > 0 && (
+                    <div className="cp-summary-row">
+                      <small className="muted cp-summary-label">Topics</small>
+                      <div className="chip-row">
+                        {summary.topics.slice(0, 6).map((t, k) => (
+                          <span key={k} className="pill">{t}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {Array.isArray(summary.strengths) && summary.strengths.length > 0 && (
+                    <div className="cp-summary-row">
+                      <small className="muted cp-summary-label">Strong in</small>
+                      <div className="chip-row">
+                        {summary.strengths.slice(0, 4).map((s, k) => (
+                          <span key={k} className="pill teal">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {summary && !summary.ok && summary.error && (
+                <div className="error" style={{ fontSize: 12, marginTop: 6 }}>
+                  Couldn't summarise: {summary.error}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -957,6 +1043,43 @@ function RepoDetailModal({ repo, person, onClose }) {
   const [model, setModel] = useState("");
   const [ollamaOk, setOllamaOk] = useState(false);
   const [models, setModels] = useState([]);
+  const [tab, setTab] = useState("overview"); // overview | chat
+  // Chat: history is { role: "user" | "assistant", content }, plus per-send
+  // loading + an error slot. Lives only as long as the modal is open.
+  const [chatHistory, setChatHistory] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatErr, setChatErr] = useState(null);
+
+  async function sendChatQuestion(q) {
+    const question = (q || "").trim();
+    if (!question) return;
+    setChatErr(null);
+    const newHistory = [...chatHistory, { role: "user", content: question }];
+    setChatHistory(newHistory);
+    setChatInput("");
+    setChatLoading(true);
+    try {
+      const res = await api.repo.chat({
+        repoId: repo.id,
+        fullName: repo.full_name,
+        question,
+        history: chatHistory, // send the prior history (without the new turn)
+        model,
+      });
+      if (!res?.ok) {
+        setChatErr(res?.error || "Chat failed.");
+        // Roll back the user message so they can retry without dupes? Keep it
+        // — the failure is informative.
+      } else {
+        setChatHistory((h) => [...h, { role: "assistant", content: res.reply || "(empty reply)" }]);
+      }
+    } catch (e) {
+      setChatErr(e?.message || "Chat failed.");
+    } finally {
+      setChatLoading(false);
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -1021,6 +1144,46 @@ function RepoDetailModal({ repo, person, onClose }) {
           {(repo.topics || []).slice(0, 6).map((t) => <span key={t} className="pill gray">{t}</span>)}
           <span className="pill gray">pushed {repo.pushed_at ? new Date(repo.pushed_at).toLocaleDateString() : "—"}</span>
         </div>
+
+        {/* Tab strip — overview vs. project chat. Chat has read-access to
+            the same context the AI summary uses, so the user can ask
+            grounded questions like "what does it actually do?" or
+            "where is auth handled?". */}
+        <div className="repo-modal-tabs" style={{ marginTop: 12 }}>
+          <button
+            type="button"
+            className={"today-tab" + (tab === "overview" ? " active" : "")}
+            onClick={() => setTab("overview")}
+          >
+            Overview
+          </button>
+          <button
+            type="button"
+            className={"today-tab" + (tab === "chat" ? " active" : "")}
+            onClick={() => setTab("chat")}
+            title="Ask Ollama questions about this project"
+          >
+            Chat {chatHistory.length > 0 ? `· ${Math.ceil(chatHistory.length / 2)}` : ""}
+          </button>
+        </div>
+
+        {tab === "chat" ? (
+          <RepoChatPanel
+            repo={repo}
+            history={chatHistory}
+            input={chatInput}
+            setInput={setChatInput}
+            onSend={sendChatQuestion}
+            loading={chatLoading}
+            err={chatErr}
+            ollamaOk={ollamaOk}
+            model={model}
+            models={models}
+            onModelChange={setModel}
+            onClear={() => { setChatHistory([]); setChatErr(null); }}
+          />
+        ) : (
+          <>
 
         {loading && <div className="muted" style={{ marginTop: 14 }}>Loading detail…</div>}
         {detail && (
@@ -1151,7 +1314,152 @@ function RepoDetailModal({ repo, person, onClose }) {
             )}
           </>
         )}
+          </>
+        )}
       </div>
+    </div>
+  );
+}
+
+// ─── RepoChatPanel ───────────────────────────────────────────────────────
+// The "Chat" tab inside RepoDetailModal. Lets the user ask the local LLM
+// open-ended questions about a repo (architecture, where X is implemented,
+// "how would I run this?", etc.). The backend assembles the same rich
+// context summarizeRepo uses, so the model is grounded in real files.
+function RepoChatPanel({
+  repo,
+  history,
+  input,
+  setInput,
+  onSend,
+  loading,
+  err,
+  ollamaOk,
+  model,
+  models,
+  onModelChange,
+  onClear,
+}) {
+  const scrollRef = React.useRef(null);
+  React.useEffect(() => {
+    // Stick to the bottom on new messages.
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [history.length, loading]);
+
+  const suggestionList = [
+    "What does this project actually do?",
+    "How would I run it locally?",
+    "Walk me through the architecture",
+    "What's the most interesting part of the code?",
+    "How would I extend this for my own use?",
+  ];
+
+  return (
+    <div className="repo-chat" style={{ marginTop: 12 }}>
+      <div className="repo-chat-controls">
+        <small className="muted">
+          Asks Ollama with the README, file tree, manifests &amp; recent
+          commits as context. All local.
+        </small>
+        <div className="row" style={{ gap: 6 }}>
+          <select
+            value={model}
+            onChange={(e) => onModelChange(e.target.value)}
+            disabled={!ollamaOk || models.length === 0}
+            style={{ maxWidth: 200 }}
+          >
+            {models.length === 0 && <option value="">(no models)</option>}
+            {models.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          {history.length > 0 && (
+            <button className="ghost xsmall" onClick={onClear} title="Clear conversation">
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="repo-chat-stream" ref={scrollRef}>
+        {history.length === 0 && (
+          <div className="repo-chat-empty">
+            <div className="muted" style={{ marginBottom: 8 }}>
+              Start with one of these, or ask anything about{" "}
+              <strong>{repo.name}</strong>:
+            </div>
+            <div className="repo-chat-suggestions">
+              {suggestionList.map((s, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className="ghost small"
+                  onClick={() => onSend(s)}
+                  disabled={loading || !ollamaOk}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {history.map((m, i) => (
+          <div key={i} className={"repo-chat-msg role-" + m.role}>
+            <div className="repo-chat-role">
+              {m.role === "user" ? "You" : "Apex"}
+            </div>
+            <div className="repo-chat-bubble">
+              <MarkdownBlock text={m.content} />
+            </div>
+          </div>
+        ))}
+
+        {loading && (
+          <div className="repo-chat-msg role-assistant">
+            <div className="repo-chat-role">Apex</div>
+            <div className="repo-chat-bubble">
+              <em className="muted">Reading the project &amp; thinking…</em>
+            </div>
+          </div>
+        )}
+
+        {err && (
+          <div className="error" style={{ marginTop: 8 }}>
+            {err}
+          </div>
+        )}
+      </div>
+
+      <form
+        className="repo-chat-input"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!loading && input.trim()) onSend(input);
+        }}
+      >
+        <input
+          value={input}
+          placeholder={
+            ollamaOk
+              ? "Ask anything about this project…"
+              : "Ollama is offline"
+          }
+          disabled={!ollamaOk || loading}
+          onChange={(e) => setInput(e.target.value)}
+          autoFocus
+        />
+        <button
+          type="submit"
+          className="primary"
+          disabled={!ollamaOk || loading || !input.trim()}
+          title="Send"
+        >
+          {loading ? "…" : "Send"}
+        </button>
+      </form>
     </div>
   );
 }

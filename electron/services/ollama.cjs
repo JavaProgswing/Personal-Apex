@@ -552,6 +552,333 @@ Return JSON:
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// chatAboutRepo — open-ended Q&A over a repo, grounded in its actual content.
+// Server assembles the same rich context summarizeRepo uses (README + tree
+// + manifests + recent commits + cached AI summary) and feeds it as the
+// system context. Returns a single assistant message — the renderer keeps
+// the conversation history and just sends the latest question.
+// ───────────────────────────────────────────────────────────────────────────
+async function chatAboutRepo({
+  repo,
+  readme,
+  paths = [],
+  manifests = {},
+  treeTruncated = false,
+  recentCommits = [],
+  cachedSummary,
+  history = [],
+  question,
+  model,
+}) {
+  if (!question || !question.trim()) {
+    return { ok: false, error: 'No question provided' };
+  }
+  const systemBase = `You are a precise, technical assistant explaining a GitHub project to a curious dev.
+- Ground EVERY claim in what's in the README / file tree / manifests / commits.
+- If something isn't in the provided context, say so explicitly — do not invent.
+- Be concrete: name files, libraries, APIs, commands.
+- 3-7 sentences for an explanation, with a short list when useful.
+- If the user asks "how would I run this?" cite the actual scripts/manifests.
+- If asked to compare to user's own work or extend it, refer back to README/topics.
+Avoid markdown headers; light **bold** and inline code are fine.`;
+
+  const readmeSlice = (readme || '').slice(0, 5000);
+  const treeBlock = (paths || []).slice(0, 80).join('\n')
+    + (treeTruncated ? '\n…(tree truncated by GitHub)' : '');
+  const manifestBlock = Object.entries(manifests || {})
+    .slice(0, 6)
+    .map(([p, c]) => `--- ${p} ---\n${(c || '').slice(0, 1500)}`)
+    .join('\n\n');
+  const commitBlock = (recentCommits || [])
+    .slice(0, 25)
+    .map((c) => `${(c.date || '').slice(0, 10)} ${c.sha?.slice(0, 7)} — ${(c.message || '').split('\n')[0].slice(0, 140)}`)
+    .join('\n');
+  const summaryBlock = cachedSummary
+    ? `\nPRIOR AI SUMMARY (for reference, may be stale):\n${JSON.stringify(cachedSummary).slice(0, 1500)}`
+    : '';
+
+  const contextBlock = `Repo: ${repo?.full_name || repo?.name || 'unknown'}
+Description: ${repo?.description || '(none)'}
+Languages: ${Array.isArray(repo?.languages) ? repo.languages.join(', ') : (repo?.language || 'unknown')}
+Topics: ${Array.isArray(repo?.topics) ? repo.topics.join(', ') : '(none)'}
+Stars: ${repo?.stargazers_count ?? repo?.stars ?? 0}
+Last push: ${repo?.pushed_at || '(unknown)'}
+${summaryBlock}
+
+FILE TREE (sample):
+${treeBlock || '(no tree)'}
+
+MANIFEST FILES (verbatim, truncated):
+${manifestBlock || '(none)'}
+
+RECENT COMMITS (newest first):
+${commitBlock || '(none)'}
+
+README (truncated):
+${readmeSlice || '(no README)'}`;
+
+  const system = buildSystem(systemBase + '\n\n' + contextBlock);
+
+  // Convert history to alternating user/assistant turns + the new question.
+  const turns = [];
+  for (const h of history.slice(-10)) {
+    if (h && (h.role === 'user' || h.role === 'assistant') && h.content) {
+      turns.push({ role: h.role, content: String(h.content) });
+    }
+  }
+  turns.push({ role: 'user', content: question });
+
+  const chosen = await resolveModel(model);
+  if (!chosen) return { ok: false, error: 'No Ollama models installed.' };
+  try {
+    const res = await fetch(`${host()}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: chosen,
+        messages: [{ role: 'system', content: system }, ...turns],
+        stream: false,
+        options: { temperature: 0.25 },
+      }),
+    });
+    if (!res.ok) {
+      let body = ''; try { body = await res.text(); } catch {}
+      return { ok: false, error: `Ollama ${res.status}${body ? ': ' + body.slice(0, 200) : ''}` };
+    }
+    const data = await res.json();
+    return { ok: true, reply: data.message?.content || '', model: chosen };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// chatAboutCommit — focused Q&A on a single commit. Caller fetches the
+// commit's diff/details and passes them in. Reuses the same model with a
+// tighter system prompt.
+// ───────────────────────────────────────────────────────────────────────────
+async function chatAboutCommit({ repo, commit, history = [], question, model }) {
+  if (!question || !question.trim()) {
+    return { ok: false, error: 'No question provided' };
+  }
+  const systemBase = `You are a precise code-review assistant explaining a single git commit.
+- Stick to the diff + message provided. Don't invent files or behaviour.
+- 2-5 sentences, focused on intent + impact + possible side effects.
+- Cite file paths and function names from the diff when relevant.`;
+
+  const filesBlock = Array.isArray(commit?.files)
+    ? commit.files
+        .slice(0, 8)
+        .map(
+          (f) =>
+            `--- ${f.filename} (${f.status}, +${f.additions || 0} -${f.deletions || 0}) ---\n` +
+            (f.patch || '').slice(0, 2000),
+        )
+        .join('\n\n')
+    : '(no file diffs available)';
+
+  const contextBlock = `Repo: ${repo?.full_name || 'unknown'}
+Commit: ${commit?.sha || ''}
+Author: ${commit?.author_name || commit?.author || ''}
+Date: ${commit?.date || ''}
+Message: ${(commit?.message || '').slice(0, 1000)}
+
+DIFFS (truncated):
+${filesBlock}`;
+
+  const system = buildSystem(systemBase + '\n\n' + contextBlock);
+  const turns = [];
+  for (const h of (history || []).slice(-6)) {
+    if (h && (h.role === 'user' || h.role === 'assistant') && h.content) {
+      turns.push({ role: h.role, content: String(h.content) });
+    }
+  }
+  turns.push({ role: 'user', content: question });
+
+  const chosen = await resolveModel(model);
+  if (!chosen) return { ok: false, error: 'No Ollama models installed.' };
+  try {
+    const res = await fetch(`${host()}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: chosen,
+        messages: [{ role: 'system', content: system }, ...turns],
+        stream: false,
+        options: { temperature: 0.2 },
+      }),
+    });
+    if (!res.ok) {
+      let body = ''; try { body = await res.text(); } catch {}
+      return { ok: false, error: `Ollama ${res.status}${body ? ': ' + body.slice(0, 200) : ''}` };
+    }
+    const data = await res.json();
+    return { ok: true, reply: data.message?.content || '', model: chosen };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// summarizeCpActivity — given a person's recent CP submissions, distil the
+// topics they've been working on, strengths, and what's notable. Used in
+// the CP leaderboard to one-click summarise anyone's profile (yourself
+// included).
+// ───────────────────────────────────────────────────────────────────────────
+async function summarizeCpActivity({ person, submissions = [], stats = {}, model }) {
+  if (!Array.isArray(submissions) || submissions.length === 0) {
+    return {
+      ok: true,
+      summary: '(no recent submissions cached for this person)',
+      topics: [],
+      strengths: [],
+    };
+  }
+  const system = buildSystem(`Concise CP activity summariser. Output ONLY valid JSON.
+- "summary" 2-4 sentences on what they've been grinding (problems, difficulty, frequency).
+- "topics" array (max 6) — DSA topics inferred from problem titles/tags (e.g. "graphs", "DP", "binary search").
+- "strengths" 1-3 areas they look strong in based on rating + verdict mix.
+- Don't invent platforms — only mention what's in the data.`);
+
+  const list = submissions.slice(0, 60).map((s) => ({
+    platform: s.platform,
+    title: s.title,
+    rating: s.rating,
+    verdict: s.verdict,
+    submitted_at: s.submitted_at,
+  }));
+  const statsLine = Object.entries(stats || {})
+    .filter(([, v]) => v && typeof v === 'object')
+    .map(([plat, v]) => `${plat}: ${JSON.stringify(v).slice(0, 200)}`)
+    .join('\n');
+
+  const user = `Person: ${person?.name || person?.handle || 'unknown'}
+
+Stats:
+${statsLine || '(none)'}
+
+Recent submissions (max 60):
+${JSON.stringify(list, null, 2)}
+
+Return JSON:
+{
+  "summary": "2-4 sentences",
+  "topics": ["topic1", "topic2"],
+  "strengths": ["area1"]
+}`;
+
+  const resp = await chat({ model, system, user, json: true, temperature: 0.25 });
+  if (!resp.ok) return resp;
+  return safeParseJson(resp.content);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// recommendNow — "what should I do next" given the current state of the day.
+// Pulls in: today's classes (effective, override-applied), open tasks,
+// active live timer, recent activity, last burnout read, CP self stats.
+// Returns 2–4 short, actionable recommendations the dashboard can render
+// inline (each is one sentence, with an optional link to a task or page).
+// ───────────────────────────────────────────────────────────────────────────
+async function recommendNow({
+  classes = [],
+  tasks = [],
+  activeTimer,
+  recentTimerSessions = [],
+  todayTotals,
+  burnoutReport,
+  cpSelf,
+  weeklyGoals = [],
+  nowIso,
+  model,
+}) {
+  const system = buildSystem(`Brief, practical "what to do next" coach.
+Output ONLY valid JSON.
+Style:
+- Each item is ONE concrete next action, max 18 words.
+- No generic motivational fluff. No "drink water" filler unless burnout suggests it.
+- Mix at least one DSA/CP nudge, at least one task or class-prep item, and at least one health/break item if energy/dread suggest it.
+- Reference real task IDs / titles / class subjects from the input where you can.
+- Skip items that are already in progress (active timer / just-logged sessions).
+- Output 2 to 4 items, sorted most-impactful-first.`);
+
+  const classesLine = classes
+    .map((c) => `${c.start_time}–${c.end_time} ${c.subject}${c.override_status ? ' [' + c.override_status + ']' : ''}`)
+    .join('; ');
+
+  const taskList = (tasks || [])
+    .filter((t) => !t.completed)
+    .slice(0, 25)
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      priority: t.priority,
+      deadline: t.deadline,
+      category: t.category,
+      course_code: t.course_code,
+      estimated_minutes: t.estimated_minutes,
+    }));
+
+  const goalLine = (weeklyGoals || [])
+    .filter((g) => (g.progress ?? 0) < (g.target ?? 1))
+    .slice(0, 6)
+    .map((g) => `${g.title}: ${g.progress ?? 0}/${g.target}`)
+    .join('; ') || '(none unfinished)';
+
+  const cpLine = cpSelf
+    ? Object.entries(cpSelf)
+        .filter(([, v]) => v && typeof v === 'object')
+        .map(([plat, v]) => `${plat}: ${v.totalSolved ?? v.rating ?? '?'}`)
+        .join('; ')
+    : '(no CP data)';
+
+  const timerLine = activeTimer
+    ? `${activeTimer.title} (${activeTimer.kind}) — running`
+    : '(none)';
+
+  const recentLine = (recentTimerSessions || [])
+    .slice(0, 6)
+    .map((s) => `${s.app || s.title || 'untitled'} ${s.minutes}m`)
+    .join('; ') || '(none yet today)';
+
+  const burnoutLine = burnoutReport
+    ? `risk ${burnoutReport.risk_score ?? '?'} · ${burnoutReport.summary || ''}`
+    : '(no read)';
+
+  const todayLine = todayTotals
+    ? `productive ${todayTotals.productive || 0}m · distraction ${todayTotals.distraction || 0}m · neutral ${todayTotals.neutral || 0}m`
+    : '(no totals)';
+
+  const user = `Now: ${nowIso || new Date().toISOString()}
+Effective classes today: ${classesLine || '(none)'}
+Active timer: ${timerLine}
+Today already done (timer-logged): ${recentLine}
+Today totals: ${todayLine}
+Burnout read: ${burnoutLine}
+Weekly goals progress (unfinished): ${goalLine}
+My CP snapshot: ${cpLine}
+
+Open tasks (top 25):
+${JSON.stringify(taskList, null, 2)}
+
+Return JSON:
+{
+  "recommendations": [
+    {
+      "kind": "task|cp|class-prep|break|health|reflection|other",
+      "text": "concrete next action, ≤18 words",
+      "taskId": <number or null>,
+      "estimated_minutes": <number or null>,
+      "reason": "≤14 words on why now"
+    }
+  ]
+}`;
+
+  const resp = await chat({ model, system, user, json: true, temperature: 0.3 });
+  if (!resp.ok) return resp;
+  return safeParseJson(resp.content);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // summarizeRecentChanges — given a list of recent commits to a repo, produce
 // a short "what changed in the last N days" summary. Used by the Classmate
 // Activity push-card expand pane so you can see at a glance what someone
@@ -601,27 +928,65 @@ Return JSON:
 // Each image is expected to depict (part of) a weekly class schedule.
 // Returns rows matching the classes table schema.
 // ───────────────────────────────────────────────────────────────────────────
+// True if the model name *looks* vision-capable. Conservative — we'd rather
+// reject a fine model than silently send images to a chat-only model that
+// will ignore them and return zero rows.
+function isVisionModel(name) {
+  if (!name) return false;
+  return /vision|llava|minicpm-v|bakllava|cogvlm|moondream|qwen2-vl|qwen2\.5-vl/i.test(
+    name,
+  );
+}
+
 async function ocrTimetable({ imagesBase64, hint, model }) {
   if (!Array.isArray(imagesBase64) || imagesBase64.length === 0) {
     return { ok: false, error: 'No images provided' };
   }
-  // Require a vision-capable model. If the caller didn't specify, try to
-  // auto-select from a known-good vision list.
+  // Require a vision-capable model. If the caller passed a non-vision name,
+  // override it — a chat-only model would silently drop the images and
+  // produce zero rows, which is confusing as hell.
   const installed = await cachedModels();
-  const visionRank = ['llama3.2-vision', 'llama3.2-vision:11b', 'minicpm-v',
-    'llava', 'llava-llama3', 'llava-phi3', 'bakllava'];
-  let chosen = model;
-  if (!chosen || !installed.includes(chosen)) {
+  const visionRank = [
+    'llama3.2-vision', 'llama3.2-vision:11b', 'llama3.2-vision:90b',
+    'minicpm-v', 'llava', 'llava-llama3', 'llava-phi3', 'bakllava',
+    'moondream', 'qwen2.5-vl', 'qwen2-vl',
+  ];
+  const matchInstalled = (name) =>
+    installed.find((m) => m === name || m.startsWith(name + ':'));
+
+  let chosen = null;
+  // 1) Honour the user's pick if it actually IS vision-capable.
+  if (model && installed.includes(model) && isVisionModel(model)) {
+    chosen = model;
+  }
+  // 2) Otherwise fall back to the first installed vision model from our rank.
+  if (!chosen) {
     for (const v of visionRank) {
-      const found = installed.find((m) => m === v || m.startsWith(v + ':'));
+      const found = matchInstalled(v);
       if (found) { chosen = found; break; }
     }
   }
+  // 3) Final fallback: any installed model that smells vision-capable.
+  if (!chosen) {
+    chosen = installed.find(isVisionModel) || null;
+  }
+
   if (!chosen) {
     return {
       ok: false,
-      error: 'No Ollama vision model installed. Try `ollama pull llama3.2-vision` first.',
+      error:
+        'No Ollama vision model installed. Run `ollama pull llama3.2-vision` ' +
+        '(or `minicpm-v` / `moondream` for smaller alternatives), then try again.',
+      installed,
     };
+  }
+  if (model && model !== chosen) {
+    // Caller passed something but we overrode it — surface that in the
+    // result so the UI can update the dropdown.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[ocrTimetable] caller asked for "${model}" but that's not vision-capable; using "${chosen}" instead.`,
+    );
   }
 
   const system = `You are a precise OCR + structuring assistant.
@@ -659,8 +1024,16 @@ otherwise infer from row position (top=1).`;
   });
   if (!resp.ok) return resp;
   const parsed = safeParseJson(resp.content);
-  if (!parsed.ok) return parsed;
-  return { ok: true, rows: Array.isArray(parsed.rows) ? parsed.rows : [], model: chosen };
+  if (!parsed.ok) {
+    return { ...parsed, modelUsed: chosen };
+  }
+  return {
+    ok: true,
+    rows: Array.isArray(parsed.rows) ? parsed.rows : [],
+    model: chosen,
+    modelUsed: chosen,
+    requestedModel: model || null,
+  };
 }
 
 function safeParseJson(content) {
@@ -674,7 +1047,8 @@ function safeParseJson(content) {
 
 module.exports = {
   listModels, chat, planDay, burnoutSuggest, eveningReview, burnoutCheck, summarizeRepo,
-  summarizeRecentChanges,
+  summarizeRecentChanges, recommendNow, chatAboutRepo, chatAboutCommit,
+  summarizeCpActivity,
   ocrTimetable, autoPickBest, resolveModel, personalContext, buildSystem,
   ping, ensureRunning,
 };

@@ -351,13 +351,23 @@ export default function Upcoming({ go }) {
               })}
 
               {allDueToday.length > 0 && (
-                <>
-                  <hr className="soft" />
-                  <small className="muted">Due this day</small>
-                  {allDueToday.map((t) => (
-                    <DeadlineRow key={"t" + t.id} t={t} onToggle={toggleTask} />
-                  ))}
-                </>
+                <div className="due-section">
+                  <div className="section-label due-section-label">
+                    Due this day
+                    <span className="muted" style={{ marginLeft: 6 }}>
+                      · {allDueToday.length}
+                    </span>
+                  </div>
+                  <div className="due-list">
+                    {allDueToday.map((t) => (
+                      <DeadlineRow
+                        key={"t" + t.id}
+                        t={t}
+                        onToggle={toggleTask}
+                      />
+                    ))}
+                  </div>
+                </div>
               )}
 
               {isEmpty && (
@@ -375,33 +385,34 @@ export default function Upcoming({ go }) {
 function DeadlineRow({ t, onToggle }) {
   const isUrgent = t.priority <= 2;
   return (
-    <div
-      className="row"
-      style={{ marginTop: 6, alignItems: "center", gap: 8 }}
-    >
+    <div className={"due-row" + (t.completed ? " done" : "")}>
       <input
         type="checkbox"
         checked={!!t.completed}
         onChange={() => onToggle(t.id)}
+        aria-label={`Toggle ${t.title}`}
       />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="title" style={{ textDecoration: t.completed ? "line-through" : "none" }}>
-          {t.title}
-        </div>
-        <div className="sub" style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
-          {t.category && <span className="pill">{t.category}</span>}
+      <div className="due-row-body">
+        <div className="due-row-title">{t.title}</div>
+        <div className="due-row-meta">
+          {t.category && <span className="pill gray">{t.category}</span>}
           {t.course_code && <span className="pill">{t.course_code}</span>}
           {t.estimated_minutes ? (
-            <small className="muted">~{t.estimated_minutes} min</small>
+            <span className="due-row-est">~{t.estimated_minutes} min</span>
           ) : null}
         </div>
       </div>
       <span
         className={
-          "pill " +
-          (isUrgent ? "rose" : t.priority === 3 ? "amber" : "gray")
+          "pill " + (isUrgent ? "rose" : t.priority === 3 ? "amber" : "gray")
         }
-        title={isUrgent ? "Urgent" : t.priority === 3 ? "Normal" : "Low"}
+        title={
+          isUrgent
+            ? "Urgent"
+            : t.priority === 3
+              ? "Normal"
+              : "Low"
+        }
       >
         P{t.priority}
       </span>
