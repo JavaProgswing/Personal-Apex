@@ -2458,6 +2458,120 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   v1.0 — Habit streak badge
+   ═══════════════════════════════════════════════════════════════════════ */
+.habit-streak-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255,166,87,0.15);
+  border: 1px solid rgba(255,166,87,0.40);
+  color: #ffc087;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   v1.0 — Evening review chip
+   ═══════════════════════════════════════════════════════════════════════ */
+.evening-chip-wrap { position: relative; }
+.evening-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.evening-chip:hover { border-color: #3a3a45; }
+.evening-chip.late {
+  border-color: rgba(255,166,87,0.45);
+  background: rgba(255,166,87,0.08);
+}
+.evening-chip.open {
+  border-color: var(--accent);
+  background: var(--bg-elev-2);
+}
+.evening-chip:disabled { opacity: 0.4; cursor: not-allowed; }
+.evening-icon { font-size: 13px; line-height: 1; }
+.evening-caret { font-size: 9px; opacity: 0.7; transition: transform 180ms ease; }
+.evening-chip.open .evening-caret { transform: rotate(180deg); }
+
+.evening-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 380px;
+  max-width: 92vw;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: var(--shadow-md);
+  z-index: 50;
+  animation: burnout-pop-in 160ms ease-out;
+}
+.evening-popover-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.evening-block { margin-top: 10px; }
+.evening-block:first-of-type { margin-top: 0; }
+.evening-block .section-label {
+  margin: 0 0 6px 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+}
+.evening-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+.evening-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.evening-tomorrow {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+.evening-tomorrow .ghost.small {
+  margin-top: 8px;
+  font-size: 11.5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.evening-tomorrow .ghost.small:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    v0.9 — Recommendation chip ("What now?")
    ═══════════════════════════════════════════════════════════════════════ */
 .recommend-chip-wrap { position: relative; }

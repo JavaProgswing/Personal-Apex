@@ -9,6 +9,8 @@ const {
   dialog,
   shell,
   net,
+  session,
+  Notification,
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
@@ -126,6 +128,29 @@ app.whenReady().then(async () => {
     }
   } catch (e) { console.warn("[tracker] autostart skipped:", e.message); }
 
+  // Boot the in-app notification scheduler. Polls every 60s for class
+  // start-of-period, task deadlines, and live-timer expiry; respects the
+  // `notifications.enabled` setting (defaults ON).
+  try {
+    const notifier = require("./services/notifier.cjs");
+    notifier.attach(Notification);
+    notifier.onClick(({ kind, payload }) => {
+      // Bring the main window forward so the user lands somewhere useful.
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.focus();
+          if (kind === "deadline" && payload?.taskId) {
+            emit("nav:goto", { route: "tasks", taskId: payload.taskId });
+          } else if (kind === "class") {
+            emit("nav:goto", { route: "upcoming" });
+          }
+        }
+      } catch { /* ignore */ }
+    });
+    notifier.start();
+  } catch (e) { console.warn("[notifier] startup skipped:", e.message); }
+
   // Auto-launch Ollama daemon in the background so the user doesn't have to
   // click the Start-menu shortcut before the app can do AI work. Controlled
   // by the `ollama.autoStart` setting (defaults to on).
@@ -191,6 +216,8 @@ ipcMain.handle("tasks:create", (_e, task) => db.createTask(task));
 ipcMain.handle("tasks:update", (_e, id, patch) => db.updateTask(id, patch));
 ipcMain.handle("tasks:delete", (_e, id) => db.deleteTask(id));
 ipcMain.handle("tasks:toggle", (_e, id) => db.toggleTask(id));
+ipcMain.handle("tasks:habitStreak", (_e, id) => db.habitStreak(id));
+ipcMain.handle("tasks:habitStreaksFor", (_e, ids) => db.habitStreaksFor(ids || []));
 ipcMain.handle("tasks:today", () => db.tasksForToday());
 ipcMain.handle("tasks:upcoming", (_e, days) => db.tasksUpcoming(days ?? 7));
 ipcMain.handle("tasks:completedOn", (_e, isoDate) => db.tasksCompletedOn(isoDate));
@@ -300,12 +327,27 @@ ipcMain.handle("schedule:forDayOrder", (_e, d) => db.classesForDayOrder(d));
 ipcMain.handle("schedule:upsert", (_e, row) => db.upsertClass(row));
 ipcMain.handle("schedule:delete", (_e, id) => db.deleteClass(id));
 ipcMain.handle("schedule:replaceAll", (_e, rows) => db.replaceAllClasses(rows));
-// SRM Academia (NetID + password) — replaces the old "pick a folder
-// containing the AcademiaScraper Python output" flow. We log in, fetch
-// the timetable and academic planner, parse them, and write classes +
-// day_order_overrides directly. Creds live in the settings table; the
-// renderer never sees the password back from us.
+// SRM Academia — primary flow is browser-based: open a real BrowserWindow
+// pointed at academia.srmist.edu.in (with a persistent partition so cookies
+// survive across launches), the user signs in once, we harvest cookies
+// and use them for every subsequent fetch. Captcha, MFA, password changes
+// — all handled by the user's actual browser session.
+//
+// The legacy NetID/password headless flow is kept as a fallback but most
+// accounts will hit Zoho's HIP captcha and bounce.
 const srm = require("./services/srm.cjs");
+const SRM_PARTITION = "persist:srm";
+
+// Attach the persistent session to the SRM service so it can read cookies
+// for every fetch. Done lazily on first use because `session.fromPartition`
+// can only be called after `app.whenReady()`.
+function _ensureSrmSessionAttached() {
+  if (!app.isReady()) return null;
+  const s = session.fromPartition(SRM_PARTITION);
+  srm.attachElectronSession(s);
+  return s;
+}
+
 ipcMain.handle("srm:saveCreds", (_e, { username, password } = {}) => {
   if (!username || !password) {
     return { ok: false, error: "Username and password are required." };
@@ -319,19 +361,107 @@ ipcMain.handle("srm:clearCreds", () => {
   db.setSetting("srm.password", null);
   return { ok: true };
 });
-ipcMain.handle("srm:hasCreds", () => {
+ipcMain.handle("srm:hasCreds", async () => {
+  _ensureSrmSessionAttached();
+  let loggedIn = false;
+  try { loggedIn = await srm.isLoggedIn(); } catch { /* ignore */ }
   return {
     ok: true,
     saved: !!(db.getSetting("srm.netid") && db.getSetting("srm.password")),
     username: db.getSetting("srm.netid") || null,
+    sessionActive: loggedIn,
   };
 });
 ipcMain.handle("srm:syncNow", async (_e, opts = {}) => {
   try {
+    _ensureSrmSessionAttached();
     return await srm.syncAll(opts || {});
   } catch (err) {
     return { ok: false, error: err.message };
   }
+});
+
+// Open a child BrowserWindow pointed at the SRM Academia login. Uses the
+// persistent `persist:srm` partition so cookies stick across restarts.
+// Resolves with `{ ok: true, loggedIn }` once the window closes (whether
+// the user signed in or just dismissed it).
+let _srmLoginWin = null;
+ipcMain.handle("srm:openLoginWindow", async () => {
+  if (_srmLoginWin && !_srmLoginWin.isDestroyed()) {
+    _srmLoginWin.focus();
+    return { ok: true, alreadyOpen: true };
+  }
+  _ensureSrmSessionAttached();
+  _srmLoginWin = new BrowserWindow({
+    width: 980,
+    height: 760,
+    title: "Sign in to SRM Academia",
+    autoHideMenuBar: true,
+    parent: mainWindow,
+    modal: false,
+    webPreferences: {
+      partition: SRM_PARTITION,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  // Watch for navigation into the post-login redirect; auto-close once
+  // the user lands on the academia portal page.
+  let resolved = false;
+  const finish = (extra = {}) =>
+    new Promise(async (resolve) => {
+      try {
+        const loggedIn = await srm.isLoggedIn();
+        resolve({ ok: true, loggedIn, ...extra });
+      } catch (err) {
+        resolve({ ok: true, loggedIn: false, error: err.message, ...extra });
+      }
+    });
+  return await new Promise((resolve) => {
+    _srmLoginWin.webContents.on("did-navigate", async (_evt, url) => {
+      if (
+        !resolved &&
+        /academia\.srmist\.edu\.in\/portal\/academia-academic-services/.test(url)
+      ) {
+        resolved = true;
+        // Give Zoho a moment to flush cookies, then close.
+        setTimeout(async () => {
+          try { _srmLoginWin?.close?.(); } catch {}
+          resolve(await finish({ closedBy: "auto" }));
+        }, 1500);
+      }
+    });
+    _srmLoginWin.on("closed", async () => {
+      _srmLoginWin = null;
+      if (!resolved) {
+        resolved = true;
+        resolve(await finish({ closedBy: "user" }));
+      }
+    });
+    _srmLoginWin.loadURL(
+      "https://academia.srmist.edu.in/accounts/p/10002227248/signin?hide_fp=true&servicename=ZohoCreator&service_language=en&serviceurl=https%3A%2F%2Facademia.srmist.edu.in%2Fportal%2Facademia-academic-services%2FredirectFromLogin",
+    );
+  });
+});
+
+ipcMain.handle("srm:logout", async () => {
+  _ensureSrmSessionAttached();
+  return await srm.clearCookies();
+});
+
+// --- in-app notifications (class starts, deadlines, timer expiry) ---
+const notifier = require("./services/notifier.cjs");
+ipcMain.handle("notifier:status", () => notifier.getStatus());
+ipcMain.handle("notifier:setEnabled", (_e, on) => notifier.setEnabled(on));
+ipcMain.handle("notifier:setLeads", (_e, opts) => notifier.setLeads(opts || {}));
+ipcMain.handle("notifier:test", () => {
+  const ok = notifier.fire({
+    title: "Apex test notification",
+    body: "If you see this, system notifications are working.",
+    kind: "test",
+  });
+  return { ok };
 });
 
 ipcMain.handle("schedule:resyncFromAcademia", async (_e, folder) => {
@@ -432,7 +562,36 @@ ipcMain.handle("ollama:recommend", async (_e, opts = {}) => {
 });
 ipcMain.handle("ollama:burnoutSuggest", (_e, ctx) => ollama.burnoutSuggest(ctx));
 ipcMain.handle("ollama:burnoutCheck", (_e, ctx) => ollama.burnoutCheck(ctx));
-ipcMain.handle("ollama:eveningReview", (_e, ctx) => ollama.eveningReview(ctx));
+ipcMain.handle("ollama:eveningReview", async (_e, opts = {}) => {
+  // Assemble the full end-of-day context server-side so the renderer just
+  // says "give me the review" — no need to gather completed tasks, time
+  // totals etc. on the JSX side.
+  try {
+    const isoToday = new Date().toISOString().slice(0, 10);
+    const dbh = db._db();
+    const completedToday = dbh
+      .prepare(
+        `SELECT id, title, category, course_code
+           FROM tasks
+          WHERE completed = 1
+            AND date(completed_at) = date(?)
+          ORDER BY completed_at DESC LIMIT 30`,
+      )
+      .all(isoToday);
+    const openTasks = db.listTasks({ kind: "task", completed: false }) || [];
+    const checkin = db.getCheckinByDate(isoToday) || null;
+    const timeTotals = db.activityTotalsOn(isoToday) || {};
+    return await ollama.eveningReview({
+      checkin,
+      completedToday,
+      timeTotals,
+      openTasks,
+      model: opts.model,
+    });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 // Return the best installed chat model (so the renderer can default to it).
 ipcMain.handle("ollama:best", async () => ({ model: await ollama.autoPickBest() }));
 // Manual "Start Ollama" button in Settings.

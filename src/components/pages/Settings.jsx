@@ -60,58 +60,61 @@ export default function Settings() {
 }
 
 function ScheduleTab({ all, setAll, save, setMsg }) {
-  // SRM credentials. We never read `srm.password` back from the main
-  // process for display — only `username` + a `saved` flag.
-  const [creds, setCreds] = useState({ saved: false, username: null });
-  const [netid, setNetid] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPwd, setShowPwd] = useState(false);
+  // SRM session state — primary path is browser-login (cookies live in a
+  // persistent Electron partition so a one-time sign-in is enough).
+  const [sess, setSess] = useState({
+    saved: false,
+    username: null,
+    sessionActive: false,
+  });
+  const [opening, setOpening] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
 
   useEffect(() => {
-    refreshCreds();
+    refreshState();
   }, []);
 
-  async function refreshCreds() {
+  async function refreshState() {
     try {
       const r = await api.srm.hasCreds();
-      setCreds({ saved: !!r?.saved, username: r?.username || null });
-      if (r?.username) setNetid(r.username);
+      setSess({
+        saved: !!r?.saved,
+        username: r?.username || null,
+        sessionActive: !!r?.sessionActive,
+      });
     } catch { /* ignore */ }
   }
 
-  async function saveCreds() {
-    const u = netid.trim();
-    if (!u || !password) {
-      setMsg("Enter both NetID and password.");
-      return;
-    }
-    const r = await api.srm.saveCreds({ username: u, password });
-    if (r?.ok) {
-      setCreds({ saved: true, username: u });
-      setPassword("");
-      setMsg("SRM credentials saved.");
-    } else {
-      setMsg("Couldn't save credentials: " + (r?.error || "unknown"));
+  async function openLogin() {
+    setOpening(true);
+    setMsg("Opening SRM login…");
+    try {
+      const r = await api.srm.openLoginWindow();
+      await refreshState();
+      if (r?.loggedIn) {
+        setMsg("Signed in to SRM. Click Sync now to pull your timetable.");
+      } else {
+        setMsg(
+          "Login window closed without an active session. Try again — make sure you reach your portal home before closing.",
+        );
+      }
+    } finally {
+      setOpening(false);
     }
   }
 
-  async function clearCreds() {
-    if (!confirm("Forget saved SRM credentials?")) return;
-    await api.srm.clearCreds();
-    setCreds({ saved: false, username: null });
-    setNetid("");
-    setMsg("SRM credentials cleared.");
+  async function logoutSrm() {
+    if (!confirm("Sign out of SRM Academia inside Apex?")) return;
+    await api.srm.logout();
+    await refreshState();
+    setMsg("SRM session cleared.");
   }
 
-  async function syncNow(useEntered) {
+  async function syncNow() {
     setSyncing(true);
     try {
-      const opts = useEntered
-        ? { username: netid.trim(), password }
-        : {};
-      const res = await api.srm.syncNow(opts);
+      const res = await api.srm.syncNow({});
       setLastSync(res);
       if (res?.ok) {
         setMsg(
@@ -119,16 +122,13 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
           (res.calendar_rows ? ` + ${res.calendar_rows} calendar dates` : "") +
           (res.student?.name ? ` for ${res.student.name}` : "") + ".",
         );
-        if (useEntered) {
-          // Auto-save creds after a successful trial sync.
-          await api.srm.saveCreds({ username: netid.trim(), password });
-          await refreshCreds();
-          setPassword("");
-        }
-      } else if (res?.captcha) {
+        await refreshState();
+      } else if (res?.needsLogin) {
         setMsg(
-          "SRM is asking for a captcha — log in once on academia.srmist.edu.in in your browser, then retry.",
+          res.error +
+            " Click \"Log in to SRM\" to sign in — Apex will remember the session.",
         );
+        await refreshState();
       } else {
         setMsg("Sync failed: " + (res?.error || "unknown"));
       }
@@ -157,89 +157,87 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-title">SRM Academia · auto-sync</div>
         <small className="hint" style={{ display: "block", marginBottom: 10 }}>
-          Save your SRMIST NetID + password and Apex can pull your timetable
-          and academic-planner day orders directly. Credentials live in your
-          local DB; nothing is sent anywhere except academia.srmist.edu.in.
+          Sign in once through a real browser window. Apex remembers the
+          session in a private partition and pulls your timetable and
+          academic-planner day orders on demand. Captchas, MFA, and password
+          changes are handled by your actual login flow — Apex never sees
+          your password.
         </small>
 
-        <div className="grid-2">
-          <div className="form-row">
-            <label>NetID</label>
-            <input
-              value={netid}
-              placeholder="e.g. yk9852"
-              onChange={(e) => setNetid(e.target.value)}
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-            />
+        <div
+          className="row"
+          style={{
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 12px",
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            background: "var(--bg-elev)",
+          }}
+        >
+          <span
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: "50%",
+              background: sess.sessionActive ? "#5fe0d3" : "#ef6b5a",
+              flexShrink: 0,
+            }}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, fontSize: 13 }}>
+              {sess.sessionActive ? "Signed in" : "Not signed in"}
+              {sess.username && sess.sessionActive ? (
+                <span className="muted" style={{ marginLeft: 6 }}>
+                  · {sess.username}
+                </span>
+              ) : null}
+            </div>
+            <small className="muted" style={{ display: "block", marginTop: 2 }}>
+              {sess.sessionActive
+                ? "Apex has a live SRM Academia session cookie. Sync any time."
+                : "Click \"Log in to SRM\" — a real browser window will open. Sign in there, then close it."}
+            </small>
           </div>
-          <div className="form-row">
-            <label>
-              Password
-              {creds.saved && (
-                <small className="muted" style={{ marginLeft: 8 }}>
-                  · saved (leave blank to reuse)
-                </small>
-              )}
-            </label>
-            <div className="row" style={{ gap: 6 }}>
-              <input
-                style={{ flex: 1 }}
-                type={showPwd ? "text" : "password"}
-                value={password}
-                placeholder={creds.saved ? "•••••••" : "your SRM password"}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+          <div className="row" style={{ gap: 6, flexShrink: 0 }}>
+            <button
+              className="primary"
+              onClick={openLogin}
+              disabled={opening}
+              title="Open the SRM Academia login in a child window"
+            >
+              {opening
+                ? "Opening…"
+                : sess.sessionActive
+                  ? "Re-sign in"
+                  : "Log in to SRM"}
+            </button>
+            {sess.sessionActive && (
               <button
                 type="button"
-                className="ghost xsmall"
-                onClick={() => setShowPwd((v) => !v)}
-                title={showPwd ? "Hide" : "Show"}
+                className="ghost small"
+                onClick={logoutSrm}
+                title="Clear cookies"
               >
-                {showPwd ? "🙈" : "👁"}
+                Sign out
               </button>
-            </div>
+            )}
           </div>
         </div>
 
-        <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+        <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 12 }}>
           <button
             className="primary"
-            onClick={() => syncNow(!!password.trim())}
-            disabled={syncing || (!creds.saved && (!netid.trim() || !password))}
+            onClick={syncNow}
+            disabled={syncing || !sess.sessionActive}
             title={
-              creds.saved
-                ? "Sync timetable + academic calendar"
-                : "Try the entered credentials and save them on success"
+              sess.sessionActive
+                ? "Pull timetable + academic calendar from SRM"
+                : "Sign in first"
             }
           >
-            {syncing
-              ? "Syncing…"
-              : creds.saved && !password.trim()
-                ? "Sync now"
-                : "Save & sync"}
+            {syncing ? "Syncing…" : "Sync now"}
           </button>
-          {!creds.saved && (
-            <button
-              type="button"
-              onClick={saveCreds}
-              disabled={!netid.trim() || !password}
-              title="Save without syncing"
-            >
-              Save credentials only
-            </button>
-          )}
-          {creds.saved && (
-            <button
-              type="button"
-              className="ghost"
-              onClick={clearCreds}
-              title="Forget saved credentials"
-            >
-              Forget credentials
-            </button>
-          )}
         </div>
 
         {lastSync?.ok && (
@@ -253,6 +251,16 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
         {lastSync && !lastSync.ok && (
           <div className="error" style={{ marginTop: 8 }}>
             {lastSync.error || "Sync failed."}
+            {lastSync.needsLogin && (
+              <button
+                type="button"
+                className="ghost small"
+                style={{ marginLeft: 8 }}
+                onClick={openLogin}
+              >
+                Log in to SRM
+              </button>
+            )}
           </div>
         )}
 
@@ -260,7 +268,7 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
 
         <div style={{ marginBottom: 6, fontWeight: 600 }}>Other import paths</div>
         <small className="hint" style={{ display: "block", marginBottom: 8 }}>
-          Use these when SRM Academia is unreachable (captcha, downtime).
+          Use these when SRM Academia is unreachable (downtime).
         </small>
         <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
           <button onClick={pickJson} title="Pick any timetable.json file">

@@ -181,8 +181,82 @@ async function login(username, password) {
   return { ok: true, jar };
 }
 
+// ─── cookies via Electron persistent session ──────────────────────────
+// We persist the Academia auth cookies in the Electron session partition
+// `persist:srm`. After the user signs in once via the browser-window flow,
+// the cookies are available to every subsequent fetch — no captcha, no
+// password handling on our side, no fragile header fingerprinting.
+let _electronSession = null;
+function _attachElectronSession(electronSession) {
+  _electronSession = electronSession;
+}
+
+function _cookieHeaderValue(name, value) {
+  return `${name}=${value}`;
+}
+
+async function _cookieHeaderFromElectron() {
+  if (!_electronSession) return null;
+  try {
+    const cookies = await _electronSession.cookies.get({ url: BASE_URL });
+    if (!cookies || cookies.length === 0) return null;
+    return cookies.map((c) => _cookieHeaderValue(c.name, c.value)).join('; ');
+  } catch {
+    return null;
+  }
+}
+
+// Build a jar-like object from Electron session cookies so the rest of
+// this file (which expects `.header()`) doesn't need to change.
+async function _jarFromElectronSession() {
+  const header = await _cookieHeaderFromElectron();
+  if (!header) return null;
+  return {
+    header: () => header,
+    raw: () => ({}),
+    set: () => {},
+    setCookieHeader: () => {},
+  };
+}
+
+// True if the session cookies look authenticated (we have at least one
+// IAM/Zoho cookie that comes from a successful login flow).
+async function isLoggedIn() {
+  if (!_electronSession) return false;
+  try {
+    const cookies = await _electronSession.cookies.get({ url: BASE_URL });
+    if (!cookies || cookies.length === 0) return false;
+    return cookies.some((c) =>
+      /^(JSESSIONID|_iamadt|IAMTFAID|IAMAUTHTOKEN)/.test(c.name) ||
+      /^_iam/.test(c.name) ||
+      c.name === '_zcsr_user',
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function clearCookies() {
+  if (!_electronSession) return { ok: false };
+  try {
+    const cookies = await _electronSession.cookies.get({});
+    for (const c of cookies) {
+      const url = `${c.secure ? 'https' : 'http'}://${c.domain.replace(/^\./, '')}${c.path || '/'}`;
+      try { await _electronSession.cookies.remove(url, c.name); } catch {}
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
 // ─── fetch + parse: timetable ───────────────────────────────────────────
 async function fetchTimetableHtml(jar) {
+  // If no jar passed, build one from the Electron persistent session.
+  if (!jar) jar = await _jarFromElectronSession();
+  if (!jar) {
+    throw new Error('No SRM cookies available — run "Log in to SRM" first.');
+  }
   const url =
     `${BASE_URL}/srm_university/academia-academic-services/page/My_Time_Table_2023_24`;
   const res = await fetch(url, {
@@ -287,6 +361,8 @@ const KNOWN_PLAN_SLUGS = [
 ];
 
 async function fetchCalendarHtml(jar, planName) {
+  if (!jar) jar = await _jarFromElectronSession();
+  if (!jar) throw new Error('No SRM cookies available — run "Log in to SRM" first.');
   const slugsToTry = planName ? [planName] : KNOWN_PLAN_SLUGS;
   let lastErr = null;
   for (const slug of slugsToTry) {
@@ -508,29 +584,55 @@ function shortenSubject(title, code) {
 }
 
 // ─── high-level: one-shot sync ──────────────────────────────────────────
-async function syncAll({ username, password, planName } = {}) {
-  const u = username || db.getSetting('srm.netid');
-  const p = password || db.getSetting('srm.password');
-  if (!u || !p) {
-    return { ok: false, error: 'No SRM credentials saved. Open Settings → Schedule and add your NetID + password.' };
+async function syncAll({ username, password, planName, useStoredSession } = {}) {
+  // Path A — preferred: cookies from a previous browser-window login,
+  // persisted in the Electron `persist:srm` partition. No password
+  // handling on our side, no captcha drama.
+  let jar = null;
+  if (useStoredSession !== false) {
+    jar = await _jarFromElectronSession();
   }
 
-  const log = await login(u, p);
-  if (!log.ok) return log;
+  // Path B — legacy headless POST flow with NetID + password, kept for
+  // users who'd rather not click through a popup. Will hit captcha for
+  // most accounts.
+  if (!jar) {
+    const u = username || db.getSetting('srm.netid');
+    const p = password || db.getSetting('srm.password');
+    if (!u || !p) {
+      return {
+        ok: false,
+        needsLogin: true,
+        error:
+          'No SRM session. Open Settings → Schedule and click "Log in to SRM" to sign in once — Apex remembers the session.',
+      };
+    }
+    const log = await login(u, p);
+    if (!log.ok) {
+      return { ...log, needsLogin: log.captcha === true };
+    }
+    jar = log.jar;
+  }
 
   let student;
   try {
-    const html = await fetchTimetableHtml(log.jar);
+    const html = await fetchTimetableHtml(jar);
     student = parseStudentDetails(html);
   } catch (err) {
-    return { ok: false, error: `Timetable: ${err.message}` };
+    // If the request 401'd because cookies expired, signal the UI to
+    // re-prompt the browser-window login.
+    return {
+      ok: false,
+      needsLogin: /unauthorized|401|sanitize|not found/i.test(err.message),
+      error: `Timetable: ${err.message}`,
+    };
   }
 
   // Optional: fetch + parse the academic planner.
   let calendarRows = [];
   let plannerSlug = null;
   try {
-    const cal = await fetchCalendarHtml(log.jar, planName);
+    const cal = await fetchCalendarHtml(jar, planName);
     calendarRows = parseCalendarEvents(cal.html);
     plannerSlug = cal.planName;
   } catch (err) {
@@ -582,4 +684,9 @@ module.exports = {
   parseCalendarEvents,
   buildClassesRows,
   syncAll,
+  // Browser-based session helpers
+  attachElectronSession: _attachElectronSession,
+  isLoggedIn,
+  clearCookies,
+  BASE_URL,
 };

@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld("apex", {
     update: (id, patch) => invoke("tasks:update", id, patch),
     delete: (id) => invoke("tasks:delete", id),
     toggle: (id) => invoke("tasks:toggle", id),
+    habitStreak: (id) => invoke("tasks:habitStreak", id),
+    habitStreaksFor: (ids) => invoke("tasks:habitStreaksFor", ids),
     today: () => invoke("tasks:today"),
     upcoming: (days) => invoke("tasks:upcoming", days),
     completedOn: (d) => invoke("tasks:completedOn", d),
@@ -89,6 +91,15 @@ contextBridge.exposeInMainWorld("apex", {
     clearCreds: () => invoke("srm:clearCreds"),
     hasCreds: () => invoke("srm:hasCreds"),
     syncNow: (opts) => invoke("srm:syncNow", opts),
+    openLoginWindow: () => invoke("srm:openLoginWindow"),
+    logout: () => invoke("srm:logout"),
+  },
+  notifier: {
+    status: () => invoke("notifier:status"),
+    setEnabled: (on) => invoke("notifier:setEnabled", on),
+    setLeads: (opts) => invoke("notifier:setLeads", opts),
+    test: () => invoke("notifier:test"),
+    onNavGoto: (h) => on("nav:goto", h),
   },
   // kept for backwards-compat; UI should use schedule.*
   timetable: {

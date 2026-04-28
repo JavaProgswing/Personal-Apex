@@ -260,6 +260,22 @@ CREATE INDEX IF NOT EXISTS idx_feed_person ON activity_feed(person_id);
 CREATE INDEX IF NOT EXISTS idx_feed_at ON activity_feed(at);
 
 -- ────────────────────────────────────────────────────────────────────────────
+-- Habit completion log. Each row is one tick of a habit on a particular
+-- date. Used to compute streaks (consecutive days of completion). Only
+-- written when a kind='habit' task is toggled to completed.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS habit_completions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL,
+  date TEXT NOT NULL,                     -- YYYY-MM-DD local
+  completed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(task_id, date),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_habit_completions_task ON habit_completions(task_id);
+CREATE INDEX IF NOT EXISTS idx_habit_completions_date ON habit_completions(date);
+
+-- ────────────────────────────────────────────────────────────────────────────
 -- Live timer — singleton row that tracks "what am I doing right now" with a
 -- countdown the user can extend or stop early. When stopped or expired, an
 -- entry is written into activity_sessions (source='timer') so it shows up in

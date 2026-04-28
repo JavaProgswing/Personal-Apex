@@ -414,13 +414,107 @@ function deleteTask(id) {
   return true;
 }
 function toggleTask(id) {
-  const cur = db.prepare("SELECT completed FROM tasks WHERE id = ?").get(id);
+  const cur = db
+    .prepare("SELECT completed, kind FROM tasks WHERE id = ?")
+    .get(id);
   if (!cur) return null;
-  const now = cur.completed ? null : new Date().toISOString();
+  const becomingDone = !cur.completed;
+  const now = becomingDone ? new Date().toISOString() : null;
   db.prepare(
     `UPDATE tasks SET completed = ?, completed_at = ?, updated_at = datetime('now') WHERE id = ?`,
-  ).run(cur.completed ? 0 : 1, now, id);
+  ).run(becomingDone ? 1 : 0, now, id);
+  // For habit-kind tasks we also log the tick into habit_completions so we
+  // can compute streaks across day rotations. Idempotent via UNIQUE(task_id,
+  // date). Toggling OFF on the same day removes today's tick (so the user
+  // can correct an accidental check) — older history stays intact.
+  if (cur.kind === "habit") {
+    const todayLocal = isoDate(new Date());
+    if (becomingDone) {
+      try {
+        db.prepare(
+          `INSERT OR IGNORE INTO habit_completions (task_id, date, completed_at)
+           VALUES (?, ?, datetime('now'))`,
+        ).run(id, todayLocal);
+      } catch { /* table may not exist yet on legacy DBs */ }
+    } else {
+      try {
+        db.prepare(
+          `DELETE FROM habit_completions WHERE task_id = ? AND date = ?`,
+        ).run(id, todayLocal);
+      } catch { /* ignore */ }
+    }
+  }
   return listOne(id);
+}
+
+// Current streak for a habit — how many consecutive days (ending today
+// or yesterday) the habit was checked off. Returns
+// `{ current, longest, lastCompleted }`. Tolerant: if the habit is "due
+// every day" we count strictly consecutive days; for non-daily habits
+// (weekly, day-order-based) the same calculation still works because we
+// only require that the user *did* tick the habit each day they meant to.
+function habitStreak(taskId) {
+  if (!taskId) return { current: 0, longest: 0, lastCompleted: null };
+  let rows = [];
+  try {
+    rows = db
+      .prepare(
+        `SELECT date FROM habit_completions WHERE task_id = ? ORDER BY date DESC`,
+      )
+      .all(taskId);
+  } catch { return { current: 0, longest: 0, lastCompleted: null }; }
+  if (!rows.length) return { current: 0, longest: 0, lastCompleted: null };
+
+  const days = new Set(rows.map((r) => r.date));
+  const lastCompleted = rows[0].date;
+
+  // Walk back from today; if today isn't a tick, allow yesterday as the
+  // anchor (so "did it yesterday and not yet today" still counts as a 1-
+  // day-old streak instead of zero).
+  function shift(iso, deltaDays) {
+    const d = new Date(iso + "T00:00:00");
+    d.setDate(d.getDate() + deltaDays);
+    return isoDate(d);
+  }
+
+  let anchor = isoDate(new Date());
+  if (!days.has(anchor)) {
+    const y = shift(anchor, -1);
+    if (days.has(y)) anchor = y;
+    else return { current: 0, longest: longestRun(rows), lastCompleted };
+  }
+  let current = 0;
+  let cursor = anchor;
+  while (days.has(cursor)) {
+    current++;
+    cursor = shift(cursor, -1);
+  }
+  return { current, longest: Math.max(current, longestRun(rows)), lastCompleted };
+}
+function longestRun(rows) {
+  // rows is newest-first; walk forward (oldest-first) tracking the longest
+  // run of consecutive dates.
+  if (!rows || rows.length === 0) return 0;
+  const list = rows.slice().reverse().map((r) => r.date);
+  let best = 1, run = 1;
+  for (let i = 1; i < list.length; i++) {
+    const prev = new Date(list[i - 1] + "T00:00:00").getTime();
+    const cur = new Date(list[i] + "T00:00:00").getTime();
+    const dayDiff = Math.round((cur - prev) / 86400000);
+    if (dayDiff === 1) { run++; best = Math.max(best, run); }
+    else if (dayDiff === 0) { /* dup — ignore */ }
+    else { run = 1; }
+  }
+  return best;
+}
+
+// Streaks for many habits at once — saves a per-row IPC round-trip.
+function habitStreaksFor(ids) {
+  const out = {};
+  for (const id of ids || []) {
+    out[id] = habitStreak(id);
+  }
+  return out;
 }
 function listOne(id) {
   const r = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
@@ -1689,6 +1783,8 @@ module.exports = {
   updateTask,
   deleteTask,
   toggleTask,
+  habitStreak,
+  habitStreaksFor,
   tasksForToday,
   tasksUpcoming,
   tasksCompletedOn,

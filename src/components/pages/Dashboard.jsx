@@ -575,6 +575,30 @@ export default function Dashboard({ go }) {
               setTimeout(() => setToast(null), 3000);
             }}
           />
+          <EveningReviewChip
+            ollamaOk={planCard.ollamaOk}
+            model={planCard.model}
+            onAddTomorrowTask={async (text) => {
+              const tomorrow = new Date();
+              tomorrow.setDate(tomorrow.getDate() + 1);
+              tomorrow.setHours(9, 0, 0, 0);
+              await api.tasks.create({
+                title: text || "tomorrow",
+                description: "From evening review",
+                category: "Personal",
+                priority: 3,
+                deadline: tomorrow.toISOString(),
+                tags: ["apex", "evening"],
+                links: [],
+              });
+              setToast({
+                kind: "success",
+                title: "Saved for tomorrow",
+                msg: text,
+              });
+              setTimeout(() => setToast(null), 3000);
+            }}
+          />
           <RecommendChip
             ollamaOk={planCard.ollamaOk}
             model={planCard.model}
@@ -1900,6 +1924,139 @@ function GoalQuickAdd({ onAdd }) {
   );
 }
 
+// ─── EveningReviewChip ───────────────────────────────────────────────────
+// Surfaces ollama.eveningReview as a header chip. Auto-styles brighter
+// after 17:00 to suggest "wrap up your day". On open, fetches the review
+// (wins / friction / one thing to try tomorrow) and lets the user save
+// the tomorrow-suggestion as a real task with a 9 AM deadline.
+function EveningReviewChip({ ollamaOk, model, onAddTomorrowTask }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [review, setReview] = useState(null);
+  const [err, setErr] = useState(null);
+  const wrapRef = useRef(null);
+  const isEvening = new Date().getHours() >= 17;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  async function refresh() {
+    if (!ollamaOk) {
+      setErr("Ollama is offline.");
+      return;
+    }
+    setLoading(true);
+    setErr(null);
+    try {
+      const res = await api.ollama.eveningReview({ model });
+      if (!res?.ok) {
+        setErr(res?.error || "Couldn't generate review.");
+        setReview(null);
+      } else {
+        setReview(res);
+      }
+    } catch (e) {
+      setErr(e?.message || "Couldn't generate review.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (open && !review && !loading && !err) refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  return (
+    <div className="evening-chip-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className={
+          "evening-chip" +
+          (isEvening ? " late" : "") +
+          (open ? " open" : "")
+        }
+        onClick={() => setOpen((v) => !v)}
+        disabled={!ollamaOk}
+        title={
+          ollamaOk
+            ? "Wrap-up: wins, friction, one thing to try tomorrow"
+            : "Ollama is offline"
+        }
+      >
+        <span className="evening-icon" aria-hidden>🌇</span>
+        <span>Evening review</span>
+        <span className="evening-caret">▾</span>
+      </button>
+      {open && (
+        <div className="evening-popover">
+          <div className="evening-popover-head">
+            <strong>Today's review</strong>
+            <div className="row" style={{ gap: 6 }}>
+              <button
+                className="ghost xsmall"
+                onClick={(e) => { e.stopPropagation(); refresh(); }}
+                disabled={loading}
+                title="Re-roll the review"
+              >
+                ↻
+              </button>
+              <button
+                className="ghost xsmall"
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          {loading && <div className="muted">Reflecting…</div>}
+          {err && !loading && <div className="error">{err}</div>}
+          {!loading && review && review.ok && (
+            <>
+              {Array.isArray(review.wins) && review.wins.length > 0 && (
+                <div className="evening-block">
+                  <div className="section-label">Wins</div>
+                  <ul className="evening-list">
+                    {review.wins.slice(0, 3).map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {review.friction && (
+                <div className="evening-block">
+                  <div className="section-label">Friction</div>
+                  <p className="evening-text">{review.friction}</p>
+                </div>
+              )}
+              {review.tomorrow && (
+                <div className="evening-block evening-tomorrow">
+                  <div className="section-label">Try tomorrow</div>
+                  <p className="evening-text">{review.tomorrow}</p>
+                  <button
+                    type="button"
+                    className="ghost small"
+                    onClick={() => onAddTomorrowTask?.(review.tomorrow)}
+                  >
+                    + Save as task
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── RecommendChip ───────────────────────────────────────────────────────
 // "What should I do next?" chip that lives next to the burnout chip in the
 // header. On open, calls ollama:recommend (which assembles tasks + classes
@@ -2078,8 +2235,26 @@ function TodayCard({
   setToast,
 }) {
   const [tab, setTab] = useState("tasks");
+  const [habitStreaks, setHabitStreaks] = useState({});
   const openTasks = (tasks || []).filter((t) => !t.completed);
   const visible = tab === "tasks" ? (tasks || []).slice(0, 7) : null;
+
+  // Whenever the visible habit IDs change, fetch their streaks. Cheap —
+  // habit_completions is small + indexed.
+  useEffect(() => {
+    const habitIds = (visible || [])
+      .filter((t) => t.kind === "habit")
+      .map((t) => t.id);
+    if (habitIds.length === 0) {
+      setHabitStreaks({});
+      return;
+    }
+    let cancelled = false;
+    api.tasks.habitStreaksFor?.(habitIds)
+      .then((map) => { if (!cancelled) setHabitStreaks(map || {}); })
+      .catch(() => { if (!cancelled) setHabitStreaks({}); });
+    return () => { cancelled = true; };
+  }, [JSON.stringify((visible || []).filter((t) => t.kind === "habit").map((t) => t.id))]);
 
   return (
     <div className="card today-card">
@@ -2139,6 +2314,15 @@ function TodayCard({
                       {t.kind === "habit" && (
                         <span className="pill">habit</span>
                       )}
+                      {t.kind === "habit" &&
+                        habitStreaks[t.id]?.current > 0 && (
+                          <span
+                            className="habit-streak-badge"
+                            title={`Longest streak: ${habitStreaks[t.id].longest}`}
+                          >
+                            🔥 {habitStreaks[t.id].current}
+                          </span>
+                        )}
                       {t.course_code && (
                         <span className="pill gray">{t.course_code}</span>
                       )}
