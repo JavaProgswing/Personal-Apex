@@ -60,19 +60,83 @@ export default function Settings() {
 }
 
 function ScheduleTab({ all, setAll, save, setMsg }) {
-  const [calendarInfo, setCalendarInfo] = useState(null);
+  // SRM credentials. We never read `srm.password` back from the main
+  // process for display — only `username` + a `saved` flag.
+  const [creds, setCreds] = useState({ saved: false, username: null });
+  const [netid, setNetid] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState(null);
 
-  async function pickAcademia() {
-    const f = await api.settings.pickDirectory();
-    if (!f) return;
-    save("timetable.folder", f);
-    const res = await api.schedule.resyncFromAcademia(f);
-    setMsg(res?.ok ? `Re-synced ${res.rows?.length ?? "?"} rows from AcademiaScraper.` : "Re-sync failed: " + (res?.error || "unknown"));
+  useEffect(() => {
+    refreshCreds();
+  }, []);
+
+  async function refreshCreds() {
+    try {
+      const r = await api.srm.hasCreds();
+      setCreds({ saved: !!r?.saved, username: r?.username || null });
+      if (r?.username) setNetid(r.username);
+    } catch { /* ignore */ }
   }
-  async function resyncNow() {
-    const res = await api.schedule.resyncFromAcademia(all["timetable.folder"]);
-    setMsg(res?.ok ? `Re-synced ${res.rows?.length ?? "?"} rows.` : "Re-sync failed: " + (res?.error || "unknown"));
+
+  async function saveCreds() {
+    const u = netid.trim();
+    if (!u || !password) {
+      setMsg("Enter both NetID and password.");
+      return;
+    }
+    const r = await api.srm.saveCreds({ username: u, password });
+    if (r?.ok) {
+      setCreds({ saved: true, username: u });
+      setPassword("");
+      setMsg("SRM credentials saved.");
+    } else {
+      setMsg("Couldn't save credentials: " + (r?.error || "unknown"));
+    }
   }
+
+  async function clearCreds() {
+    if (!confirm("Forget saved SRM credentials?")) return;
+    await api.srm.clearCreds();
+    setCreds({ saved: false, username: null });
+    setNetid("");
+    setMsg("SRM credentials cleared.");
+  }
+
+  async function syncNow(useEntered) {
+    setSyncing(true);
+    try {
+      const opts = useEntered
+        ? { username: netid.trim(), password }
+        : {};
+      const res = await api.srm.syncNow(opts);
+      setLastSync(res);
+      if (res?.ok) {
+        setMsg(
+          `Synced ${res.classes} classes` +
+          (res.calendar_rows ? ` + ${res.calendar_rows} calendar dates` : "") +
+          (res.student?.name ? ` for ${res.student.name}` : "") + ".",
+        );
+        if (useEntered) {
+          // Auto-save creds after a successful trial sync.
+          await api.srm.saveCreds({ username: netid.trim(), password });
+          await refreshCreds();
+          setPassword("");
+        }
+      } else if (res?.captcha) {
+        setMsg(
+          "SRM is asking for a captcha — log in once on academia.srmist.edu.in in your browser, then retry.",
+        );
+      } else {
+        setMsg("Sync failed: " + (res?.error || "unknown"));
+      }
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   async function pickJson() {
     const p = await api.settings.pickFile([{ name: "JSON", extensions: ["json"] }]);
     if (!p) return;
@@ -82,60 +146,123 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
       setMsg(`Imported ${res.rows.length} rows from ${p}`);
     } else setMsg("Parse failed: " + (res?.error || "unknown"));
   }
-  async function syncCalendar() {
-    const folder = all["timetable.folder"];
-    if (!folder) { setMsg("Set AcademiaScraper folder first."); return; }
-    const res = await api.calendar.sync({ folder });
-    setCalendarInfo(res);
-    setMsg(res?.ok ? `Calendar: ${res.count} date→day-order overrides loaded.` : "Calendar sync failed: " + (res?.error || "unknown"));
-  }
 
   function scrollToEditor() {
     const el = document.getElementById("schedule-editor");
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  const hasFolder = !!all["timetable.folder"];
-
   return (
     <>
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-title">AcademiaScraper</div>
+        <div className="card-title">SRM Academia · auto-sync</div>
         <small className="hint" style={{ display: "block", marginBottom: 10 }}>
-          Point Apex at your local clone of SRM AcademiaScraper. Apex reads{" "}
-          <code>data/timetable.json</code> for classes and <code>calendar.html</code>{" "}
-          for day-order overrides (holidays, make-up days).
+          Save your SRMIST NetID + password and Apex can pull your timetable
+          and academic-planner day orders directly. Credentials live in your
+          local DB; nothing is sent anywhere except academia.srmist.edu.in.
         </small>
 
-        <div className="form-row">
-          <label>Folder path</label>
-          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+        <div className="grid-2">
+          <div className="form-row">
+            <label>NetID</label>
             <input
-              style={{ flex: "1 1 260px" }}
-              value={all["timetable.folder"] || ""}
-              placeholder="C:\Users\yashasvi\Documents\Python\AcademiaScraper"
-              onChange={(e) => setAll({ ...all, "timetable.folder": e.target.value })}
-              onBlur={(e) => save("timetable.folder", e.target.value)}
+              value={netid}
+              placeholder="e.g. yk9852"
+              onChange={(e) => setNetid(e.target.value)}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
-            <button onClick={pickAcademia}>Pick folder…</button>
+          </div>
+          <div className="form-row">
+            <label>
+              Password
+              {creds.saved && (
+                <small className="muted" style={{ marginLeft: 8 }}>
+                  · saved (leave blank to reuse)
+                </small>
+              )}
+            </label>
+            <div className="row" style={{ gap: 6 }}>
+              <input
+                style={{ flex: 1 }}
+                type={showPwd ? "text" : "password"}
+                value={password}
+                placeholder={creds.saved ? "•••••••" : "your SRM password"}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                className="ghost xsmall"
+                onClick={() => setShowPwd((v) => !v)}
+                title={showPwd ? "Hide" : "Show"}
+              >
+                {showPwd ? "🙈" : "👁"}
+              </button>
+            </div>
           </div>
         </div>
 
-        <hr className="soft" />
-
-        <div style={{ marginBottom: 6, fontWeight: 600 }}>Import timetable</div>
-        <small className="hint" style={{ display: "block", marginBottom: 8 }}>
-          Any of these replaces all 5 day-orders. Prefer the JSON path if you've run AcademiaScraper recently.
-        </small>
-        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+        <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 6 }}>
           <button
             className="primary"
-            onClick={resyncNow}
-            disabled={!hasFolder}
-            title="Reads <folder>/data/timetable.json"
+            onClick={() => syncNow(!!password.trim())}
+            disabled={syncing || (!creds.saved && (!netid.trim() || !password))}
+            title={
+              creds.saved
+                ? "Sync timetable + academic calendar"
+                : "Try the entered credentials and save them on success"
+            }
           >
-            Re-sync from AcademiaScraper
+            {syncing
+              ? "Syncing…"
+              : creds.saved && !password.trim()
+                ? "Sync now"
+                : "Save & sync"}
           </button>
+          {!creds.saved && (
+            <button
+              type="button"
+              onClick={saveCreds}
+              disabled={!netid.trim() || !password}
+              title="Save without syncing"
+            >
+              Save credentials only
+            </button>
+          )}
+          {creds.saved && (
+            <button
+              type="button"
+              className="ghost"
+              onClick={clearCreds}
+              title="Forget saved credentials"
+            >
+              Forget credentials
+            </button>
+          )}
+        </div>
+
+        {lastSync?.ok && (
+          <small className="hint" style={{ display: "block", marginTop: 10 }}>
+            Last sync: <strong>{lastSync.classes}</strong> classes
+            {lastSync.calendar_rows ? ` · ${lastSync.calendar_rows} calendar dates` : ""}
+            {lastSync.student?.semester ? ` · semester ${lastSync.student.semester}` : ""}
+            {lastSync.planner ? ` · planner ${lastSync.planner}` : ""}.
+          </small>
+        )}
+        {lastSync && !lastSync.ok && (
+          <div className="error" style={{ marginTop: 8 }}>
+            {lastSync.error || "Sync failed."}
+          </div>
+        )}
+
+        <hr className="soft" />
+
+        <div style={{ marginBottom: 6, fontWeight: 600 }}>Other import paths</div>
+        <small className="hint" style={{ display: "block", marginBottom: 8 }}>
+          Use these when SRM Academia is unreachable (captcha, downtime).
+        </small>
+        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
           <button onClick={pickJson} title="Pick any timetable.json file">
             Import timetable.json…
           </button>
@@ -146,29 +273,6 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
             Import from image…
           </button>
         </div>
-
-        <hr className="soft" />
-
-        <div style={{ marginBottom: 6, fontWeight: 600 }}>Academic calendar</div>
-        <small className="hint" style={{ display: "block", marginBottom: 8 }}>
-          Parses <code>calendar.html</code> into a date→day-order map so holidays
-          and make-up days override the normal rotation.
-        </small>
-        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-          <button
-            className="primary"
-            onClick={syncCalendar}
-            disabled={!hasFolder}
-          >
-            Sync academic calendar
-          </button>
-        </div>
-        {calendarInfo?.ok && (
-          <small className="hint" style={{ display: "block", marginTop: 8 }}>
-            Loaded {calendarInfo.count} date→day-order overrides. Holidays +
-            make-up days now respected across Dashboard, Timetable, and Upcoming.
-          </small>
-        )}
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>

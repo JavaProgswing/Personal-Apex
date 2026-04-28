@@ -158,8 +158,17 @@ function humanizePackage(pkg) {
 }
 
 function inferCategory(pkg) {
-  const overrides = db.getSetting("wellbeing.overrides." + pkg);
-  if (overrides) return overrides;
+  // Unified override namespace with the desktop tracker: clicking the
+  // category chip in Top apps writes `activity.overrides.<lowercased>`,
+  // and we read the same key here so a single override works across both
+  // desktop and mobile data sources. Legacy `wellbeing.overrides.*` is
+  // still honoured for users with old data, but the new flow uses
+  // `activity.overrides.*`.
+  const lower = (pkg || "").toLowerCase();
+  const newKey = db.getSetting("activity.overrides." + lower);
+  if (newKey) return newKey;
+  const legacy = db.getSetting("wellbeing.overrides." + pkg);
+  if (legacy) return legacy;
   const distractions =
     /whatsapp|instagram|twitter|reddit|tiktok|snapchat|youtube|netflix|hotstar|discord|telegram|facebook/i;
   if (distractions.test(pkg)) return "distraction";

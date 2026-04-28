@@ -1379,6 +1379,23 @@ function activitySessionsRange(startIso, endIso) {
     .all(startIso, endIso);
 }
 
+// Apply a category override retroactively — used by the Top apps "click chip
+// to recategorise" flow. Without this the override only affects future
+// tracker ticks; the visible day's totals don't change until the user
+// switches apps. `days` defaults to 30 so very old history isn't rewritten.
+function reclassifyAppCategory(app, category, { days = 30 } = {}) {
+  if (!app || !category) return { ok: false, error: "app + category required" };
+  const info = db
+    .prepare(
+      `UPDATE activity_sessions
+         SET category = ?
+       WHERE LOWER(app) = LOWER(?)
+         AND date >= date('now', ?)`,
+    )
+    .run(category, app, `-${Math.max(1, +days)} days`);
+  return { ok: true, updated: info.changes ?? 0 };
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // repo_summaries (cache of Ollama "what is this project")
 // ───────────────────────────────────────────────────────────────────────────
@@ -1716,6 +1733,7 @@ module.exports = {
   upsertActivitySession,
   topAppsOn,
   activitySessionsRange,
+  reclassifyAppCategory,
   getRepoSummary,
   saveRepoSummary,
   insertActivityFeed,

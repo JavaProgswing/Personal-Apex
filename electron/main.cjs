@@ -300,6 +300,40 @@ ipcMain.handle("schedule:forDayOrder", (_e, d) => db.classesForDayOrder(d));
 ipcMain.handle("schedule:upsert", (_e, row) => db.upsertClass(row));
 ipcMain.handle("schedule:delete", (_e, id) => db.deleteClass(id));
 ipcMain.handle("schedule:replaceAll", (_e, rows) => db.replaceAllClasses(rows));
+// SRM Academia (NetID + password) — replaces the old "pick a folder
+// containing the AcademiaScraper Python output" flow. We log in, fetch
+// the timetable and academic planner, parse them, and write classes +
+// day_order_overrides directly. Creds live in the settings table; the
+// renderer never sees the password back from us.
+const srm = require("./services/srm.cjs");
+ipcMain.handle("srm:saveCreds", (_e, { username, password } = {}) => {
+  if (!username || !password) {
+    return { ok: false, error: "Username and password are required." };
+  }
+  db.setSetting("srm.netid", String(username).trim());
+  db.setSetting("srm.password", String(password));
+  return { ok: true };
+});
+ipcMain.handle("srm:clearCreds", () => {
+  db.setSetting("srm.netid", null);
+  db.setSetting("srm.password", null);
+  return { ok: true };
+});
+ipcMain.handle("srm:hasCreds", () => {
+  return {
+    ok: true,
+    saved: !!(db.getSetting("srm.netid") && db.getSetting("srm.password")),
+    username: db.getSetting("srm.netid") || null,
+  };
+});
+ipcMain.handle("srm:syncNow", async (_e, opts = {}) => {
+  try {
+    return await srm.syncAll(opts || {});
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 ipcMain.handle("schedule:resyncFromAcademia", async (_e, folder) => {
   return timetable.resyncFromAcademia(folder);
 });
@@ -562,8 +596,16 @@ ipcMain.handle("tracker:start", () => activityTracker.start((ch, p) => emit(ch, 
 ipcMain.handle("tracker:stop", () => activityTracker.stop());
 ipcMain.handle("tracker:status", () => activityTracker.status());
 ipcMain.handle("tracker:categorize", (_e, app, category) => {
+  // Two-step override:
+  //   1. Persist the rule so future tracker ticks (and mobile syncs) pick
+  //      up the new category.
+  //   2. Retroactively rewrite the last 30 days of activity_sessions for
+  //      that app so the user sees the change reflected immediately in
+  //      Top apps + the daily category breakdown. Works for desktop exes
+  //      AND android package names (the storage key/value is generic).
   db.setSetting("activity.overrides." + String(app).toLowerCase(), category);
-  return { ok: true };
+  const r = db.reclassifyAppCategory(app, category, { days: 30 });
+  return { ok: true, updated: r.updated };
 });
 
 // --- mobile wellbeing (ADB) ---

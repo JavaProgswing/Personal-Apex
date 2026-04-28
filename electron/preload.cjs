@@ -84,6 +84,12 @@ contextBridge.exposeInMainWorld("apex", {
     cancel: () => invoke("timer:cancel"),
     onUpdate: (h) => on("timer:update", h),
   },
+  srm: {
+    saveCreds: (creds) => invoke("srm:saveCreds", creds),
+    clearCreds: () => invoke("srm:clearCreds"),
+    hasCreds: () => invoke("srm:hasCreds"),
+    syncNow: (opts) => invoke("srm:syncNow", opts),
+  },
   // kept for backwards-compat; UI should use schedule.*
   timetable: {
     load: (folder) => invoke("timetable:load", folder),

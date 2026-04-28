@@ -825,7 +825,16 @@ export default function Dashboard({ go }) {
             })}
           </div>
           <hr className="soft" />
-          <div className="row between" style={{ alignItems: "center" }}>
+          <GoalQuickAdd onAdd={async (g) => {
+            await api.goals.upsert(g);
+            await refreshActivity();
+            const fresh = await api.goals.list();
+            setGoals(fresh || []);
+          }} />
+          <div
+            className="row between"
+            style={{ alignItems: "center", marginTop: 8 }}
+          >
             <button className="ghost small" onClick={() => go("settings")}>
               Edit goals
             </button>
@@ -1817,6 +1826,80 @@ function BurnoutChip({
   );
 }
 
+// ─── GoalQuickAdd ────────────────────────────────────────────────────────
+// Inline "Add a goal" form on the Weekly goals card so the user doesn't
+// have to navigate to Settings to create a goal. Defaults to a target of
+// 5 — the slider next to the input lets them tune it before adding.
+function GoalQuickAdd({ onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [target, setTarget] = useState(5);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e) {
+    e?.preventDefault?.();
+    const t = title.trim();
+    if (!t) return;
+    setBusy(true);
+    try {
+      await onAdd({ title: t, target: Math.max(1, +target || 1), progress: 0 });
+      setTitle("");
+      setTarget(5);
+      setOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="ghost small goal-quick-add-toggle"
+        onClick={() => setOpen(true)}
+        title="Add a new weekly goal"
+      >
+        + Add a goal
+      </button>
+    );
+  }
+  return (
+    <form className="goal-quick-add" onSubmit={submit}>
+      <input
+        autoFocus
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="e.g. Read 4 hours"
+        maxLength={64}
+      />
+      <input
+        type="number"
+        min={1}
+        max={999}
+        value={target}
+        onChange={(e) => setTarget(+e.target.value || 1)}
+        title="Weekly target"
+        style={{ width: 64 }}
+      />
+      <button
+        type="submit"
+        className="primary small"
+        disabled={busy || !title.trim()}
+      >
+        Add
+      </button>
+      <button
+        type="button"
+        className="ghost xsmall"
+        onClick={() => { setOpen(false); setTitle(""); }}
+        title="Cancel"
+      >
+        ✕
+      </button>
+    </form>
+  );
+}
+
 // ─── RecommendChip ───────────────────────────────────────────────────────
 // "What should I do next?" chip that lives next to the burnout chip in the
 // header. On open, calls ollama:recommend (which assembles tasks + classes
@@ -2295,9 +2378,11 @@ function AppRow({ app: a, appTotal, source, isToday }) {
   const hideCat =
     (catLabel === "mobile" && srcKind === "mobile") || catLabel === "other";
 
-  // Mobile data has no override path — categorize-via-tracker only applies
-  // to desktop-tracked exes. We still show the chip read-only.
-  const canEdit = srcKind !== "mobile" && api.tracker?.categorize;
+  // Override is supported for both desktop exes AND android packages —
+  // the override is just a setting + a retroactive activity_sessions
+  // UPDATE; both data sources read the same `activity.overrides.<app>`
+  // key, so a single click recategorises everywhere.
+  const canEdit = !!api.tracker?.categorize;
   const opts = ["productive", "neutral", "distraction", "leisure", "rest"];
 
   async function save(cat) {

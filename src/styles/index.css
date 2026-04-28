@@ -2833,6 +2833,59 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   v0.9 — Inline goal-add on Weekly goals card
+   ═══════════════════════════════════════════════════════════════════════ */
+.goal-quick-add-toggle {
+  width: 100%;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.goal-quick-add-toggle:hover {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.goal-quick-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg-elev);
+}
+.goal-quick-add input[type="text"],
+.goal-quick-add input:not([type]) {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+}
+.goal-quick-add input[type="number"] {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.goal-quick-add .primary.small {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    v0.8 — Weekly goals card breathing room
    ═══════════════════════════════════════════════════════════════════════ */
 .goal-list {
