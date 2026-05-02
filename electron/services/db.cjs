@@ -1528,6 +1528,30 @@ function insertActivityFeed(personId, pushes) {
   tx(pushes);
   return pushes.length;
 }
+// 14-day push heat-strip per person — `[{ date, n }]` newest-first.
+// Used by the People grid to render a tiny per-card calendar so you can
+// see at a glance who's been shipping. Cheap query — single GROUP BY.
+function pushHeatStrip(personId, days = 14) {
+  if (!personId) return [];
+  const rows = db
+    .prepare(
+      `SELECT date(at) AS date, COUNT(*) AS n
+         FROM activity_feed
+        WHERE person_id = ?
+          AND at >= date('now', ?)
+        GROUP BY date(at)
+        ORDER BY date(at) DESC`,
+    )
+    .all(personId, `-${Math.max(1, +days || 14)} days`);
+  return rows;
+}
+// Batch heat strips for many people at once — saves N IPC round-trips.
+function pushHeatStripsFor(ids, days = 14) {
+  const out = {};
+  for (const id of ids || []) out[id] = pushHeatStrip(id, days);
+  return out;
+}
+
 function listActivityFeed({ days = 7, personId, limit = 100 } = {}) {
   const where = [`at >= date('now', ?)`];
   const args = [`-${days} days`];
@@ -1834,6 +1858,8 @@ module.exports = {
   saveRepoSummary,
   insertActivityFeed,
   listActivityFeed,
+  pushHeatStrip,
+  pushHeatStripsFor,
   saveBurnoutReport,
   latestBurnoutReport,
   recentBurnoutReports,

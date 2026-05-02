@@ -20,7 +20,10 @@ export default function People() {
   const [people, setPeople] = useState([]);
   const [filter, setFilter] = useState({ q: "", tag: "", source: "", only: "" });
   const [groupBy, setGroupBy] = useState("none");
+  const [sortBy, setSortBy] = useState("activity"); // activity | name | stars | cp
   const [page, setPage] = useState(1);
+  // Per-person 14-day push counts → tiny heat-strip on each card.
+  const [heatStrips, setHeatStrips] = useState({});
 
   const [selected, setSelected] = useState(null);
   const [repos, setRepos] = useState([]);
@@ -101,7 +104,25 @@ export default function People() {
 
   async function reload() {
     // Server only knows about q/tag; source/only are client-side pills.
-    setPeople(await api.people.list({ q: filter.q, tag: filter.tag }));
+    const list = await api.people.list({ q: filter.q, tag: filter.tag });
+    setPeople(list || []);
+    // Fetch heat strips in batch — used by PersonCard to render a 14-day
+    // commit pulse. Cheap query, but keep payload bounded.
+    if (api.people?.heatStrips && list?.length) {
+      try {
+        const ids = list.map((p) => p.id).slice(0, 200);
+        const map = await api.people.heatStrips(ids, 14);
+        setHeatStrips(map || {});
+      } catch { setHeatStrips({}); }
+    }
+  }
+
+  async function toggleFollow(p) {
+    const tags = Array.isArray(p.tags) ? [...p.tags] : [];
+    const i = tags.indexOf("following");
+    if (i >= 0) tags.splice(i, 1); else tags.push("following");
+    await api.people.upsert({ ...p, tags });
+    await reload();
   }
 
   async function openPerson(p) {
@@ -166,8 +187,29 @@ export default function People() {
     if (filter.only === "gh") out = out.filter((p) => p.github_username);
     else if (filter.only === "cp") out = out.filter((p) => p.leetcode_username || p.codeforces_username || p.codechef_username);
     else if (filter.only === "unsynced") out = out.filter((p) => !p.last_scraped_at);
-    return out;
-  }, [people, filter.source, filter.only]);
+    else if (filter.only === "following")
+      out = out.filter((p) => Array.isArray(p.tags) && p.tags.includes("following"));
+
+    // Sort. "activity" uses heat-strip totals (recent commits across the
+    // 14d window); falls back to last_scraped_at then name.
+    const sorted = [...out];
+    if (sortBy === "name") {
+      sorted.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    } else if (sortBy === "activity") {
+      const score = (p) => {
+        const h = heatStrips[p.id] || [];
+        return h.reduce((s, r) => s + (r.n || 0), 0);
+      };
+      sorted.sort((a, b) => {
+        const d = score(b) - score(a);
+        if (d) return d;
+        return (b.last_scraped_at || "").localeCompare(a.last_scraped_at || "");
+      });
+    }
+    // 'stars' / 'cp' need per-person joins which the listing endpoint doesn't
+    // provide; fall back to name when the data isn't there.
+    return sorted;
+  }, [people, filter.source, filter.only, sortBy, heatStrips]);
 
   // Group-by builder
   const groups = useMemo(() => {
@@ -234,6 +276,10 @@ export default function People() {
           <option value="">All sources</option>
           {sourceOptions.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ maxWidth: 180 }}>
+          <option value="activity">Sort · Recent activity</option>
+          <option value="name">Sort · Name</option>
+        </select>
         <select value={groupBy} onChange={(e) => setGroupBy(e.target.value)} style={{ maxWidth: 170 }}>
           <option value="none">No grouping</option>
           <option value="source">Group by source</option>
@@ -246,6 +292,7 @@ export default function People() {
       {/* Only-filter chips */}
       <div className="chip-row" style={{ marginBottom: 14 }}>
         <button className={"chip" + (filter.only === "" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "" })}>All · {people.length}</button>
+        <button className={"chip" + (filter.only === "following" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "following" })}>★ Following · {people.filter((p) => Array.isArray(p.tags) && p.tags.includes("following")).length}</button>
         <button className={"chip" + (filter.only === "gh" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "gh" })}>Has GitHub</button>
         <button className={"chip" + (filter.only === "cp" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "cp" })}>Has CP handle</button>
         <button className={"chip" + (filter.only === "unsynced" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "unsynced" })}>Never synced</button>
@@ -294,7 +341,16 @@ export default function People() {
           )}
           <div className="people-grid">
             {g.rows.map((p) => (
-              <PersonCard key={p.id} p={p} onOpen={() => openPerson(p)} onRetryGh={() => syncOneGh(p.id)} onRetryCp={() => syncOneCp(p.id)} />
+              <PersonCard
+                key={p.id}
+                p={p}
+                heat={heatStrips[p.id] || []}
+                following={Array.isArray(p.tags) && p.tags.includes("following")}
+                onOpen={() => openPerson(p)}
+                onToggleFollow={() => toggleFollow(p)}
+                onRetryGh={() => syncOneGh(p.id)}
+                onRetryCp={() => syncOneCp(p.id)}
+              />
             ))}
           </div>
         </section>
@@ -353,17 +409,30 @@ function SyncBar({ label, total, done, ok, err, current, rateLimited }) {
   );
 }
 
-function PersonCard({ p, onOpen, onRetryGh, onRetryCp }) {
+function PersonCard({ p, heat, following, onOpen, onToggleFollow, onRetryGh, onRetryCp }) {
   const liHandle = !p.github_username ? linkedinHandle(p.linkedin_url) : null;
   const hasCp = !!(p.leetcode_username || p.codeforces_username || p.codechef_username);
   const hasAnyLink = !!(p.github_username || liHandle || p.linkedin_url || hasCp);
 
   return (
     <div
-      className={"card person-card" + (!p.github_username && liHandle ? " li-only" : "")}
+      className={
+        "card person-card" +
+        (!p.github_username && liHandle ? " li-only" : "") +
+        (following ? " following" : "")
+      }
       style={{ cursor: "pointer", position: "relative" }}
       onClick={onOpen}
     >
+      <button
+        type="button"
+        className={"person-follow" + (following ? " on" : "")}
+        onClick={(e) => { e.stopPropagation(); onToggleFollow?.(); }}
+        title={following ? "Unfollow" : "Follow this person"}
+        aria-label={following ? "Unfollow" : "Follow"}
+      >
+        {following ? "★" : "☆"}
+      </button>
       {p.avatar_url ? <img className="avatar" src={p.avatar_url} alt="" /> : (
         <div className="avatar avatar-fallback">{(p.name || "?").slice(0, 1).toUpperCase()}</div>
       )}
@@ -407,6 +476,11 @@ function PersonCard({ p, onOpen, onRetryGh, onRetryCp }) {
               ? "LinkedIn profile"
               : hasAnyLink ? "" : "no GitHub / LinkedIn"}
         </small>
+        {/* 14-day commit pulse from activity_feed. Cells get progressively
+            brighter for higher push counts; empty days are muted. */}
+        {p.github_username && (
+          <PersonHeatStrip days={14} heat={heat} />
+        )}
       </div>
       <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 4 }}>
         {p.github_username && <button className="ghost small" title="Retry GitHub" onClick={(e) => { e.stopPropagation(); onRetryGh(); }}>↻ GH</button>}
@@ -423,6 +497,43 @@ function PersonCard({ p, onOpen, onRetryGh, onRetryCp }) {
           <button className="ghost small" title="Retry CP" onClick={(e) => { e.stopPropagation(); onRetryCp(); }}>↻ CP</button>
         )}
       </div>
+    </div>
+  );
+}
+
+// Tiny calendar of recent commits — 14 cells, one per day, brightness
+// scales with that day's push count. Empty days are dimmed; today is on
+// the right.
+function PersonHeatStrip({ days = 14, heat = [] }) {
+  // Build map { 'YYYY-MM-DD' → count } and walk the last `days` days.
+  const map = new Map();
+  let max = 0;
+  for (const r of heat || []) {
+    map.set(r.date, r.n || 0);
+    if ((r.n || 0) > max) max = r.n || 0;
+  }
+  const cells = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const iso = d.toISOString().slice(0, 10);
+    const n = map.get(iso) || 0;
+    cells.push({ iso, n });
+  }
+  return (
+    <div className="person-heat" title={`${heat.reduce((s, r) => s + (r.n || 0), 0)} commits in ${days}d`}>
+      {cells.map((c) => {
+        const intensity = max > 0 ? Math.min(1, c.n / Math.max(3, max)) : 0;
+        return (
+          <span
+            key={c.iso}
+            className={"person-heat-cell" + (c.n > 0 ? " hot" : "")}
+            style={c.n > 0 ? { opacity: 0.35 + intensity * 0.65 } : null}
+            title={`${c.iso} · ${c.n} commit${c.n === 1 ? "" : "s"}`}
+          />
+        );
+      })}
     </div>
   );
 }

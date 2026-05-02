@@ -306,6 +306,29 @@ ipcMain.handle("dayNotes:unlock", (_e, { passcode }) => {
 });
 ipcMain.handle("dayNotes:lock", () => { _dayNotesUnlockedUntil = 0; return { ok: true }; });
 ipcMain.handle("dayNotes:isUnlocked", () => ({ unlocked: dayNotesIsUnlocked() }));
+// Hard-reset path — used when the user has FORGOTTEN the passcode. Since
+// notes are gated by the passcode (and we can't recover them), this nukes
+// every day_notes row + clears the passcode setting. Caller MUST pass
+// `confirm: "DELETE"` so an accidental click can't trigger it.
+ipcMain.handle("dayNotes:resetPasscode", (_e, { confirm } = {}) => {
+  if (confirm !== "DELETE") {
+    return { ok: false, error: "Reset requires confirm=\"DELETE\"" };
+  }
+  try {
+    const dbh = db._db();
+    const before = dbh
+      .prepare(`SELECT COUNT(*) AS c FROM day_notes`)
+      .get();
+    dbh.exec(`DELETE FROM day_notes`);
+    db.clearDayNotePasscode?.();
+    db.setSetting("dayNotes.passcodeHash", null);
+    db.setSetting("dayNotes.passcodeSalt", null);
+    _dayNotesUnlockedUntil = 0;
+    return { ok: true, deletedNotes: before?.c || 0 };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
 ipcMain.handle("dayNotes:clearPasscode", (_e, { passcode }) => {
   // Require current passcode to clear, so a shoulder-surfer can't just wipe it.
   if (db.hasDayNotePasscode() && !db.verifyDayNotePasscode(passcode)) {
@@ -700,6 +723,9 @@ ipcMain.handle("activity:totalsOn", (_e, isoDate) => db.activityTotalsOn(isoDate
 ipcMain.handle("activity:trend", (_e, days) => db.activityTrend(days ?? 7));
 ipcMain.handle("activity:topApps", (_e, isoDate, limit) => db.topAppsOn(isoDate ?? today(), limit ?? 10));
 ipcMain.handle("activity:feed", (_e, opts) => db.listActivityFeed(opts || {}));
+ipcMain.handle("people:heatStrips", (_e, ids, days) =>
+  db.pushHeatStripsFor(ids || [], days || 14),
+);
 
 // --- live timer (universal "what am I doing now") ---
 // Singleton row in live_timer + a broadcast on change so any component can

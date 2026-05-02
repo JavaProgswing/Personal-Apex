@@ -713,6 +713,7 @@ export default function Dashboard({ go }) {
                   return (xh || 0) * 60 + (xm || 0) <= nowM;
                 });
             const overrideStatus = c.override_status || null;
+            const isOptional = overrideStatus === "optional";
             return (
               <div
                 key={c.id}
@@ -721,16 +722,21 @@ export default function Dashboard({ go }) {
                   (isCurrent ? " now" : "") +
                   (isPast ? " past" : "") +
                   (isNext ? " next" : "") +
-                  (overrideStatus ? " overridden" : "")
+                  (overrideStatus ? " overridden" : "") +
+                  (isOptional ? " optional" : "")
                 }
                 onClick={() => setEditingClass(c)}
-                title="Click to edit / cancel for today"
+                title={
+                  isOptional
+                    ? "Marked optional — click to change"
+                    : "Click to edit / skip for today"
+                }
                 style={{
                   display: "flex",
                   gap: 10,
                   margin: "8px 0",
                   alignItems: "center",
-                  opacity: isPast ? 0.55 : 1,
+                  opacity: isPast ? 0.55 : isOptional ? 0.7 : 1,
                   padding: isCurrent ? "6px 8px" : "4px 6px",
                   borderRadius: 8,
                   background: isCurrent
@@ -760,6 +766,9 @@ export default function Dashboard({ go }) {
                     )}
                     {overrideStatus === "added" && (
                       <span className="pill teal" title="One-off extra class">extra</span>
+                    )}
+                    {overrideStatus === "optional" && (
+                      <span className="pill gray" title="Skippable today" style={{ letterSpacing: 0.6 }}>OPT</span>
                     )}
                   </div>
                   <div className="sub muted">
@@ -1021,6 +1030,16 @@ function ClassEditModal({ classRow, dateIso, onClose, onSaved }) {
       onSaved();
       return;
     }
+    if (mode === "optional") {
+      // Class still appears in the schedule but tagged "optional" — the
+      // dashboard renders it dimmed with an OPT badge so you know it's
+      // skippable without losing the slot.
+      await api.schedule.setOverride(dateIso, classRow.id, {
+        status: "optional",
+      });
+      onSaved();
+      return;
+    }
     // moved or replaced — push the patch through. We only send fields the
     // user changed so blanks are interpreted as "keep original".
     const patch = { status: mode === "replaced" ? "replaced" : "moved" };
@@ -1091,6 +1110,14 @@ function ClassEditModal({ classRow, dateIso, onClose, onSaved }) {
               onClick={() => setMode("replaced")}
             >
               Replace
+            </button>
+            <button
+              type="button"
+              className={"chip" + (mode === "optional" ? " active" : "")}
+              onClick={() => setMode("optional")}
+              title="Keep on the schedule but mark as skippable"
+            >
+              Optional
             </button>
             <button
               type="button"
@@ -1189,8 +1216,24 @@ function ClassEditModal({ classRow, dateIso, onClose, onSaved }) {
               borderRadius: 8,
             }}
           >
-            Hide this class from today's schedule. The default timetable
-            isn't touched — clear the override to bring it back.
+            <strong>Skip today.</strong> Hide this class from today's
+            schedule entirely. The default timetable isn't touched —
+            clear the override to bring it back.
+          </div>
+        )}
+        {!isExtra && mode === "optional" && (
+          <div
+            className="muted"
+            style={{
+              marginTop: 12,
+              padding: 12,
+              border: "1px dashed var(--border)",
+              borderRadius: 8,
+            }}
+          >
+            <strong>Mark optional.</strong> The class still shows on your
+            schedule but is dimmed with an OPT badge — useful for tutorials
+            you might skip. The planner treats optional slots as free time.
           </div>
         )}
 
@@ -1224,8 +1267,10 @@ function ClassEditModal({ classRow, dateIso, onClose, onSaved }) {
               {isExtra
                 ? "Add class"
                 : mode === "cancelled"
-                  ? "Cancel for today"
-                  : "Save for today"}
+                  ? "Skip today"
+                  : mode === "optional"
+                    ? "Mark optional"
+                    : "Save for today"}
             </button>
           </div>
         </div>
@@ -3826,6 +3871,10 @@ function DayNoteUnlockModal({ onClose, onUnlocked }) {
   const [pass2, setPass2] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // Bumps after a reset so the setup form remounts with brand-new <input>
+  // nodes — otherwise React reuses the same DOM elements that were tied
+  // to the unlock-phase controlled value and can wedge them.
+  const [formKey, setFormKey] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -3887,7 +3936,7 @@ function DayNoteUnlockModal({ onClose, onUnlocked }) {
         {phase === "loading" && <div className="muted">Loading…</div>}
 
         {phase === "setup" && (
-          <div>
+          <div key={"setup-" + formKey}>
             <div className="form-row">
               <label>New passcode</label>
               <input
@@ -3895,6 +3944,7 @@ function DayNoteUnlockModal({ onClose, onUnlocked }) {
                 autoFocus
                 value={pass}
                 onChange={(e) => setPass(e.target.value)}
+                disabled={busy}
               />
             </div>
             <div className="form-row">
@@ -3904,6 +3954,7 @@ function DayNoteUnlockModal({ onClose, onUnlocked }) {
                 value={pass2}
                 onChange={(e) => setPass2(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && doSetup()}
+                disabled={busy}
               />
             </div>
             {err && <div className="error">{err}</div>}
@@ -3935,19 +3986,61 @@ function DayNoteUnlockModal({ onClose, onUnlocked }) {
             </div>
             {err && <div className="error">{err}</div>}
             <div
-              className="row"
-              style={{ justifyContent: "flex-end", gap: 6, marginTop: 8 }}
+              className="row between"
+              style={{ marginTop: 10, alignItems: "center" }}
             >
-              <button className="ghost" onClick={onClose}>
-                Cancel
-              </button>
               <button
-                className="primary"
-                onClick={doUnlock}
-                disabled={busy || !pass}
+                type="button"
+                className="ghost xsmall"
+                onClick={async () => {
+                  // Two-step confirmation — wiping notes is irreversible.
+                  const sure = confirm(
+                    "Reset passcode?\n\n" +
+                      "Day notes are encrypted by the passcode and CAN'T be " +
+                      "recovered without it. This will DELETE every saved note " +
+                      "and clear the passcode so you can set a new one.\n\n" +
+                      "Continue?",
+                  );
+                  if (!sure) return;
+                  const sure2 = confirm(
+                    "Last chance. Type the word DELETE in your head and click OK to confirm.",
+                  );
+                  if (!sure2) return;
+                  setBusy(true);
+                  const r = await api.dayNotes.resetPasscode();
+                  setBusy(false);
+                  if (r?.ok) {
+                    // Hard-reset all form state AND bump the form key so
+                    // React unmounts the old controlled inputs (which were
+                    // bound to the unlock-phase value). Without this the
+                    // inputs in the setup phase look right but won't take
+                    // keystrokes — same DOM element, stale internal state.
+                    setErr("");
+                    setPass("");
+                    setPass2("");
+                    setFormKey((k) => k + 1);
+                    setPhase("setup");
+                  } else {
+                    setErr(r?.error || "Reset failed.");
+                  }
+                }}
+                title="Forgot the passcode — wipe notes and start over"
+                style={{ color: "#ff8577", borderColor: "rgba(239,107,90,0.40)" }}
               >
-                Unlock
+                Forgot? Reset (wipes notes)
               </button>
+              <div className="row" style={{ gap: 6 }}>
+                <button className="ghost" onClick={onClose}>
+                  Cancel
+                </button>
+                <button
+                  className="primary"
+                  onClick={doUnlock}
+                  disabled={busy || !pass}
+                >
+                  Unlock
+                </button>
+              </div>
             </div>
           </div>
         )}

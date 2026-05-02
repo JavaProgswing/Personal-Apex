@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld("apex", {
     lock: () => invoke("dayNotes:lock"),
     isUnlocked: () => invoke("dayNotes:isUnlocked"),
     clearPasscode: (passcode) => invoke("dayNotes:clearPasscode", { passcode }),
+    resetPasscode: () => invoke("dayNotes:resetPasscode", { confirm: "DELETE" }),
   },
   streak: {
     status: () => invoke("streak:status"),
@@ -140,6 +141,7 @@ contextBridge.exposeInMainWorld("apex", {
     sync: (id) => invoke("people:sync", id),
     syncAll: () => invoke("people:syncAll"),
     onSyncProgress: (h) => on("people:syncProgress", h),
+    heatStrips: (ids, days) => invoke("people:heatStrips", ids, days),
   },
   cp: {
     fetchPerson: (id) => invoke("cp:fetchPerson", id),

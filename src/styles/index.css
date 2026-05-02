@@ -1,26 +1,67 @@
-/* Apex — dark theme, vaguely matches the user's inspiration screenshot. */
+/* Apex — warm "study desk" dark theme.
+   Deliberately distinct from generic dev-tool greys: coffee-bg,
+   honey-amber accent, sage / terracotta / dusty-rose category colours.
+   Typography: Space Grotesk (UI) + JetBrains Mono (numbers / code). */
+
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 :root {
-  --bg: #0a0a0b;
-  --bg-elev: #131316;
-  --bg-elev-2: #1b1b20;
-  --border: #26262c;
-  --text: #e9e9ee;
-  --text-dim: #9a9aa4;
-  --text-faint: #5c5c66;
+  /* ── Surface ─────────────────────────────────────────────────────── */
+  --bg: #14110f;            /* roasted-coffee base */
+  --bg-elev: #1c1814;       /* one notch lifted */
+  --bg-elev-2: #251f19;     /* cards-on-cards */
+  --border: #322a23;        /* warm tan border */
 
-  --accent: #7c7cff; /* LC purple */
-  --accent-soft: #1f1f3a;
-  --ok: #4ecdc4; /* Social teal */
-  --ok-soft: #152b29;
-  --warn: #ffa657;
-  --bad: #ef6b5a; /* Dread */
-  --info: #7aa9ff; /* Energy dot */
+  /* ── Text ────────────────────────────────────────────────────────── */
+  --text: #f5ecdc;          /* warm cream */
+  --text-dim: #a89985;      /* muted tan */
+  --text-faint: #6b5e4e;    /* dim brown-grey */
 
+  /* ── Accent ──────────────────────────────────────────────────────── */
+  --accent: #e8a23a;        /* honey amber */
+  --accent-soft: rgba(232, 162, 58, 0.12);
+  --accent-strong: #f5b94a;
+
+  /* ── Activity categories (rebuilt) ──────────────────────────────── */
+  --productive: #7fc8a9;    /* sage green */
+  --productive-soft: rgba(127, 200, 169, 0.14);
+  --distraction: #d97757;   /* terracotta */
+  --distraction-soft: rgba(217, 119, 87, 0.14);
+  --leisure: #d4889a;       /* dusty rose */
+  --leisure-soft: rgba(212, 136, 154, 0.14);
+  --rest: #9bc4d6;          /* soft sky blue */
+  --rest-soft: rgba(155, 196, 214, 0.14);
+  --neutral: #b09e89;       /* warm taupe */
+  --neutral-soft: rgba(176, 158, 137, 0.14);
+  --mobile: #b8a9d6;        /* lavender-tan */
+
+  /* ── Semantic ────────────────────────────────────────────────────── */
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: var(--accent);
+  --bad: #c4493b;
+  --info: var(--rest);
+
+  /* ── Gradients ───────────────────────────────────────────────────── */
+  --grad-accent: linear-gradient(135deg, #e8a23a, #f5b94a);
+  --grad-card: linear-gradient(135deg, rgba(232,162,58,0.04), transparent 60%);
+
+  /* ── Shadows ─────────────────────────────────────────────────────── */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.45);
+
+  /* ── Radii ───────────────────────────────────────────────────────── */
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 16px;
   --r-xl: 20px;
+
+  /* ── Typography stacks ───────────────────────────────────────────── */
+  --font-ui:
+    "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   color-scheme: dark;
 }
@@ -37,14 +78,28 @@ body,
 }
 
 body {
-  background: var(--bg);
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(232, 162, 58, 0.06), transparent 60%),
+    var(--bg);
   color: var(--text);
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+  font-family: var(--font-ui);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   overflow: hidden;
+  letter-spacing: -0.005em;
+}
+
+/* Numbers, codes, timestamps, etc. should use the mono pair so columns
+   line up. Apply globally to anything tabular. */
+.mono, code, kbd, pre,
+[class*="time"],
+[class*="-num"],
+.pill.mono,
+.app-row-time,
+.task-stat-value {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1, "ss01" 1;
 }
 
 button {
@@ -2642,6 +2697,60 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
   white-space: nowrap;
 }
 .overflow-menu-item:hover { background: var(--bg-elev-2); color: var(--accent); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   v1.1 — People card additions: Follow ★ + 14d heat-strip
+   ═══════════════════════════════════════════════════════════════════════ */
+.person-card.following {
+  border-color: rgba(232, 162, 58, 0.45);
+  box-shadow: 0 0 0 1px rgba(232, 162, 58, 0.18) inset;
+}
+.person-follow {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-faint);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 120ms ease;
+  z-index: 2;
+}
+.person-card:hover .person-follow,
+.person-follow.on {
+  border-color: var(--border);
+  color: var(--text-dim);
+}
+.person-follow.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(232, 162, 58, 0.40);
+}
+.person-follow:hover { color: var(--accent); }
+
+.person-heat {
+  display: flex;
+  gap: 2px;
+  margin-top: 8px;
+  align-items: center;
+}
+.person-heat-cell {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  display: inline-block;
+}
+.person-heat-cell.hot {
+  background: var(--accent);
+  border-color: var(--accent);
+}
 
 /* ═══════════════════════════════════════════════════════════════════════
    v1.1 — Quick capture modal (Cmd/Ctrl+Shift+N)

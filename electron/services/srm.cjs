@@ -321,13 +321,74 @@ function _looksLikeLogin(body) {
   return false;
 }
 
-// Iterate ALL `pageSanitizer.sanitize('…')` matches on the page and
-// return the FIRST one whose decoded HTML contains a recognisable
-// timetable marker. Zoho frequently embeds several sanitize() calls per
-// page (header, footer, tooltip), so the first match is often a small
-// non-relevant payload.
+// Decode a JS string literal — handles every escape Zoho uses. The old
+// implementation only did `\xNN`, which left `\uXXXX`, `\\'`, `\\\\`,
+// `\\/`, etc. as literal characters. cheerio then saw `<table>`
+// instead of `<table>` and couldn't find any tags, even though the raw
+// substring "course_tbl" was present. This is what made diagnose say
+// "course_tbl ✓" while sync said "no course table".
+function _decodeJsLiteral(s) {
+  if (!s) return s;
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c !== '\\') { out += c; i++; continue; }
+    const next = s[i + 1];
+    if (next === undefined) { out += c; i++; continue; }
+    // \uXXXX or \u{XXXX}
+    if (next === 'u') {
+      if (s[i + 2] === '{') {
+        const end = s.indexOf('}', i + 3);
+        if (end > 0) {
+          const cp = parseInt(s.slice(i + 3, end), 16);
+          if (Number.isFinite(cp)) { out += String.fromCodePoint(cp); i = end + 1; continue; }
+        }
+      } else {
+        const hex = s.slice(i + 2, i + 6);
+        if (/^[0-9A-Fa-f]{4}$/.test(hex)) {
+          out += String.fromCharCode(parseInt(hex, 16));
+          i += 6; continue;
+        }
+      }
+    }
+    // \xNN
+    if (next === 'x') {
+      const hex = s.slice(i + 2, i + 4);
+      if (/^[0-9A-Fa-f]{2}$/.test(hex)) {
+        out += String.fromCharCode(parseInt(hex, 16));
+        i += 4; continue;
+      }
+    }
+    // single-character escapes
+    const map = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', 0: '\0', '\\': '\\', "'": "'", '"': '"', '`': '`', '/': '/' };
+    if (map[next] !== undefined) { out += map[next]; i += 2; continue; }
+    // Fallback: drop the backslash, keep the next char literal.
+    out += next;
+    i += 2;
+  }
+  return out;
+}
+
+// Decode HTML entities — needed because some Zoho pages double-wrap the
+// payload (JS-quoted string containing HTML-entity-encoded HTML).
+function _decodeHtmlEntities(s) {
+  if (!s || !/&[#a-zA-Z0-9]+;/.test(s)) return s;
+  return s
+    .replace(/&#x([0-9A-Fa-f]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&'); // leave amp last
+}
+
+// Returns the most-likely "real page" decoded HTML. Tries every sanitize()
+// payload on the page, decodes it through both layers, and picks the one
+// containing a recognisable Academia marker.
 function _extractTimetableHtml(rawText) {
-  // Try both single- and double-quoted variants (we've seen both in the wild).
   const reSingle = /pageSanitizer\.sanitize\('([\s\S]+?)'\)/g;
   const reDouble = /pageSanitizer\.sanitize\("([\s\S]+?)"\)/g;
   const candidates = [];
@@ -335,20 +396,26 @@ function _extractTimetableHtml(rawText) {
   while ((m = reSingle.exec(rawText)) != null) candidates.push(m[1]);
   while ((m = reDouble.exec(rawText)) != null) candidates.push(m[1]);
   if (candidates.length === 0) return null;
-  const decode = (enc) =>
-    enc.replace(/\\x([0-9A-Fa-f]{2})/g, (_, hex) =>
-      String.fromCharCode(parseInt(hex, 16)),
-    );
-  // Prefer payloads that look like a real Academia page.
+
+  const fullyDecode = (enc) => {
+    let s = _decodeJsLiteral(enc);
+    // If after JS-literal decode we STILL don't see real tags, try HTML
+    // entity decode — some Zoho skins wrap the payload twice.
+    if (!/<\w/.test(s) && /&lt;\w/.test(s)) {
+      s = _decodeHtmlEntities(s);
+    }
+    return s;
+  };
+
+  // Prefer payloads with the real markers.
   for (const enc of candidates) {
-    const decoded = decode(enc);
-    if (/course_tbl|mainDiv/.test(decoded)) return decoded;
+    const decoded = fullyDecode(enc);
+    if (/class\s*=\s*["']?(course_tbl|mainDiv)/.test(decoded)) return decoded;
   }
-  // No clear marker — fall back to the largest payload, which tends to
-  // be the actual page body.
+  // Fallback: largest payload (often the body even without a clean class match).
   let largest = candidates[0];
   for (const c of candidates) if (c.length > largest.length) largest = c;
-  return decode(largest);
+  return fullyDecode(largest);
 }
 
 async function _tryFetchPage(url, jar) {
@@ -398,26 +465,54 @@ async function fetchTimetableHtml(jar) {
         );
         continue;
       }
-      const decoded = _extractTimetableHtml(r.body);
+      let decoded = _extractTimetableHtml(r.body);
+      // Fallback — page may embed HTML inline without a sanitize() wrapper.
+      if (!decoded || !/course_tbl|Course Code/i.test(decoded)) {
+        try {
+          const $$ = cheerio.load(r.body);
+          const direct = $$('div.mainDiv').first();
+          if (direct && direct.length > 0 && /course_tbl|Course Code/i.test($$.html(direct))) {
+            decoded = $$.html(direct);
+          }
+        } catch { /* ignore */ }
+      }
       if (!decoded) {
         errors.push(
-          `${slug} @ ${url.replace(BASE_URL, '')}: no sanitize() payload (${r.bodyLen}B; "${r.bodyPreview.slice(0, 80)}")`,
+          `${slug} @ ${url.replace(BASE_URL, '')}: no sanitize() payload AND no inline mainDiv (${r.bodyLen}B; "${r.bodyPreview.slice(0, 80)}")`,
         );
         continue;
       }
       const $ = cheerio.load(decoded);
-      // Prefer the .mainDiv container; fall back to the .course_tbl
-      // ancestor (some skins of the timetable page omit the wrapper).
-      let container = $('div.mainDiv').first();
+      // Selector hierarchy — most specific first, falling back to any
+      // element with the .course_tbl class (Zoho occasionally wraps the
+      // table in a <div> or puts the class on a parent for newer skins).
+      let container =
+        $('div.mainDiv').first().length > 0 ? $('div.mainDiv').first() :
+        $('table.course_tbl').first().length > 0 ? $('table.course_tbl').first().parents().last() :
+        $('.course_tbl').first().length > 0 ? $('.course_tbl').first().parents().last() :
+        null;
+      // Final fallback: if cheerio sees ANY <table> with at least 11 cells
+      // (the Course Code / Title / Credit / … header row), take that.
       if (!container || container.length === 0) {
-        const ct = $('table.course_tbl').first();
-        if (ct && ct.length > 0) container = ct.parents().last();
+        $('table').each((_, t) => {
+          if (container && container.length > 0) return;
+          const cells = $(t).find('td, th');
+          if (cells.length >= 11) {
+            const text = $(t).text();
+            if (/Course Code|Course Title|Slot/i.test(text)) container = $(t);
+          }
+        });
       }
-      if (container && container.length > 0 && /course_tbl/.test($.html(container))) {
-        return $.html(container);
+      if (container && container.length > 0) {
+        const html = $.html(container);
+        if (/course_tbl|Course Code/i.test(html)) {
+          return html;
+        }
       }
+      // Capture a decoded sample so we can inspect what the parser saw.
+      const decodedSample = decoded.slice(0, 500).replace(/\s+/g, ' ');
       errors.push(
-        `${slug} @ ${url.replace(BASE_URL, '')}: decoded but no course table`,
+        `${slug} @ ${url.replace(BASE_URL, '')}: decoded ${decoded.length}B but no course table — sample: "${decodedSample.slice(0, 200)}"`,
       );
     }
   }
@@ -530,19 +625,32 @@ async function fetchCalendarHtml(jar, planName) {
         errors.push(`${slug} @ ${url.replace(BASE_URL, '')}: got login page`);
         continue;
       }
-      const decoded = _extractTimetableHtml(r.body);
-      if (!decoded) {
+
+      // Try the sanitize() wrapper first; fall back to direct HTML in the
+      // body (newer Zoho skins ship the page HTML inline in a
+      // `<div id="zppagesLive">` block — no JS string wrapper).
+      let candidate = _extractTimetableHtml(r.body);
+      if (!candidate || !/>DO[<\s]|>D\.?O\.?\s|Day\s*Order/i.test(candidate)) {
+        try {
+          const $$ = cheerio.load(r.body);
+          const md = $$('div.mainDiv').first();
+          if (md && md.length > 0) {
+            const inner = $$.html(md);
+            if (/>DO[<\s]|Day\s*Order/i.test(inner)) candidate = inner;
+          }
+        } catch { /* ignore */ }
+      }
+      if (!candidate) {
         errors.push(
-          `${slug} @ ${url.replace(BASE_URL, '')}: no sanitize() payload (${r.bodyLen}B)`,
+          `${slug} @ ${url.replace(BASE_URL, '')}: no sanitize() payload AND no inline mainDiv (${r.bodyLen}B)`,
         );
         continue;
       }
-      // Quick sanity: does the page contain a "DO" column header?
-      if (!/(>DO<|>DO\s)/.test(decoded)) {
+      if (!/(>DO<|>DO\s|Day\s*Order)/i.test(candidate)) {
         errors.push(`${slug} @ ${url.replace(BASE_URL, '')}: no DO column`);
         continue;
       }
-      return { html: decoded, planName: slug };
+      return { html: candidate, planName: slug };
     }
   }
   if (sawLoginRedirect) {
@@ -886,13 +994,33 @@ async function diagnose() {
       );
       let mainDivFound = false;
       let courseTblFound = false;
+      let courseTblIsTable = false;     // .course_tbl IS on a <table> element
+      let cheerioFoundTable = false;    // cheerio's selector actually matches
       let pickedPayloadLen = 0;
+      let decodedSample = null;
       try {
         const decoded = _extractTimetableHtml(r.body || '');
         if (decoded) {
-          mainDivFound = /class=["']mainDiv["']/.test(decoded);
-          courseTblFound = /class=["']course_tbl["']/.test(decoded);
           pickedPayloadLen = decoded.length;
+          mainDivFound = /class\s*=\s*["']?mainDiv/.test(decoded);
+          courseTblFound = /class\s*=\s*["']?course_tbl/.test(decoded);
+          courseTblIsTable = /<table[^>]*class\s*=\s*["']?course_tbl/i.test(decoded);
+          // Check cheerio's selector behaviour explicitly, mirroring
+          // what fetchTimetableHtml does.
+          try {
+            const $$ = cheerio.load(decoded);
+            cheerioFoundTable = $$('table.course_tbl').length > 0
+              || $$('div.mainDiv').length > 0
+              || $$('.course_tbl').length > 0;
+          } catch { /* ignore */ }
+          // Capture a 600-char sample around the first occurrence so we
+          // can see what the decoded body actually looks like.
+          const idx = decoded.search(/course_tbl|mainDiv/);
+          const start = Math.max(0, idx - 200);
+          decodedSample = decoded
+            .slice(start, start + 600)
+            .replace(/\s+/g, ' ')
+            .trim();
         }
       } catch { /* ignore */ }
       out.timetableAttempts.push({
@@ -906,7 +1034,10 @@ async function diagnose() {
         looksLikeLogin: !!r.looksLikeLogin,
         mainDivFound,
         courseTblFound,
+        courseTblIsTable,
+        cheerioFoundTable,
         pickedPayloadLen,
+        decodedSample,
         finalUrl: r.finalUrl ? r.finalUrl.replace(BASE_URL, '') : null,
       });
     }
@@ -915,9 +1046,31 @@ async function diagnose() {
   for (const slug of KNOWN_PLAN_SLUGS) {
     for (const url of _pageUrlVariants(slug)) {
       const r = await _tryFetchPage(url, jar);
-      const sanitizeMatches = (r.body || '').match(
-        /pageSanitizer\.sanitize\(['"]/g,
-      );
+      const body = r.body || '';
+      const sanitizeMatches = body.match(/pageSanitizer\.sanitize\(['"]/g);
+      const altSanitize = body.match(/pageSanitizer[\[\.](?:["']?sanitize)/g);
+      // Look for raw markers anywhere in the (possibly-undecoded) body.
+      const rawMarkers = {
+        hasMainDiv: /mainDiv/.test(body),
+        hasCourseTbl: /course_tbl/.test(body),
+        hasDOheader: />DO\s*<|>DO\s*<\/(?:font|th|strong)/i.test(body),
+        hasDayOrder: /Day\s*Order/i.test(body),
+        hasZmlValue: /zmlvalue/.test(body),
+        hasPagesId: /pagelinkname=/.test(body),
+      };
+      // If the body has a real planner page (134KB with DO header in raw
+      // form), try to extract the embedded HTML even without sanitize().
+      let extractedFromRaw = false;
+      if (!sanitizeMatches && rawMarkers.hasMainDiv) {
+        try {
+          // Some Zoho skins put the page HTML directly inside a
+          // `<div id="zppagesLive" ...>` block as plain HTML — no
+          // sanitize() wrapper.
+          const $$ = cheerio.load(body);
+          const md = $$('div.mainDiv').first();
+          extractedFromRaw = md.length > 0;
+        } catch { /* ignore */ }
+      }
       out.calendarAttempts.push({
         slug,
         url: url.replace(BASE_URL, ''),
@@ -925,8 +1078,11 @@ async function diagnose() {
         status: r.status || null,
         bodyLen: r.bodyLen || 0,
         sanitizeMatches: sanitizeMatches?.length || 0,
+        altSanitizeMatches: altSanitize?.length || 0,
         looksLikeLogin: !!r.looksLikeLogin,
-        hasDoColumn: />DO[<\s]/.test(r.body || ''),
+        hasDoColumn: />DO[<\s]/.test(body),
+        rawMarkers,
+        extractedFromRaw,
         finalUrl: r.finalUrl ? r.finalUrl.replace(BASE_URL, '') : null,
       });
     }
