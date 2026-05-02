@@ -180,6 +180,38 @@ function inferCategory(pkg) {
   return "mobile";
 }
 
+// Discover the date range covered by the dumpsys log so we can bucket
+// per-day. Returns { firstMs, lastMs } in local time. Falls back to the
+// last 7 days if no usable timestamps were found.
+function _dumpDateRange(dump) {
+  const lines = dump.split(/\r?\n/);
+  let first = null, last = null;
+  for (const l of lines) {
+    const m = l.match(/time="([^"]+)"/);
+    if (!m) continue;
+    const t = new Date(m[1].replace(" ", "T")).getTime();
+    if (!Number.isFinite(t)) continue;
+    if (first == null || t < first) first = t;
+    if (last == null || t > last) last = t;
+  }
+  if (first == null) {
+    last = Date.now();
+    first = last - 7 * 86400_000;
+  }
+  return { firstMs: first, lastMs: last };
+}
+
+function _isoDateLocal(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function _startOfDayLocal(ms) {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 async function syncNow() {
   const devs = await devices();
   if (devs.length === 0) {
@@ -197,46 +229,93 @@ async function syncNow() {
       error: "adb dumpsys failed: " + (err.stderr || err.message),
     };
   }
-  // Clip to today's local window so events from yesterday evening don't
-  // leak into today's totals after midnight.
+
+  // The dump carries multi-day events. Bucket per package per day so
+  // selecting yesterday in Top apps still shows mobile data — the old
+  // implementation only kept today's slice and threw the rest away.
+  const range = _dumpDateRange(dump);
+  const today = new Date();
   const todayStart = startOfTodayLocal();
   const now = Date.now();
-  const pkgs = parseUsagestats(dump, todayStart, now);
-  if (pkgs.length === 0)
+
+  // Window we'll consider — earliest of (first event, today - 14d) up to now.
+  const horizonMs = Math.max(range.firstMs, todayStart - 14 * 86400_000);
+  const endMs = Math.min(range.lastMs, now);
+
+  // Walk day-by-day, calling parseUsagestats with that day's window.
+  const perDay = []; // [{ date, pkgs: [{package, minutes}], totalMin }]
+  const datesWritten = new Set();
+  let cursor = _startOfDayLocal(horizonMs);
+  const lastCursor = _startOfDayLocal(endMs);
+  // Hard cap to avoid runaway loops if timestamps are bogus.
+  const MAX_DAYS = 30;
+  let safety = 0;
+  while (cursor <= lastCursor && safety++ < MAX_DAYS) {
+    const dayStart = cursor;
+    const dayEnd = cursor + 86400_000;
+    const pkgs = parseUsagestats(dump, dayStart, Math.min(dayEnd, now));
+    if (pkgs.length > 0) {
+      perDay.push({
+        date: _isoDateLocal(dayStart),
+        pkgs,
+        totalMin: pkgs.reduce((s, p) => s + p.minutes, 0),
+      });
+    }
+    cursor += 86400_000;
+  }
+
+  if (perDay.length === 0) {
     return {
       ok: false,
       error:
-        "No usage data for today yet. On some devices you must grant PACKAGE_USAGE_STATS via `adb shell pm grant`, or dumpsys hasn't rolled over since midnight.",
+        "No usage data found in dumpsys. On some devices you must grant " +
+        "PACKAGE_USAGE_STATS via `adb shell pm grant`, or dumpsys hasn't " +
+        "rolled over since boot.",
     };
-
-  // Wipe today's mobile sessions and re-insert — we treat dumpsys as authoritative.
-  const today = new Date();
-  const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  db._db()
-    .prepare(
-      `DELETE FROM activity_sessions WHERE date = ? AND source = 'mobile'`,
-    )
-    .run(iso);
-  for (const p of pkgs) {
-    db.addActivitySession({
-      date: iso,
-      source: "mobile",
-      app: humanizePackage(p.package),
-      window_title: p.package,
-      category: inferCategory(p.package),
-      started_at: null,
-      ended_at: null,
-      minutes: p.minutes,
-    });
   }
+
+  // Write per-day rows. Replace existing mobile rows for each day we have
+  // fresh data for — dumpsys is authoritative within its window.
+  const dbh = db._db();
+  const wipe = dbh.prepare(
+    `DELETE FROM activity_sessions WHERE date = ? AND source = 'mobile'`,
+  );
+  const tx = dbh.transaction((days) => {
+    for (const day of days) {
+      wipe.run(day.date);
+      for (const p of day.pkgs) {
+        db.addActivitySession({
+          date: day.date,
+          source: "mobile",
+          app: humanizePackage(p.package),
+          window_title: p.package,
+          category: inferCategory(p.package),
+          started_at: null,
+          ended_at: null,
+          minutes: p.minutes,
+        });
+        datesWritten.add(day.date);
+      }
+    }
+  });
+  tx(perDay);
   db.setSetting("wellbeing.lastSyncAt", new Date().toISOString());
+
+  // Backwards-compatible response shape: `count`/`total_minutes`/`top`
+  // describe TODAY (which is what the dashboard cared about), while the
+  // new `days` array tells the UI exactly which dates got refreshed.
+  const todayIso = _isoDateLocal(todayStart);
+  const todayPkgs =
+    perDay.find((d) => d.date === todayIso)?.pkgs || [];
   return {
     ok: true,
     device: devs[0].serial,
-    count: pkgs.length,
-    total_minutes: pkgs.reduce((s, p) => s + p.minutes, 0),
-    window: { start: new Date(todayStart).toISOString(), end: new Date(now).toISOString() },
-    top: pkgs
+    count: todayPkgs.length,
+    total_minutes: todayPkgs.reduce((s, p) => s + p.minutes, 0),
+    window: { start: new Date(horizonMs).toISOString(), end: new Date(endMs).toISOString() },
+    days: perDay.map((d) => ({ date: d.date, count: d.pkgs.length, total_minutes: d.totalMin })),
+    daysWritten: datesWritten.size,
+    top: todayPkgs
       .sort((a, b) => b.minutes - a.minutes)
       .slice(0, 10)
       .map((p) => ({

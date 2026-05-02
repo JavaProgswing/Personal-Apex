@@ -70,6 +70,22 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
   const [opening, setOpening] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagReport, setDiagReport] = useState(null);
+
+  async function runDiagnose() {
+    setDiagnosing(true);
+    setDiagReport(null);
+    try {
+      const r = await api.srm.diagnose();
+      setDiagReport(r);
+      setMsg(r?.suggestion || "Diagnostic done. See report below.");
+    } catch (e) {
+      setMsg("Diagnose failed: " + (e?.message || "unknown"));
+    } finally {
+      setDiagnosing(false);
+    }
+  }
 
   useEffect(() => {
     refreshState();
@@ -238,7 +254,18 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
           >
             {syncing ? "Syncing…" : "Sync now"}
           </button>
+          <button
+            type="button"
+            className="ghost"
+            onClick={runDiagnose}
+            disabled={diagnosing}
+            title="Probe every URL/prefix combo and show what SRM is returning"
+          >
+            {diagnosing ? "Diagnosing…" : "🔬 Diagnose"}
+          </button>
         </div>
+
+        {diagReport && <SrmDiagnosePanel report={diagReport} />}
 
         {lastSync?.ok && (
           <small className="hint" style={{ display: "block", marginTop: 10 }}>
@@ -799,14 +826,225 @@ function OllamaTab({ all, setAll, save }) {
             onChange={(e) => saveProfile({ ...profile, tone: e.target.value })} />
         </div>
         <div className="form-row">
-          <label>Extra context (free-form)</label>
+          <label>Extra context (free-form, structured note)</label>
           <textarea rows={3} value={all["user.extraContext"] || ""}
             placeholder="Anything else the model should know — constraints, preferences, ongoing projects…"
             onChange={(e) => setAll({ ...all, "user.extraContext": e.target.value })}
             onBlur={(e) => save("user.extraContext", e.target.value)} />
         </div>
       </div>
+
+      {/* About me — free-form profile prompt the user can paste from any
+          other LLM ("write a profile of me as if I were briefing my own
+          assistant"). Goes to the TOP of every system prompt. */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-title">About me · profile prompt</div>
+        <small className="hint" style={{ display: "block", marginBottom: 10 }}>
+          A free-form description of you, your work style, ongoing projects,
+          how you want help framed. This sits at the TOP of every Ollama
+          prompt — recommendations, plan-day, evening review, repo chat all
+          see it. Paste from another LLM if you want; tweak as needed.
+        </small>
+        <div className="form-row">
+          <label>
+            Who am I?
+            <button
+              type="button"
+              className="ghost xsmall"
+              style={{ marginLeft: 8 }}
+              onClick={() => {
+                const seed =
+                  "I'm a CS undergrad at SRM Kattankulathur. I care about " +
+                  "shipping real things — local-first apps, AI tooling, " +
+                  "competitive programming. I prefer concrete, specific advice " +
+                  "over motivational fluff. When I ask for a plan I want " +
+                  "realistic time estimates, not aspirational ones. I'm " +
+                  "currently most interested in: [your current obsessions].";
+                setAll({ ...all, "user.aboutMe": seed });
+                save("user.aboutMe", seed);
+              }}
+              title="Insert a starter you can edit"
+            >
+              Insert starter
+            </button>
+            {(all["user.aboutMe"] || "").trim() && (
+              <button
+                type="button"
+                className="ghost xsmall"
+                style={{ marginLeft: 6 }}
+                onClick={() => {
+                  if (!confirm("Clear your About-me prompt?")) return;
+                  setAll({ ...all, "user.aboutMe": "" });
+                  save("user.aboutMe", "");
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </label>
+          <textarea
+            rows={8}
+            value={all["user.aboutMe"] || ""}
+            placeholder={
+              "Paste from another LLM, or write your own. e.g.:\n\n" +
+              "I'm a fourth-year CS student building a personal productivity tool…\n" +
+              "I prefer terse, technical advice. When stuck, ask me one clarifying question rather than guessing.\n" +
+              "Currently grinding LeetCode mediums + system design fundamentals."
+            }
+            onChange={(e) => setAll({ ...all, "user.aboutMe": e.target.value })}
+            onBlur={(e) => save("user.aboutMe", e.target.value)}
+            style={{ fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: 12, lineHeight: 1.5 }}
+          />
+          <small className="hint" style={{ marginTop: 6 }}>
+            Apex also auto-pulls your courses, today's classes, open tasks,
+            completed-today, and any active timer into every prompt — no need
+            to repeat that here.
+          </small>
+        </div>
+      </div>
     </>
+  );
+}
+
+// Renders the rich debug payload returned by api.srm.diagnose(). Shows a
+// summary suggestion + a collapsed table of every fetch attempt so the
+// user can see exactly what each URL/prefix combo did.
+function SrmDiagnosePanel({ report }) {
+  if (!report) return null;
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        padding: 12,
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        background: "var(--bg-elev)",
+      }}
+    >
+      <div className="row between" style={{ alignItems: "center" }}>
+        <strong>Diagnostic report</strong>
+        <small className="muted">
+          {report.cookieCount} cookies ·{" "}
+          {report.isLoggedIn ? "session active" : "session inactive"}
+        </small>
+      </div>
+      {report.suggestion && (
+        <p style={{ margin: "8px 0", fontSize: 13 }}>
+          <strong>↳ </strong>
+          {report.suggestion}
+        </p>
+      )}
+      {report.savedTo && (
+        <small className="muted" style={{ display: "block", marginBottom: 8 }}>
+          Saved to <code>{report.savedTo}</code>
+        </small>
+      )}
+
+      <details style={{ marginTop: 8 }} open>
+        <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+          Timetable attempts ({report.timetableAttempts?.length || 0})
+        </summary>
+        <div
+          style={{
+            marginTop: 6,
+            maxHeight: 320,
+            overflow: "auto",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+          }}
+        >
+          <table className="diag-table" style={{ width: "100%", fontSize: 11 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left" }}>Slug</th>
+                <th>Status</th>
+                <th>Body</th>
+                <th>sanitize()</th>
+                <th>course_tbl</th>
+                <th>login</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(report.timetableAttempts || []).map((a, i) => (
+                <tr key={i}>
+                  <td title={a.url} style={{ fontFamily: "monospace" }}>
+                    {a.slug}
+                    <br />
+                    <small className="muted">{a.url}</small>
+                  </td>
+                  <td style={{ textAlign: "center" }}>{a.status ?? "—"}</td>
+                  <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                    {a.bodyLen}
+                  </td>
+                  <td style={{ textAlign: "center" }}>{a.sanitizeMatches}</td>
+                  <td style={{ textAlign: "center" }}>
+                    {a.courseTblFound ? "✓" : a.mainDivFound ? "div" : "—"}
+                  </td>
+                  <td style={{ textAlign: "center" }}>{a.looksLikeLogin ? "⚠" : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+
+      <details style={{ marginTop: 8 }}>
+        <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+          Calendar attempts ({report.calendarAttempts?.length || 0})
+        </summary>
+        <div
+          style={{
+            marginTop: 6,
+            maxHeight: 240,
+            overflow: "auto",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+          }}
+        >
+          <table className="diag-table" style={{ width: "100%", fontSize: 11 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left" }}>Slug</th>
+                <th>Status</th>
+                <th>Body</th>
+                <th>sanitize()</th>
+                <th>DO col</th>
+                <th>login</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(report.calendarAttempts || []).map((a, i) => (
+                <tr key={i}>
+                  <td title={a.url} style={{ fontFamily: "monospace" }}>
+                    {a.slug}
+                    <br />
+                    <small className="muted">{a.url}</small>
+                  </td>
+                  <td style={{ textAlign: "center" }}>{a.status ?? "—"}</td>
+                  <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                    {a.bodyLen}
+                  </td>
+                  <td style={{ textAlign: "center" }}>{a.sanitizeMatches}</td>
+                  <td style={{ textAlign: "center" }}>{a.hasDoColumn ? "✓" : "—"}</td>
+                  <td style={{ textAlign: "center" }}>{a.looksLikeLogin ? "⚠" : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+
+      {report.cookieNames?.length > 0 && (
+        <details style={{ marginTop: 8 }}>
+          <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+            Session cookies ({report.cookieNames.length})
+          </summary>
+          <code style={{ display: "block", fontSize: 11, marginTop: 4, wordBreak: "break-all" }}>
+            {report.cookieNames.join(", ")}
+          </code>
+        </details>
+      )}
+    </div>
   );
 }
 

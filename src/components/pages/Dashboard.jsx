@@ -529,80 +529,18 @@ export default function Dashboard({ go }) {
           </p>
         </div>
         <div className="dashboard-actions">
-          {cpHasAny && (
-            <button
-              className="ghost small"
-              onClick={() => setShowCp(true)}
-              title="Your LeetCode / Codeforces / CodeChef snapshot"
-            >
-              My CP
-            </button>
-          )}
-          <button
-            className="ghost small"
-            onClick={copyTodayBrief}
-            title="Copy a markdown brief of today to the clipboard"
-          >
-            Copy brief
-          </button>
           <button className="primary small" onClick={() => setShowAskApex(true)}>
             Ask Apex
           </button>
-          <BurnoutChip
-            risk={risk}
-            riskClass={riskClass}
-            report={burnoutReport}
-            loading={burnoutLoading}
-            onRerun={runBurnoutCheck}
-            onSuggestionToTask={async (s) => {
-              await api.tasks.create({
-                title: s.text || s.type || "burnout suggestion",
-                description: s.link ? "Link: " + s.link : "",
-                category:
-                  s.type === "exercise" ? "Health"
-                  : s.type === "break" ? "Leisure"
-                  : "Personal",
-                priority: 3,
-                estimated_minutes: s.minutes || 15,
-                tags: ["burnout"],
-                links: s.link ? [s.link] : [],
-              });
-              setToast({
-                kind: "success",
-                title: "Added to tasks",
-                msg: s.text || s.type,
-              });
-              setTimeout(() => setToast(null), 3000);
-            }}
-          />
-          <EveningReviewChip
-            ollamaOk={planCard.ollamaOk}
-            model={planCard.model}
-            onAddTomorrowTask={async (text) => {
-              const tomorrow = new Date();
-              tomorrow.setDate(tomorrow.getDate() + 1);
-              tomorrow.setHours(9, 0, 0, 0);
-              await api.tasks.create({
-                title: text || "tomorrow",
-                description: "From evening review",
-                category: "Personal",
-                priority: 3,
-                deadline: tomorrow.toISOString(),
-                tags: ["apex", "evening"],
-                links: [],
-              });
-              setToast({
-                kind: "success",
-                title: "Saved for tomorrow",
-                msg: text,
-              });
-              setTimeout(() => setToast(null), 3000);
-            }}
-          />
-          <RecommendChip
+          <InsightsChip
             ollamaOk={planCard.ollamaOk}
             model={planCard.model}
             tasks={tasks}
+            risk={risk}
+            riskClass={riskClass}
+            report={burnoutReport}
+            burnoutLoading={burnoutLoading}
+            onRerunBurnout={runBurnoutCheck}
             onAddTask={async (rec) => {
               await api.tasks.create({
                 title: rec.text || "recommendation",
@@ -641,6 +579,62 @@ export default function Dashboard({ go }) {
               });
               setTimeout(() => setToast(null), 2500);
             }}
+            onAddBurnoutSuggestion={async (s) => {
+              await api.tasks.create({
+                title: s.text || s.type || "burnout suggestion",
+                description: s.link ? "Link: " + s.link : "",
+                category:
+                  s.type === "exercise" ? "Health"
+                  : s.type === "break" ? "Leisure"
+                  : "Personal",
+                priority: 3,
+                estimated_minutes: s.minutes || 15,
+                tags: ["burnout"],
+                links: s.link ? [s.link] : [],
+              });
+              setToast({
+                kind: "success",
+                title: "Added to tasks",
+                msg: s.text || s.type,
+              });
+              setTimeout(() => setToast(null), 3000);
+            }}
+            onAddTomorrowTask={async (text) => {
+              const tomorrow = new Date();
+              tomorrow.setDate(tomorrow.getDate() + 1);
+              tomorrow.setHours(9, 0, 0, 0);
+              await api.tasks.create({
+                title: text || "tomorrow",
+                description: "From evening review",
+                category: "Personal",
+                priority: 3,
+                deadline: tomorrow.toISOString(),
+                tags: ["apex", "evening"],
+                links: [],
+              });
+              setToast({
+                kind: "success",
+                title: "Saved for tomorrow",
+                msg: text,
+              });
+              setTimeout(() => setToast(null), 3000);
+            }}
+          />
+          <OverflowMenu
+            items={[
+              cpHasAny && {
+                label: "My CP snapshot",
+                onClick: () => setShowCp(true),
+              },
+              {
+                label: "Copy today's brief",
+                onClick: copyTodayBrief,
+              },
+              {
+                label: "Settings",
+                onClick: () => go("settings"),
+              },
+            ].filter(Boolean)}
           />
         </div>
       </div>
@@ -1719,6 +1713,310 @@ function ActivitySection({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── OverflowMenu ────────────────────────────────────────────────────────
+// A 3-dot button that opens a small popover with secondary actions
+// (My CP, Copy brief, Settings). Keeps the header header clean.
+function OverflowMenu({ items }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  if (!items || items.length === 0) return null;
+  return (
+    <div className="overflow-menu-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className={"ghost small overflow-menu-btn" + (open ? " open" : "")}
+        onClick={() => setOpen((v) => !v)}
+        title="More actions"
+        aria-label="More actions"
+      >
+        ⋯
+      </button>
+      {open && (
+        <div className="overflow-menu" role="menu">
+          {items.map((it, i) => (
+            <button
+              key={i}
+              type="button"
+              className="overflow-menu-item"
+              onClick={() => { setOpen(false); it.onClick?.(); }}
+            >
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── InsightsChip ────────────────────────────────────────────────────────
+// One unified popover that replaces the previous burnout / What now? /
+// Evening review chips. Three sections inside, each generated lazily on
+// first open. Saves a ton of horizontal real-estate in the header.
+function InsightsChip({
+  ollamaOk,
+  model,
+  tasks,
+  risk,
+  riskClass,
+  report,
+  burnoutLoading,
+  onRerunBurnout,
+  onAddTask,
+  onStartTimer,
+  onAddBurnoutSuggestion,
+  onAddTomorrowTask,
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  // Recommendations
+  const [recs, setRecs] = useState([]);
+  const [recsLoading, setRecsLoading] = useState(false);
+  const [recsErr, setRecsErr] = useState(null);
+
+  // Evening review
+  const [review, setReview] = useState(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewErr, setReviewErr] = useState(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  // Auto-fetch recommendations on first open (it's the most useful section).
+  useEffect(() => {
+    if (open && ollamaOk && recs.length === 0 && !recsLoading && !recsErr) {
+      refreshRecs();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  async function refreshRecs() {
+    setRecsLoading(true); setRecsErr(null);
+    try {
+      const r = await api.ollama.recommend({ model });
+      if (!r?.ok) { setRecsErr(r?.error || "Couldn't fetch."); setRecs([]); }
+      else setRecs(Array.isArray(r.recommendations) ? r.recommendations : []);
+    } catch (e) { setRecsErr(e?.message || "Failed."); }
+    finally { setRecsLoading(false); }
+  }
+  async function refreshReview() {
+    setReviewLoading(true); setReviewErr(null);
+    try {
+      const r = await api.ollama.eveningReview({ model });
+      if (!r?.ok) { setReviewErr(r?.error || "Couldn't fetch."); setReview(null); }
+      else setReview(r);
+    } catch (e) { setReviewErr(e?.message || "Failed."); }
+    finally { setReviewLoading(false); }
+  }
+
+  const summary = report?.summary || null;
+  const flags = Array.isArray(report?.redFlags) ? report.redFlags : [];
+  const suggestions = Array.isArray(report?.suggestions) ? report.suggestions : [];
+  const hasBurnout = typeof risk === "number";
+  const isEvening = new Date().getHours() >= 17;
+
+  // Chip label adapts: shows the dominant signal (burnout score if high,
+  // otherwise a generic "Apex insights").
+  const chipLabel = hasBurnout && risk >= 6 ? `burnout ${risk}/10` : "Apex insights";
+
+  return (
+    <div className="insights-chip-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className={
+          "insights-chip" +
+          (open ? " open" : "") +
+          (hasBurnout ? ` risk-${riskClass}` : "")
+        }
+        onClick={() => setOpen((v) => !v)}
+        title={summary || "Apex insights — burnout, recommendations, evening review"}
+      >
+        <span className="insights-spark" aria-hidden>{isEvening ? "🌇" : "✨"}</span>
+        <span className="insights-label">{chipLabel}</span>
+        {hasBurnout && (
+          <span className="insights-mini-dot" aria-hidden />
+        )}
+        <span className="insights-caret">▾</span>
+      </button>
+      {open && (
+        <div className="insights-popover">
+
+          {/* — Recommendations (auto-fetched on open) ─────────────── */}
+          <div className="insights-section">
+            <div className="insights-section-head">
+              <strong>What now?</strong>
+              <button
+                className="ghost xsmall"
+                onClick={(e) => { e.stopPropagation(); refreshRecs(); }}
+                disabled={recsLoading}
+                title="Re-roll"
+              >↻</button>
+            </div>
+            {recsLoading && <div className="muted">Thinking…</div>}
+            {recsErr && !recsLoading && <div className="error">{recsErr}</div>}
+            {!recsLoading && recs.length === 0 && !recsErr && (
+              <div className="muted small">Nothing to recommend yet.</div>
+            )}
+            {!recsLoading && recs.length > 0 && (
+              <ul className="insights-rec-list">
+                {recs.slice(0, 3).map((r, i) => (
+                  <li key={i} className={"insights-rec rec-" + (r.kind || "other")}>
+                    <div className="insights-rec-body">
+                      <div className="insights-rec-text">{r.text}</div>
+                      <div className="insights-rec-meta muted">
+                        <span className={"pill rec-pill rec-" + (r.kind || "other")}>
+                          {r.kind || "other"}
+                        </span>
+                        {r.estimated_minutes ? (
+                          <span> · ~{r.estimated_minutes}m</span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="insights-rec-actions">
+                      <button
+                        type="button" className="ghost xsmall"
+                        onClick={() => onStartTimer?.(r)}
+                        title="Start a timer"
+                      >▶</button>
+                      {!r.taskId && (
+                        <button
+                          type="button" className="ghost xsmall"
+                          onClick={() => onAddTask?.(r)}
+                          title="+ Task"
+                        >+</button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* — Burnout (compact, click chip-pill to refresh) ─────────── */}
+          <div className="insights-section">
+            <div className="insights-section-head">
+              <strong>Burnout</strong>
+              <div className="row" style={{ gap: 6 }}>
+                {hasBurnout && (
+                  <span
+                    className={`burnout-mini-pill risk-${riskClass}`}
+                    title={summary || "current risk"}
+                  >
+                    {risk}/10
+                  </span>
+                )}
+                <button
+                  className="ghost xsmall"
+                  disabled={burnoutLoading}
+                  onClick={(e) => { e.stopPropagation(); onRerunBurnout?.(); }}
+                  title={hasBurnout ? "Re-run check" : "Run a burnout check"}
+                >
+                  {hasBurnout ? "↻" : "Run"}
+                </button>
+              </div>
+            </div>
+            {hasBurnout ? (
+              <>
+                {summary && <p className="insights-text">{summary}</p>}
+                {(flags.length > 0 || suggestions.length > 0) && (
+                  <details className="insights-details">
+                    <summary>Red flags &amp; suggestions</summary>
+                    {flags.length > 0 && (
+                      <ul className="insights-flag-list">
+                        {flags.slice(0, 4).map((f, i) => (
+                          <li key={i}>{typeof f === "string" ? f : f.text || JSON.stringify(f)}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {suggestions.length > 0 && (
+                      <ul className="insights-suggestion-list">
+                        {suggestions.slice(0, 4).map((s, i) => (
+                          <li key={i} className="insights-suggestion-row">
+                            <span>{s.text || s.type || ""}</span>
+                            <button
+                              className="ghost xsmall"
+                              onClick={() => onAddBurnoutSuggestion?.(s)}
+                              title="+ Task"
+                            >+</button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </details>
+                )}
+              </>
+            ) : (
+              <div className="muted small">No reading yet.</div>
+            )}
+          </div>
+
+          {/* — Evening review (lazy — button to generate) ────────────── */}
+          <div className="insights-section">
+            <div className="insights-section-head">
+              <strong>Evening review</strong>
+              <button
+                className="ghost xsmall"
+                onClick={(e) => { e.stopPropagation(); refreshReview(); }}
+                disabled={reviewLoading || !ollamaOk}
+                title="Generate"
+              >{review?.ok ? "↻" : "Run"}</button>
+            </div>
+            {reviewLoading && <div className="muted">Reflecting…</div>}
+            {reviewErr && !reviewLoading && <div className="error">{reviewErr}</div>}
+            {!reviewLoading && !review && !reviewErr && (
+              <div className="muted small">
+                {isEvening
+                  ? "Click Run to wrap up the day."
+                  : "Wrap up your day later — generate any time."}
+              </div>
+            )}
+            {review && review.ok && (
+              <>
+                {Array.isArray(review.wins) && review.wins.length > 0 && (
+                  <div className="insights-mini-block">
+                    <small className="muted">WINS</small>
+                    <ul className="insights-flag-list">
+                      {review.wins.slice(0, 2).map((w, i) => <li key={i}>{w}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {review.friction && (
+                  <p className="insights-text"><small className="muted">FRICTION · </small>{review.friction}</p>
+                )}
+                {review.tomorrow && (
+                  <div className="insights-tomorrow">
+                    <p className="insights-text"><small className="muted">TRY TOMORROW · </small>{review.tomorrow}</p>
+                    <button
+                      type="button"
+                      className="ghost xsmall"
+                      onClick={() => onAddTomorrowTask?.(review.tomorrow)}
+                    >+ Save as task</button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -93,6 +93,7 @@ contextBridge.exposeInMainWorld("apex", {
     syncNow: (opts) => invoke("srm:syncNow", opts),
     openLoginWindow: () => invoke("srm:openLoginWindow"),
     logout: () => invoke("srm:logout"),
+    diagnose: () => invoke("srm:diagnose"),
   },
   notifier: {
     status: () => invoke("notifier:status"),
@@ -100,6 +101,9 @@ contextBridge.exposeInMainWorld("apex", {
     setLeads: (opts) => invoke("notifier:setLeads", opts),
     test: () => invoke("notifier:test"),
     onNavGoto: (h) => on("nav:goto", h),
+  },
+  shortcuts: {
+    onQuickCapture: (h) => on("quick-capture:open", h),
   },
   // kept for backwards-compat; UI should use schedule.*
   timetable: {

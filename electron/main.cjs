@@ -11,6 +11,7 @@ const {
   net,
   session,
   Notification,
+  globalShortcut,
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
@@ -128,6 +129,23 @@ app.whenReady().then(async () => {
     }
   } catch (e) { console.warn("[tracker] autostart skipped:", e.message); }
 
+  // Global Ctrl/Cmd+Shift+N — pop the quick-capture modal in the renderer
+  // even when Apex is in the background. We don't bind plain Ctrl+N so we
+  // don't fight common browser/OS shortcuts.
+  try {
+    const accelerators = ["CommandOrControl+Shift+N", "Alt+Shift+N"];
+    for (const acc of accelerators) {
+      globalShortcut.register(acc, () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+          emit("quick-capture:open", { source: acc });
+        }
+      });
+    }
+  } catch (e) { console.warn("[shortcuts] register failed:", e.message); }
+
   // Boot the in-app notification scheduler. Polls every 60s for class
   // start-of-period, task deadlines, and live-timer expiry; respects the
   // `notifications.enabled` setting (defaults ON).
@@ -171,6 +189,10 @@ app.whenReady().then(async () => {
 }).catch((err) => {
   console.error("[apex] whenReady failed:", err);
   app.exit(1);
+});
+
+app.on("will-quit", () => {
+  try { globalShortcut.unregisterAll(); } catch { /* ignore */ }
 });
 
 app.on("window-all-closed", () => {
@@ -448,6 +470,21 @@ ipcMain.handle("srm:openLoginWindow", async () => {
 ipcMain.handle("srm:logout", async () => {
   _ensureSrmSessionAttached();
   return await srm.clearCookies();
+});
+
+// Surfaces the deep-debug payload used by Settings → Schedule's "Diagnose"
+// button. Saves a copy of the report to the user's home dir so they can
+// share it via paste / file upload when SRM throws something we haven't
+// seen before.
+ipcMain.handle("srm:diagnose", async () => {
+  _ensureSrmSessionAttached();
+  const report = await srm.diagnose();
+  try {
+    const out = path.join(app.getPath("userData"), "srm-diagnose.json");
+    fs.writeFileSync(out, JSON.stringify(report, null, 2));
+    report.savedTo = out;
+  } catch { /* ignore — diagnostics still useful in-memory */ }
+  return report;
 });
 
 // --- in-app notifications (class starts, deadlines, timer expiry) ---

@@ -163,8 +163,21 @@ async function autoPickBest() {
 
 // Personal context — user-tunable in Settings → Ollama. We prepend a compact
 // profile to every system prompt so generic models feel like "your" Apex.
-function personalContext() {
-  // Profile is stored as a JSON string in settings. Tolerate legacy objects.
+//
+// v1.1 additions:
+//   • `user.aboutMe`          — free-form prompt the user can paste from
+//                              another LLM ("write a profile of me as if I
+//                              were briefing my own assistant"). When set,
+//                              it's the FIRST thing the model sees.
+//   • Live snapshot           — current SRM courses (subjects + codes),
+//                              today's class subjects, today's open tasks
+//                              (count + top 5), active timer summary,
+//                              today's totals. Pulled fresh on every call,
+//                              so the model always knows what's happening
+//                              right now without the renderer having to
+//                              wire it manually.
+function personalContext({ live = true } = {}) {
+  // Profile structured fields (legacy).
   let profile = {};
   const raw = db.getSetting('user.profile');
   if (raw) {
@@ -172,6 +185,8 @@ function personalContext() {
     catch { profile = {}; }
   }
   const extra = (db.getSetting('user.extraContext') || '').toString().trim();
+  const aboutMe = (db.getSetting('user.aboutMe') || '').toString().trim();
+
   const name = profile.name || 'Yashasvi';
   const college = profile.college || 'SRM Institute of Science and Technology';
   const major = profile.major || 'Computer Science';
@@ -182,15 +197,146 @@ function personalContext() {
   const goals = (profile.goals || '').toString().trim()
     || 'become a strong systems + AI engineer; ship personal projects weekly; stay healthy.';
   const tone = profile.tone || 'calm, precise, no pep talk, no hedging';
-  return [
-    `USER PROFILE`,
-    `- Name: ${name}`,
-    `- Education: ${major}, ${year}, ${college}`,
-    `- Core interests: ${interests}`,
-    `- Long-term goals: ${goals}`,
-    `- Preferred tone: ${tone}`,
-    extra ? `- Extra context: ${extra}` : null,
-  ].filter(Boolean).join('\n');
+
+  const lines = [];
+
+  // ── ABOUT ME (free-form, top-of-stack) ────────────────────────────────
+  if (aboutMe) {
+    lines.push('ABOUT THE USER (their own words)');
+    lines.push(aboutMe);
+    lines.push('');
+  }
+
+  // ── PROFILE (structured fields) ───────────────────────────────────────
+  lines.push('USER PROFILE');
+  lines.push(`- Name: ${name}`);
+  lines.push(`- Education: ${major}, ${year}, ${college}`);
+  lines.push(`- Core interests: ${interests}`);
+  lines.push(`- Long-term goals: ${goals}`);
+  lines.push(`- Preferred tone: ${tone}`);
+  if (extra) lines.push(`- Extra context: ${extra}`);
+
+  // ── LIVE SNAPSHOT (courses, today, timer) ─────────────────────────────
+  if (live) {
+    try {
+      const live = _liveSnapshot();
+      if (live) {
+        lines.push('');
+        lines.push('LIVE SNAPSHOT (auto-pulled, freshest data)');
+        if (live.courses) lines.push(`- Courses this term: ${live.courses}`);
+        if (live.todayDayOrder != null) {
+          lines.push(`- Today: day order ${live.todayDayOrder} · ${live.todayClasses || '(no classes)'}`);
+        } else if (live.weekday != null) {
+          lines.push(`- Today: weekend / no day order`);
+        }
+        if (live.openTasksLine) lines.push(`- Open tasks: ${live.openTasksLine}`);
+        if (live.completedTodayLine) lines.push(`- Already done today: ${live.completedTodayLine}`);
+        if (live.timerLine) lines.push(`- Active timer: ${live.timerLine}`);
+        if (live.todayTotalsLine) lines.push(`- Today's time totals: ${live.todayTotalsLine}`);
+      }
+    } catch (e) {
+      // Don't let a snapshot failure break a prompt — just log and skip.
+      // eslint-disable-next-line no-console
+      console.warn('[ollama.personalContext] live snapshot failed:', e.message);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// Build a compact "what's happening right now" block. Pulled directly
+// from the same DB the dashboard reads, so it's always in sync.
+function _liveSnapshot() {
+  const out = {};
+  const dbh = db._db();
+  // Courses (distinct by code).
+  try {
+    const rows = dbh
+      .prepare(
+        `SELECT DISTINCT code, subject FROM classes
+          WHERE code IS NOT NULL AND TRIM(code) != ''
+          ORDER BY code ASC LIMIT 12`,
+      )
+      .all();
+    if (rows.length > 0) {
+      out.courses = rows.map((r) => `${r.subject} (${r.code})`).join('; ');
+    }
+  } catch { /* no schema or empty */ }
+
+  // Day order + today's classes.
+  try {
+    const timetable = require('./timetable.cjs');
+    const tt = timetable.today();
+    if (tt) {
+      out.todayDayOrder = tt.dayOrder ?? null;
+      out.weekday = new Date().getDay();
+      if (Array.isArray(tt.classes) && tt.classes.length > 0) {
+        out.todayClasses = tt.classes
+          .slice(0, 6)
+          .map((c) => `${c.start_time}–${c.end_time} ${c.subject}${c.room ? ` (${c.room})` : ''}${c.override_status ? ` [${c.override_status}]` : ''}`)
+          .join('; ');
+      }
+    }
+  } catch { /* ignore */ }
+
+  // Open tasks (count + top 5 by priority/deadline).
+  try {
+    const open = db.listTasks ? db.listTasks({ kind: 'task', completed: false }) : [];
+    if (open && open.length > 0) {
+      const top = open
+        .slice()
+        .sort((a, b) => (a.priority || 3) - (b.priority || 3))
+        .slice(0, 5)
+        .map((t) => {
+          const due = t.deadline ? ` (due ${t.deadline.slice(0, 10)})` : '';
+          return `P${t.priority} ${t.title}${due}`;
+        })
+        .join('; ');
+      out.openTasksLine = `${open.length} open · ${top}`;
+    }
+  } catch { /* ignore */ }
+
+  // Completed today.
+  try {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const rows = dbh
+      .prepare(
+        `SELECT title FROM tasks
+          WHERE completed = 1 AND date(completed_at) = date(?)
+          ORDER BY completed_at DESC LIMIT 6`,
+      )
+      .all(todayIso);
+    if (rows.length > 0) {
+      out.completedTodayLine = `${rows.length} · ${rows.map((r) => r.title).join('; ')}`;
+    }
+  } catch { /* ignore */ }
+
+  // Active timer.
+  try {
+    const t = db.getActiveTimer ? db.getActiveTimer() : null;
+    if (t) {
+      const start = new Date(t.started_at).getTime();
+      const elapsed = Math.max(0, Math.round((Date.now() - start) / 60000));
+      const total = (t.planned_minutes || 0) + (t.extended_minutes || 0);
+      const remaining = Math.max(0, total - elapsed);
+      out.timerLine = `"${t.title}" (${t.kind || 'task'}) · ${elapsed}m of ${total}m, ${remaining}m left`;
+    }
+  } catch { /* ignore */ }
+
+  // Today's totals.
+  try {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const totals = db.activityTotalsOn ? db.activityTotalsOn(todayIso) : null;
+    if (totals) {
+      const parts = [];
+      for (const k of ['productive', 'distraction', 'leisure', 'rest', 'neutral']) {
+        if (totals[k]) parts.push(`${k} ${totals[k]}m`);
+      }
+      if (parts.length) out.todayTotalsLine = parts.join(' · ');
+    }
+  } catch { /* ignore */ }
+
+  return out;
 }
 
 // Wrap a role-specific system prompt with personal context + house rules.

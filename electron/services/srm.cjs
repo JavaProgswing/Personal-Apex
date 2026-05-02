@@ -251,37 +251,189 @@ async function clearCookies() {
 }
 
 // ─── fetch + parse: timetable ───────────────────────────────────────────
+// SRM publishes the timetable on a Zoho page whose slug rotates per
+// academic year (`My_Time_Table_2023_24`, `My_Time_Table_2024_25`, …).
+// We try the current-year slug first and fall back to older ones until
+// one returns HTML containing the actual course table. We also try
+// a couple of plausible URL prefixes and a no-year slug.
+function _knownTimetableSlugs() {
+  const now = new Date();
+  // Academic year flips in July: months 7-12 belong to the upcoming year.
+  const startYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  const slugs = [];
+  // Year-suffixed slugs in descending order.
+  for (let y = startYear; y >= startYear - 3; y--) {
+    const b = String(y + 1).slice(-2);
+    slugs.push(`My_Time_Table_${y}_${b}`); // e.g. My_Time_Table_2025_26
+  }
+  // No-year fallback that some Zoho sites use.
+  slugs.push('My_Time_Table');
+  // De-dupe while preserving order.
+  return [...new Set(slugs)];
+}
+
+// Zoho serves the same Academia page from BOTH the legacy
+// `srm_university/academia-academic-services/...` prefix and the newer
+// `portal/academia-academic-services/...` prefix. The older URL still
+// works for many accounts; the new login flow lands on `/portal/...`.
+// We try both — first hit wins.
+function _pageUrlVariants(slug) {
+  return [
+    `${BASE_URL}/srm_university/academia-academic-services/page/${slug}`,
+    `${BASE_URL}/portal/academia-academic-services/page/${slug}`,
+  ];
+}
+
+// Browser-ish User-Agent + standard request headers. Without these Zoho
+// happily 200s a non-page (or login redirect) that has no sanitize()
+// payload, which gives the misleading "no sanitize() payload" error.
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+function _pageHeaders(jar) {
+  return {
+    Accept:
+      'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'User-Agent': BROWSER_UA,
+    'Cache-Control': 'no-cache',
+    Cookie: jar.header(),
+    Referer: `${BASE_URL}/`,
+    'sec-ch-ua': '"Chromium";v="124", "Not-A.Brand";v="99"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-dest': 'document',
+    'sec-fetch-mode': 'navigate',
+    'sec-fetch-site': 'same-origin',
+    'sec-fetch-user': '?1',
+    'Upgrade-Insecure-Requests': '1',
+    'X-Requested-With': 'XMLHttpRequest',
+  };
+}
+
+// Heuristic — does this body look like a Zoho login redirect / shell
+// rather than a real Academia page?
+function _looksLikeLogin(body) {
+  if (!body) return false;
+  if (/\/accounts\/p\/[\w-]+\/signin/i.test(body)) return true;
+  if (/iam\.zoho\.com|sign\s*in\s*to/i.test(body) && !/course_tbl/.test(body)) return true;
+  return false;
+}
+
+// Iterate ALL `pageSanitizer.sanitize('…')` matches on the page and
+// return the FIRST one whose decoded HTML contains a recognisable
+// timetable marker. Zoho frequently embeds several sanitize() calls per
+// page (header, footer, tooltip), so the first match is often a small
+// non-relevant payload.
+function _extractTimetableHtml(rawText) {
+  // Try both single- and double-quoted variants (we've seen both in the wild).
+  const reSingle = /pageSanitizer\.sanitize\('([\s\S]+?)'\)/g;
+  const reDouble = /pageSanitizer\.sanitize\("([\s\S]+?)"\)/g;
+  const candidates = [];
+  let m;
+  while ((m = reSingle.exec(rawText)) != null) candidates.push(m[1]);
+  while ((m = reDouble.exec(rawText)) != null) candidates.push(m[1]);
+  if (candidates.length === 0) return null;
+  const decode = (enc) =>
+    enc.replace(/\\x([0-9A-Fa-f]{2})/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16)),
+    );
+  // Prefer payloads that look like a real Academia page.
+  for (const enc of candidates) {
+    const decoded = decode(enc);
+    if (/course_tbl|mainDiv/.test(decoded)) return decoded;
+  }
+  // No clear marker — fall back to the largest payload, which tends to
+  // be the actual page body.
+  let largest = candidates[0];
+  for (const c of candidates) if (c.length > largest.length) largest = c;
+  return decode(largest);
+}
+
+async function _tryFetchPage(url, jar) {
+  let res;
+  try {
+    res = await fetch(url, { headers: _pageHeaders(jar), redirect: 'follow' });
+  } catch (err) {
+    return { url, ok: false, error: err.message };
+  }
+  let text = '';
+  try { text = await res.text(); } catch {}
+  return {
+    url,
+    ok: res.ok,
+    status: res.status,
+    finalUrl: res.url || url,
+    bodyLen: text.length,
+    bodyPreview: text.slice(0, 200).replace(/\s+/g, ' ').trim(),
+    body: text,
+    looksLikeLogin: _looksLikeLogin(text),
+  };
+}
+
 async function fetchTimetableHtml(jar) {
   // If no jar passed, build one from the Electron persistent session.
   if (!jar) jar = await _jarFromElectronSession();
   if (!jar) {
     throw new Error('No SRM cookies available — run "Log in to SRM" first.');
   }
-  const url =
-    `${BASE_URL}/srm_university/academia-academic-services/page/My_Time_Table_2023_24`;
-  const res = await fetch(url, {
-    headers: {
-      Accept: '*/*',
-      Cookie: jar.header(),
-      Referer: `${BASE_URL}/`,
-      'X-Requested-With': 'XMLHttpRequest',
-    },
-  });
-  if (!res.ok) throw new Error(`Timetable fetch failed: HTTP ${res.status}`);
-  const text = await res.text();
-  // Zoho wraps the real HTML inside `pageSanitizer.sanitize('...')`.
-  const m = text.match(/pageSanitizer\.sanitize\('([\s\S]+?)'\)/);
-  if (!m) throw new Error('Timetable sanitize() payload not found');
-  // Decode \xNN escapes back to UTF-8.
-  const decoded = m[1].replace(/\\x([0-9A-Fa-f]{2})/g, (_, hex) =>
-    String.fromCharCode(parseInt(hex, 16)),
-  );
-  const $ = cheerio.load(decoded);
-  const main = $('div.mainDiv').first();
-  if (!main || main.length === 0) {
-    throw new Error('Timetable mainDiv not found after decoding');
+  const slugs = _knownTimetableSlugs();
+  const errors = [];
+  let sawLoginRedirect = false;
+
+  for (const slug of slugs) {
+    for (const url of _pageUrlVariants(slug)) {
+      const r = await _tryFetchPage(url, jar);
+      if (!r.ok) {
+        errors.push(`${slug} @ ${url.replace(BASE_URL, '')}: HTTP ${r.status || 'fetch'} ${r.error || ''}`);
+        continue;
+      }
+      // Detect login redirect — body is the signin shell rather than the
+      // real Academia page. Surface a clear "session expired" message.
+      if (r.looksLikeLogin) {
+        sawLoginRedirect = true;
+        errors.push(
+          `${slug} @ ${url.replace(BASE_URL, '')}: got login page (session expired or wrong scope)`,
+        );
+        continue;
+      }
+      const decoded = _extractTimetableHtml(r.body);
+      if (!decoded) {
+        errors.push(
+          `${slug} @ ${url.replace(BASE_URL, '')}: no sanitize() payload (${r.bodyLen}B; "${r.bodyPreview.slice(0, 80)}")`,
+        );
+        continue;
+      }
+      const $ = cheerio.load(decoded);
+      // Prefer the .mainDiv container; fall back to the .course_tbl
+      // ancestor (some skins of the timetable page omit the wrapper).
+      let container = $('div.mainDiv').first();
+      if (!container || container.length === 0) {
+        const ct = $('table.course_tbl').first();
+        if (ct && ct.length > 0) container = ct.parents().last();
+      }
+      if (container && container.length > 0 && /course_tbl/.test($.html(container))) {
+        return $.html(container);
+      }
+      errors.push(
+        `${slug} @ ${url.replace(BASE_URL, '')}: decoded but no course table`,
+      );
+    }
   }
-  return $.html(main);
+  if (sawLoginRedirect) {
+    const err = new Error(
+      'SRM session expired or scoped wrong — please click "Log in to SRM" again.',
+    );
+    err.needsLogin = true;
+    err.debug = errors;
+    throw err;
+  }
+  const err = new Error(
+    'Timetable not found on any known page slug. Tried: ' + errors.join(' | '),
+  );
+  err.debug = errors;
+  throw err;
 }
 
 function parseStudentDetails(html) {
@@ -364,37 +516,46 @@ async function fetchCalendarHtml(jar, planName) {
   if (!jar) jar = await _jarFromElectronSession();
   if (!jar) throw new Error('No SRM cookies available — run "Log in to SRM" first.');
   const slugsToTry = planName ? [planName] : KNOWN_PLAN_SLUGS;
-  let lastErr = null;
+  const errors = [];
+  let sawLoginRedirect = false;
   for (const slug of slugsToTry) {
-    const url =
-      `${BASE_URL}/srm_university/academia-academic-services/page/${slug}`;
-    try {
-      const res = await fetch(url, {
-        headers: {
-          Accept: '*/*',
-          Cookie: jar.header(),
-          Referer: `${BASE_URL}/`,
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-      });
-      if (!res.ok) {
-        lastErr = `HTTP ${res.status} for ${slug}`;
+    for (const url of _pageUrlVariants(slug)) {
+      const r = await _tryFetchPage(url, jar);
+      if (!r.ok) {
+        errors.push(`${slug} @ ${url.replace(BASE_URL, '')}: HTTP ${r.status || 'fetch'} ${r.error || ''}`);
         continue;
       }
-      const text = await res.text();
-      const m = text.match(/pageSanitizer\.sanitize\('([\s\S]+?)'\)/);
-      if (!m) { lastErr = `sanitize() payload missing in ${slug}`; continue; }
-      const decoded = m[1].replace(/\\x([0-9A-Fa-f]{2})/g, (_, hex) =>
-        String.fromCharCode(parseInt(hex, 16)),
-      );
-      // Quick sanity: does the mainDiv contain a table with "DO" header?
-      if (!/(>DO<|>DO\s)/.test(decoded)) { lastErr = `no DO column in ${slug}`; continue; }
+      if (r.looksLikeLogin) {
+        sawLoginRedirect = true;
+        errors.push(`${slug} @ ${url.replace(BASE_URL, '')}: got login page`);
+        continue;
+      }
+      const decoded = _extractTimetableHtml(r.body);
+      if (!decoded) {
+        errors.push(
+          `${slug} @ ${url.replace(BASE_URL, '')}: no sanitize() payload (${r.bodyLen}B)`,
+        );
+        continue;
+      }
+      // Quick sanity: does the page contain a "DO" column header?
+      if (!/(>DO<|>DO\s)/.test(decoded)) {
+        errors.push(`${slug} @ ${url.replace(BASE_URL, '')}: no DO column`);
+        continue;
+      }
       return { html: decoded, planName: slug };
-    } catch (err) {
-      lastErr = err.message;
     }
   }
-  throw new Error(`Could not fetch academic planner. Last error: ${lastErr || 'unknown'}`);
+  if (sawLoginRedirect) {
+    const err = new Error('Calendar fetch hit login page — session expired.');
+    err.needsLogin = true;
+    err.debug = errors;
+    throw err;
+  }
+  const err = new Error(
+    `Could not fetch academic planner. Tried: ${errors.join(' | ')}`,
+  );
+  err.debug = errors;
+  throw err;
 }
 
 // Walks the planner table → array of { date: 'YYYY-MM-DD', day_order: int, event?: string }.
@@ -619,12 +780,14 @@ async function syncAll({ username, password, planName, useStoredSession } = {}) 
     const html = await fetchTimetableHtml(jar);
     student = parseStudentDetails(html);
   } catch (err) {
-    // If the request 401'd because cookies expired, signal the UI to
-    // re-prompt the browser-window login.
+    // If the request 401'd or got bounced to the login shell, signal the
+    // UI to re-prompt the browser-window login. Detailed debug strings
+    // are attached for the Settings panel.
     return {
       ok: false,
-      needsLogin: /unauthorized|401|sanitize|not found/i.test(err.message),
+      needsLogin: !!err.needsLogin,
       error: `Timetable: ${err.message}`,
+      debug: err.debug || null,
     };
   }
 
@@ -676,6 +839,128 @@ async function syncAll({ username, password, planName, useStoredSession } = {}) 
   };
 }
 
+// ─── diagnose ───────────────────────────────────────────────────────────
+// Exercises every URL × prefix combo and reports back a rich debug
+// payload — request status, body length, body preview, sanitize() match
+// counts, mainDiv presence, login-redirect heuristic. Used by the
+// "Diagnose" button in Settings → Schedule so the user can see exactly
+// what SRM is returning when sync fails.
+async function diagnose() {
+  const out = {
+    ok: true,
+    cookieCount: 0,
+    cookieNames: [],
+    isLoggedIn: false,
+    timetableAttempts: [],
+    calendarAttempts: [],
+    suggestion: null,
+  };
+  if (!_electronSession) {
+    out.ok = false;
+    out.suggestion =
+      'No persistent SRM session attached yet. Restart Apex; then click Log in to SRM.';
+    return out;
+  }
+  try {
+    const cookies = await _electronSession.cookies.get({ url: BASE_URL });
+    out.cookieCount = cookies.length;
+    out.cookieNames = cookies.map((c) => c.name);
+    out.isLoggedIn = await isLoggedIn();
+  } catch (err) {
+    out.ok = false;
+    out.suggestion = `Couldn't read cookies: ${err.message}`;
+    return out;
+  }
+  const jar = await _jarFromElectronSession();
+  if (!jar) {
+    out.ok = false;
+    out.suggestion = 'No SRM cookies — click Log in to SRM.';
+    return out;
+  }
+  // Try every timetable slug × prefix combo and collect everything.
+  for (const slug of _knownTimetableSlugs()) {
+    for (const url of _pageUrlVariants(slug)) {
+      const r = await _tryFetchPage(url, jar);
+      const sanitizeMatches = (r.body || '').match(
+        /pageSanitizer\.sanitize\(['"]/g,
+      );
+      let mainDivFound = false;
+      let courseTblFound = false;
+      let pickedPayloadLen = 0;
+      try {
+        const decoded = _extractTimetableHtml(r.body || '');
+        if (decoded) {
+          mainDivFound = /class=["']mainDiv["']/.test(decoded);
+          courseTblFound = /class=["']course_tbl["']/.test(decoded);
+          pickedPayloadLen = decoded.length;
+        }
+      } catch { /* ignore */ }
+      out.timetableAttempts.push({
+        slug,
+        url: url.replace(BASE_URL, ''),
+        ok: r.ok,
+        status: r.status || null,
+        bodyLen: r.bodyLen || 0,
+        bodyPreview: r.bodyPreview,
+        sanitizeMatches: sanitizeMatches?.length || 0,
+        looksLikeLogin: !!r.looksLikeLogin,
+        mainDivFound,
+        courseTblFound,
+        pickedPayloadLen,
+        finalUrl: r.finalUrl ? r.finalUrl.replace(BASE_URL, '') : null,
+      });
+    }
+  }
+  // Same exhaustive scan for the academic planner.
+  for (const slug of KNOWN_PLAN_SLUGS) {
+    for (const url of _pageUrlVariants(slug)) {
+      const r = await _tryFetchPage(url, jar);
+      const sanitizeMatches = (r.body || '').match(
+        /pageSanitizer\.sanitize\(['"]/g,
+      );
+      out.calendarAttempts.push({
+        slug,
+        url: url.replace(BASE_URL, ''),
+        ok: r.ok,
+        status: r.status || null,
+        bodyLen: r.bodyLen || 0,
+        sanitizeMatches: sanitizeMatches?.length || 0,
+        looksLikeLogin: !!r.looksLikeLogin,
+        hasDoColumn: />DO[<\s]/.test(r.body || ''),
+        finalUrl: r.finalUrl ? r.finalUrl.replace(BASE_URL, '') : null,
+      });
+    }
+  }
+
+  // Heuristic suggestion based on what we saw.
+  const ttHits = out.timetableAttempts.filter((a) => a.courseTblFound);
+  const ttLoginRedir = out.timetableAttempts.some((a) => a.looksLikeLogin);
+  if (ttHits.length > 0) {
+    out.suggestion =
+      `Found a working slug: ${ttHits[0].slug} on ${ttHits[0].url}. ` +
+      `If sync still fails, the problem is downstream of fetching.`;
+  } else if (ttLoginRedir) {
+    out.suggestion =
+      'Every page request returned the SRM login shell — your browser session is no longer accepted. ' +
+      'Click "Log in to SRM" again to refresh cookies.';
+  } else if (out.cookieCount === 0) {
+    out.suggestion =
+      'No SRM cookies in the persistent partition. Click "Log in to SRM" first.';
+  } else {
+    const sanitizeFound = out.timetableAttempts.find((a) => a.sanitizeMatches > 0);
+    if (sanitizeFound) {
+      out.suggestion =
+        `Got sanitize() payloads but no course_tbl marker on ${sanitizeFound.slug}. ` +
+        'SRM may have changed the page slug for your account — open the timetable in a browser, copy the URL slug from the address bar, and we can wire it up.';
+    } else {
+      out.suggestion =
+        'Every page returned bodies with NO sanitize() payload at all. ' +
+        'SRM Academia is likely rejecting the request scope — try logging in again, or check if academia.srmist.edu.in is reachable from your network.';
+    }
+  }
+  return out;
+}
+
 module.exports = {
   login,
   fetchTimetableHtml,
@@ -684,6 +969,7 @@ module.exports = {
   parseCalendarEvents,
   buildClassesRows,
   syncAll,
+  diagnose,
   // Browser-based session helpers
   attachElectronSession: _attachElectronSession,
   isLoggedIn,
