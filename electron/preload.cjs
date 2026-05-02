@@ -96,6 +96,14 @@ contextBridge.exposeInMainWorld("apex", {
     logout: () => invoke("srm:logout"),
     diagnose: () => invoke("srm:diagnose"),
   },
+  courseMaterials: {
+    list: (opts) => invoke("courseMaterials:list", opts),
+    upsert: (p) => invoke("courseMaterials:upsert", p),
+    delete: (id) => invoke("courseMaterials:delete", id),
+    setAi: (id, on) => invoke("courseMaterials:setAi", id, on),
+    knownCourses: () => invoke("courseMaterials:knownCourses"),
+    readFile: (p) => invoke("courseMaterials:readFile", p),
+  },
   notifier: {
     status: () => invoke("notifier:status"),
     setEnabled: (on) => invoke("notifier:setEnabled", on),

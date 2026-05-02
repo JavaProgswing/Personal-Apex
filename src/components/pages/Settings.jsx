@@ -340,7 +340,292 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
       <div id="schedule-editor">
         <ScheduleEditor />
       </div>
+
+      <CourseMaterialsCard />
     </>
+  );
+}
+
+// ─── CourseMaterialsCard ─────────────────────────────────────────────────
+// Per-course syllabus / unit-plan / notes. Materials with "Include in AI"
+// on get stitched into every Ollama prompt so academic suggestions are
+// grounded in the actual coursework.
+function CourseMaterialsCard() {
+  const [items, setItems] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [editing, setEditing] = useState(null); // material being edited / null
+  const [adding, setAdding] = useState(false);
+
+  async function refresh() {
+    const [list, knownCourses] = await Promise.all([
+      api.courseMaterials.list({}),
+      api.courseMaterials.knownCourses(),
+    ]);
+    setItems(list || []);
+    setCourses(knownCourses || []);
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  async function toggleAi(it) {
+    await api.courseMaterials.setAi(it.id, !it.include_in_ai);
+    refresh();
+  }
+  async function remove(it) {
+    if (!confirm(`Delete "${it.title || it.kind}" for ${it.course_code || "—"}?`))
+      return;
+    await api.courseMaterials.delete(it.id);
+    refresh();
+  }
+
+  // Group materials by course code for display.
+  const groups = useMemo(() => {
+    const map = new Map();
+    for (const it of items) {
+      const k = it.course_code || "—";
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(it);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [items]);
+
+  const totalIncluded = items.filter((i) => i.include_in_ai).length;
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="row between" style={{ alignItems: "baseline" }}>
+        <div>
+          <div className="card-title" style={{ margin: 0 }}>
+            Course materials · syllabus context
+          </div>
+          <small className="hint" style={{ display: "block", marginTop: 4 }}>
+            Paste your syllabus / unit plan / notes per course. Materials with
+            <strong> Include in AI </strong> on are fed into every Ollama
+            prompt, so plan-day, recommendations, and burnout suggestions are
+            grounded in the actual course content (not generic advice).
+            <br />
+            <strong>Local only</strong> — never leaves your machine.
+          </small>
+        </div>
+        <div className="row" style={{ gap: 6 }}>
+          <span className="pill">
+            {totalIncluded}/{items.length} in AI
+          </span>
+          <button className="primary small" onClick={() => setAdding(true)}>
+            + Add material
+          </button>
+        </div>
+      </div>
+
+      {items.length === 0 && !adding && (
+        <div className="muted" style={{ marginTop: 14 }}>
+          No course materials yet. Paste a syllabus to give Apex's AI real
+          academic context.
+        </div>
+      )}
+
+      {groups.length > 0 && (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+          {groups.map(([code, list]) => (
+            <div key={code} className="course-mat-group">
+              <div className="section-label" style={{ marginBottom: 6 }}>
+                {code === "—" ? "General" : code}
+                {list[0]?.course_name && (
+                  <span className="muted" style={{ marginLeft: 6 }}>
+                    {list[0].course_name}
+                  </span>
+                )}
+              </div>
+              <div className="course-mat-list">
+                {list.map((it) => (
+                  <div key={it.id} className="course-mat-row">
+                    <div className="course-mat-row-body">
+                      <div className="course-mat-row-head">
+                        <strong>{it.title || it.kind}</strong>
+                        <span className="pill gray">{it.kind}</span>
+                        <small className="muted">
+                          {(it.body_len ?? it.body?.length ?? 0).toLocaleString()} chars
+                        </small>
+                      </div>
+                      <small className="muted" style={{ display: "block" }}>
+                        updated {it.updated_at ? new Date(it.updated_at + "Z").toLocaleDateString() : "—"}
+                      </small>
+                    </div>
+                    <div className="course-mat-row-actions">
+                      <label className="switch" title={it.include_in_ai ? "Stop sending to AI" : "Include in AI prompts"}>
+                        <input
+                          type="checkbox"
+                          checked={!!it.include_in_ai}
+                          onChange={() => toggleAi(it)}
+                        />
+                        <span>AI</span>
+                      </label>
+                      <button className="ghost xsmall" onClick={() => setEditing(it)}>Edit</button>
+                      <button className="ghost xsmall" onClick={() => remove(it)} title="Delete">✕</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(adding || editing) && (
+        <CourseMaterialEditor
+          courses={courses}
+          material={editing}
+          onClose={() => { setAdding(false); setEditing(null); }}
+          onSaved={() => { setAdding(false); setEditing(null); refresh(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CourseMaterialEditor({ courses, material, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    id: material?.id ?? null,
+    course_code: material?.course_code || (courses[0]?.code || ""),
+    course_name: material?.course_name || (courses[0]?.subject || ""),
+    kind: material?.kind || "syllabus",
+    title: material?.title || "",
+    body: material?.body || "",
+    include_in_ai:
+      material == null ? true : !!material.include_in_ai,
+  });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  function pickCourse(code) {
+    const c = courses.find((x) => x.code === code);
+    setForm({
+      ...form,
+      course_code: code,
+      course_name: c?.subject || form.course_name,
+    });
+  }
+
+  async function pickFile() {
+    const f = await api.settings.pickFile([
+      { name: "Text / Markdown", extensions: ["txt", "md", "markdown"] },
+    ]);
+    if (!f) return;
+    const r = await api.courseMaterials.readFile(f);
+    if (r?.ok) {
+      setForm({ ...form, body: r.body, source: "file", source_path: f });
+    } else {
+      setErr(r?.error || "Couldn't read file");
+    }
+  }
+
+  async function save() {
+    setBusy(true); setErr(null);
+    try {
+      const r = await api.courseMaterials.upsert(form);
+      if (r?.ok) onSaved();
+      else setErr(r?.error || "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 720 }}>
+        <div className="row between" style={{ alignItems: "center" }}>
+          <h3 style={{ margin: 0 }}>
+            {material ? "Edit material" : "New course material"}
+          </h3>
+          <button className="ghost" onClick={onClose}>✕</button>
+        </div>
+        <div className="grid-2" style={{ marginTop: 10 }}>
+          <div className="form-row">
+            <label>Course</label>
+            {courses.length > 0 ? (
+              <select
+                value={form.course_code || ""}
+                onChange={(e) => pickCourse(e.target.value)}
+              >
+                <option value="">— general (no course) —</option>
+                {courses.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.code} · {c.subject}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                value={form.course_code || ""}
+                placeholder="e.g. 21CSC204J"
+                onChange={(e) => setForm({ ...form, course_code: e.target.value })}
+              />
+            )}
+          </div>
+          <div className="form-row">
+            <label>Kind</label>
+            <select
+              value={form.kind}
+              onChange={(e) => setForm({ ...form, kind: e.target.value })}
+            >
+              <option value="syllabus">Syllabus</option>
+              <option value="unit_plan">Unit plan</option>
+              <option value="notes">Notes</option>
+              <option value="reference">Reference</option>
+            </select>
+          </div>
+        </div>
+        <div className="form-row">
+          <label>Title (optional)</label>
+          <input
+            value={form.title}
+            placeholder="e.g. DBMS — Unit 1: Relational Model"
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+          />
+        </div>
+        <div className="form-row">
+          <label className="row between" style={{ alignItems: "center" }}>
+            <span>Body — paste syllabus / notes</span>
+            <button
+              type="button"
+              className="ghost xsmall"
+              onClick={pickFile}
+              title="Read .txt or .md from disk"
+            >
+              📄 Import file…
+            </button>
+          </label>
+          <textarea
+            rows={14}
+            value={form.body}
+            placeholder="Paste your syllabus / unit plan / notes here. Plain text only — Apex feeds (a slice of) this into every academic AI prompt."
+            onChange={(e) => setForm({ ...form, body: e.target.value })}
+            style={{ fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: 12, lineHeight: 1.5 }}
+          />
+          <small className="muted" style={{ marginTop: 4 }}>
+            {form.body.length.toLocaleString()} chars · cap is ~6 KB into the
+            prompt; longer bodies are sliced.
+          </small>
+        </div>
+        <div className="form-row">
+          <label className="row" style={{ gap: 8, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={form.include_in_ai}
+              onChange={(e) => setForm({ ...form, include_in_ai: e.target.checked })}
+            />
+            <span>Include in AI prompts (recommendations, plan, burnout, etc.)</span>
+          </label>
+        </div>
+        {err && <div className="error">{err}</div>}
+        <div className="row" style={{ marginTop: 14, justifyContent: "flex-end", gap: 8 }}>
+          <button onClick={onClose}>Cancel</button>
+          <button className="primary" onClick={save} disabled={busy || !form.body.trim()}>
+            {busy ? "Saving…" : material ? "Save" : "Add"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

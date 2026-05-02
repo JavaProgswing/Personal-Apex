@@ -260,6 +260,28 @@ CREATE INDEX IF NOT EXISTS idx_feed_person ON activity_feed(person_id);
 CREATE INDEX IF NOT EXISTS idx_feed_at ON activity_feed(at);
 
 -- ────────────────────────────────────────────────────────────────────────────
+-- Course materials — syllabi, unit plans, raw notes per course. Each row's
+-- `body` is plain text the user pasted (or extracted from a file). Rows
+-- marked `include_in_ai = 1` get stitched into the Ollama system prompt
+-- so academic suggestions / planning are grounded in the actual syllabus.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS course_materials (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  course_code TEXT,                       -- e.g. '21CSC204J'; nullable for general notes
+  course_name TEXT,                       -- friendly display name
+  kind TEXT NOT NULL DEFAULT 'syllabus',  -- syllabus | unit_plan | notes | reference
+  title TEXT,                             -- short label for the material
+  body TEXT NOT NULL DEFAULT '',          -- the actual text content
+  source TEXT DEFAULT 'pasted',           -- pasted | file
+  source_path TEXT,                       -- file path if imported
+  include_in_ai INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_course_materials_code ON course_materials(course_code);
+CREATE INDEX IF NOT EXISTS idx_course_materials_ai ON course_materials(include_in_ai);
+
+-- ────────────────────────────────────────────────────────────────────────────
 -- Habit completion log. Each row is one tick of a habit on a particular
 -- date. Used to compute streaks (consecutive days of completion). Only
 -- written when a kind='habit' task is toggled to completed.

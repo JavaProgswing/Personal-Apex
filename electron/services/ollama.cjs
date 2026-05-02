@@ -241,6 +241,19 @@ function personalContext({ live = true } = {}) {
     }
   }
 
+  // ── COURSE MATERIALS (syllabi, unit plans, notes the user opted in) ─
+  // Capped to ~6KB so it doesn't dominate the context window.
+  try {
+    if (db.aiContextFromCourseMaterials) {
+      const materials = db.aiContextFromCourseMaterials({ maxChars: 6000 });
+      if (materials) {
+        lines.push('');
+        lines.push("COURSE MATERIALS (user-attached — use these to ground academic suggestions)");
+        lines.push(materials);
+      }
+    }
+  } catch { /* ignore */ }
+
   return lines.join('\n');
 }
 
@@ -492,31 +505,84 @@ Return JSON:
 // ───────────────────────────────────────────────────────────────────────────
 // burnoutSuggest — 2–4 concrete suggestions based on TODAY's check-in + plan.
 // ───────────────────────────────────────────────────────────────────────────
-async function burnoutSuggest({ checkin, todaysTasks, classes, model }) {
-  const system = buildSystem(`Given a mood check-in and what's planned for today, give 2–4 concrete suggestions.
-Rules:
-- Each suggestion is EITHER actionable in <5 min OR a clear boundary ("cap deep work at 45 min today").
-- At least one must be a micro-body action (walk, stretch, water) if dread>=6 or energy<=4.
-- Reference actual task titles where relevant — not generic advice.
-- Output ONLY valid JSON.`);
+async function burnoutSuggest({
+  checkin,
+  todaysTasks,
+  classes,
+  upcomingDeadlines,
+  openAcademicTasks,
+  recentCompletedAcademic,
+  model,
+}) {
+  const system = buildSystem(`You're advising a CS undergrad on what to do RIGHT NOW.
+Output ONLY valid JSON. No fluff.
 
-  const classLines = (classes || []).map((c) => `${c.start_time}–${c.end_time} ${c.subject}`).join('; ');
+HARD RULES:
+- 3–4 suggestions, each ≤18 words, concrete and immediately actionable.
+- At LEAST 2 suggestions MUST be academic — referencing a specific course
+  (by code OR subject), an upcoming deadline, or an open academic task by
+  its actual title. NO generic "study smarter" / "review your notes" filler.
+- Cite numbers when you can: "review DBMS unit 3 (3 sub-topics) in 30 min"
+  beats "review DBMS".
+- 1 suggestion may be body/recovery (walk, water, sleep) ONLY if energy<=4
+  OR dread>=6 OR the user has no academic context loaded.
+- 1 suggestion may be a boundary ("cap deep work at 45 min today").
+- Never repeat the same suggestion twice across runs (vary it).
+
+DO NOT suggest:
+- "Take a walk" / "drink water" / "stretch" UNLESS energy<=4 or dread>=6.
+- Generic "review your notes" — name a course or topic.
+- Tasks the user has already completed today (listed below).
+- Anything beyond the user's actual context.`);
+
+  const classLines = (classes || [])
+    .map((c) => `${c.start_time}–${c.end_time} ${c.subject}${c.code ? ' [' + c.code + ']' : ''}`)
+    .join('; ');
+  const deadlineLines = (upcomingDeadlines || [])
+    .slice(0, 8)
+    .map((t) => {
+      const due = t.deadline ? ` due ${t.deadline.slice(0, 10)}` : '';
+      const code = t.course_code ? ` [${t.course_code}]` : '';
+      return `P${t.priority} ${t.title}${code}${due}`;
+    })
+    .join('; ');
+  const academicOpen = (openAcademicTasks || [])
+    .slice(0, 6)
+    .map((t) => `${t.course_code ? '[' + t.course_code + '] ' : ''}${t.title}`)
+    .join('; ');
+  const completedAcademic = (recentCompletedAcademic || [])
+    .slice(0, 6)
+    .map((t) => `${t.course_code ? '[' + t.course_code + '] ' : ''}${t.title}`)
+    .join('; ');
+
   const user = `Mood check-in (1–10 scales):
 ${JSON.stringify(checkin ?? {}, null, 2)}
 
 Today's classes: ${classLines || '(none)'}
 
-Today's planned tasks: ${JSON.stringify(
+Open academic tasks (top): ${academicOpen || '(none)'}
+
+Upcoming deadlines (next 7d): ${deadlineLines || '(none)'}
+
+Already completed today (don't suggest these): ${completedAcademic || '(none)'}
+
+All planned tasks today: ${JSON.stringify(
     (todaysTasks || []).map((t) => ({
-      id: t.id, title: t.title, priority: t.priority, estimated_minutes: t.estimated_minutes,
+      id: t.id, title: t.title, priority: t.priority,
+      course: t.course_code, est: t.estimated_minutes,
     })), null, 2
   )}
 
 Return JSON:
 {
-  "mood_read": "one sentence",
+  "mood_read": "one sentence on the day's read",
   "suggestions": [
-    { "type": "action|boundary|swap|music", "text": "...", "link": "optional spotify:track: or https://…" }
+    {
+      "type": "academic|boundary|body|swap",
+      "text": "specific action ≤18 words",
+      "course": "course code if applicable",
+      "minutes": <number or null>
+    }
   ]
 }`;
 

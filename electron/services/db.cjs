@@ -1782,6 +1782,106 @@ function deleteClassOverrideById(id) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// course_materials — syllabi / notes / references per course. Plain text
+// only; Ollama gets a budget-capped slice when include_in_ai = 1.
+// ───────────────────────────────────────────────────────────────────────────
+function listCourseMaterials({ code, includeBody = true } = {}) {
+  const cols = includeBody
+    ? "*"
+    : "id, course_code, course_name, kind, title, source, include_in_ai, created_at, updated_at, length(body) AS body_len";
+  if (code) {
+    return db
+      .prepare(
+        `SELECT ${cols} FROM course_materials WHERE course_code = ? ORDER BY updated_at DESC`,
+      )
+      .all(code);
+  }
+  return db
+    .prepare(
+      `SELECT ${cols} FROM course_materials ORDER BY course_code ASC, updated_at DESC`,
+    )
+    .all();
+}
+function upsertCourseMaterial(p) {
+  const now = new Date().toISOString();
+  if (p.id) {
+    db.prepare(
+      `UPDATE course_materials
+         SET course_code = ?, course_name = ?, kind = ?, title = ?,
+             body = ?, source = ?, source_path = ?, include_in_ai = ?,
+             updated_at = ?
+       WHERE id = ?`,
+    ).run(
+      p.course_code ?? null,
+      p.course_name ?? null,
+      p.kind || "syllabus",
+      p.title || null,
+      p.body || "",
+      p.source || "pasted",
+      p.source_path || null,
+      p.include_in_ai ? 1 : 0,
+      now,
+      p.id,
+    );
+    return p.id;
+  }
+  const info = db
+    .prepare(
+      `INSERT INTO course_materials
+         (course_code, course_name, kind, title, body, source, source_path, include_in_ai)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      p.course_code ?? null,
+      p.course_name ?? null,
+      p.kind || "syllabus",
+      p.title || null,
+      p.body || "",
+      p.source || "pasted",
+      p.source_path || null,
+      p.include_in_ai === false ? 0 : 1,
+    );
+  return info.lastInsertRowid;
+}
+function deleteCourseMaterial(id) {
+  db.prepare(`DELETE FROM course_materials WHERE id = ?`).run(id);
+  return true;
+}
+function setCourseMaterialAi(id, on) {
+  db.prepare(
+    `UPDATE course_materials SET include_in_ai = ?, updated_at = datetime('now') WHERE id = ?`,
+  ).run(on ? 1 : 0, id);
+  return true;
+}
+// Compact AI-context string built from include_in_ai materials. Caps total
+// length so we don't blow the prompt budget — Ollama context windows are
+// finite and these can get big.
+function aiContextFromCourseMaterials({ maxChars = 6000 } = {}) {
+  const rows = db
+    .prepare(
+      `SELECT course_code, course_name, kind, title, body
+         FROM course_materials
+        WHERE include_in_ai = 1 AND body != ''
+        ORDER BY course_code ASC, updated_at DESC`,
+    )
+    .all();
+  if (rows.length === 0) return null;
+  const parts = [];
+  let used = 0;
+  for (const r of rows) {
+    const head = `[${r.course_code || "—"}] ${r.kind}${r.title ? " · " + r.title : ""}`;
+    // Allocate per-material budget evenly but at least 400 chars.
+    const remaining = maxChars - used;
+    if (remaining < 200) break;
+    const slice = (r.body || "").trim().slice(0, Math.max(400, Math.floor(remaining / 2)));
+    const block = head + "\n" + slice;
+    parts.push(block);
+    used += block.length + 2;
+  }
+  return parts.join("\n\n");
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // helpers
 // ───────────────────────────────────────────────────────────────────────────
 function isoDate(d) {
@@ -1860,6 +1960,11 @@ module.exports = {
   listActivityFeed,
   pushHeatStrip,
   pushHeatStripsFor,
+  listCourseMaterials,
+  upsertCourseMaterial,
+  deleteCourseMaterial,
+  setCourseMaterialAi,
+  aiContextFromCourseMaterials,
   saveBurnoutReport,
   latestBurnoutReport,
   recentBurnoutReports,

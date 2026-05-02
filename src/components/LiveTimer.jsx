@@ -29,10 +29,32 @@ const KIND_OPTIONS = [
 
 const QUICK_DURATIONS = [10, 25, 45, 60, 90, 120];
 
+// "What for?" preset chips that show up when the user picks `break` or
+// `rest`. Each one prefills title + description + a sensible duration.
+// Specific contexts beat a generic "Break" entry in the day's log and
+// give the planner / evening-review better signal.
+const BREAK_PRESETS = [
+  { icon: "🚶", title: "Stretch / walk",  desc: "Stand up, move around, get the blood flowing.", minutes: 5 },
+  { icon: "👀", title: "Eyes off-screen", desc: "20-20-20 rule — look 20 ft away for 20 seconds, repeat.", minutes: 5 },
+  { icon: "💧", title: "Snack / drink",   desc: "Hydrate, grab a snack.", minutes: 10 },
+  { icon: "🌳", title: "Outside",         desc: "Step outside, get sunlight + fresh air.", minutes: 15 },
+  { icon: "🚿", title: "Reset (shower)",  desc: "Shower / freshen up to reset focus.", minutes: 20 },
+  { icon: "📱", title: "Phone check",     desc: "Triage notifications, then back to work.", minutes: 5 },
+  { icon: "🍴", title: "Meal",            desc: "Eat away from the desk.", minutes: 30 },
+  { icon: "💬", title: "Social",          desc: "Talk to a friend / family for a few minutes.", minutes: 15 },
+  { icon: "🧘", title: "Breathing",       desc: "Box-breathing or short meditation.", minutes: 5 },
+  { icon: "😴", title: "Power nap",       desc: "Nap with an alarm — under 30 min so you don't go deep.", minutes: 20 },
+  { icon: "🛋️", title: "Just rest",       desc: "Sit, stare, do nothing.", minutes: 10 },
+];
+
 export default function LiveTimer({ tasks = [], onChanged }) {
   const [active, setActive] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [showStart, setShowStart] = useState(false);
+  // After a productive timer auto-stops we surface a small inline suggest:
+  // "Take a 5-min break?" — one click starts a break-kind timer with a
+  // sensible duration based on what just finished.
+  const [breakSuggestion, setBreakSuggestion] = useState(null);
   const tickRef = useRef(null);
 
   async function refresh() {
@@ -74,10 +96,27 @@ export default function LiveTimer({ tasks = [], onChanged }) {
     const remaining = remainingSec(active, now);
     if (remaining <= 0 && !overdueSince.current) overdueSince.current = Date.now();
     if (overdueSince.current && Date.now() - overdueSince.current > 10_000) {
-      // Auto-stop and persist.
+      // Auto-stop and persist. If the just-finished timer was productive
+      // (task / study / habit) and ran for >= 25 min, suggest a break.
+      const justFinished = active;
       (async () => {
         await api.timer.stop();
         overdueSince.current = null;
+        const elapsed = Math.round(
+          (Date.now() - new Date(justFinished.started_at).getTime()) / 60000,
+        );
+        const wasProductive =
+          justFinished.category === "productive" ||
+          ["task", "study", "habit"].includes(justFinished.kind);
+        if (wasProductive && elapsed >= 25) {
+          // Longer focus → longer break (rough rule of thumb).
+          const minutes = elapsed >= 90 ? 15 : elapsed >= 50 ? 10 : 5;
+          setBreakSuggestion({
+            after: justFinished.title,
+            elapsed,
+            minutes,
+          });
+        }
         refresh();
       })();
     }
@@ -86,6 +125,57 @@ export default function LiveTimer({ tasks = [], onChanged }) {
   if (!active) {
     return (
       <>
+        {breakSuggestion && (
+          <div className="break-suggest">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <strong>
+                Done — {breakSuggestion.elapsed}m of "{breakSuggestion.after}"
+              </strong>
+              <small className="muted" style={{ display: "block", marginTop: 2 }}>
+                Take a {breakSuggestion.minutes}-min break before the next block?
+              </small>
+            </div>
+            <div className="row" style={{ gap: 6, flexShrink: 0 }}>
+              <button
+                className="primary small"
+                onClick={async () => {
+                  await api.timer.start({
+                    kind: "break",
+                    category: "neutral",
+                    title: "Stretch / walk",
+                    description:
+                      "Stand up, move around. Auto-suggested after " +
+                      `${breakSuggestion.elapsed}m of focus.`,
+                    planned_minutes: breakSuggestion.minutes,
+                  });
+                  setBreakSuggestion(null);
+                  refresh();
+                }}
+                title="Quick break"
+              >
+                ▶ Take {breakSuggestion.minutes}m
+              </button>
+              <button
+                className="ghost small"
+                onClick={() => {
+                  setShowStart(true);
+                  setBreakSuggestion(null);
+                }}
+                title="Pick a different break preset"
+              >
+                Pick…
+              </button>
+              <button
+                className="ghost xsmall"
+                onClick={() => setBreakSuggestion(null)}
+                title="Dismiss"
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
         <div className="live-timer idle">
           <div className="live-timer-idle-left">
             <div className="live-timer-idle-title">No active timer</div>
@@ -289,6 +379,34 @@ function StartTimerModal({ tasks, onClose, onStarted }) {
               </select>
             </div>
           )}
+
+        {/* Break presets — quick-pick "what for?" so a break gets logged
+            with real context instead of just "Break". Click prefills
+            title + description + duration; user can still tweak. */}
+        {(kind === "break" || kind === "rest") && (
+          <div className="form-row">
+            <label>What for?</label>
+            <div className="break-presets">
+              {BREAK_PRESETS.map((b) => (
+                <button
+                  key={b.title}
+                  type="button"
+                  className="break-preset"
+                  onClick={() => {
+                    setTitle(b.title);
+                    setDescription(b.desc);
+                    setMinutes(b.minutes);
+                  }}
+                  title={b.desc}
+                >
+                  <span className="break-preset-icon" aria-hidden>{b.icon}</span>
+                  <span className="break-preset-label">{b.title}</span>
+                  <small className="muted">{b.minutes}m</small>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="form-row">
           <label>Title</label>

@@ -510,6 +510,43 @@ ipcMain.handle("srm:diagnose", async () => {
   return report;
 });
 
+// --- course materials (syllabi etc as Ollama context) ---
+ipcMain.handle("courseMaterials:list", (_e, opts = {}) =>
+  db.listCourseMaterials(opts || {}),
+);
+ipcMain.handle("courseMaterials:upsert", (_e, p) =>
+  ({ ok: true, id: db.upsertCourseMaterial(p || {}) }),
+);
+ipcMain.handle("courseMaterials:delete", (_e, id) => {
+  db.deleteCourseMaterial(id);
+  return { ok: true };
+});
+ipcMain.handle("courseMaterials:setAi", (_e, id, on) => {
+  db.setCourseMaterialAi(id, !!on);
+  return { ok: true };
+});
+// Distinct course list pulled from the timetable so the user can attach
+// materials per course without typing the code by hand.
+ipcMain.handle("courseMaterials:knownCourses", () => {
+  const dbh = db._db();
+  const rows = dbh
+    .prepare(
+      `SELECT DISTINCT code, subject FROM classes
+         WHERE code IS NOT NULL AND TRIM(code) != ''
+         ORDER BY code ASC`,
+    )
+    .all();
+  return rows;
+});
+ipcMain.handle("courseMaterials:readFile", async (_e, filePath) => {
+  try {
+    const txt = fs.readFileSync(filePath, "utf8");
+    return { ok: true, body: txt.slice(0, 500_000) };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 // --- in-app notifications (class starts, deadlines, timer expiry) ---
 const notifier = require("./services/notifier.cjs");
 ipcMain.handle("notifier:status", () => notifier.getStatus());
@@ -620,7 +657,54 @@ ipcMain.handle("ollama:recommend", async (_e, opts = {}) => {
     return { ok: false, error: err.message };
   }
 });
-ipcMain.handle("ollama:burnoutSuggest", (_e, ctx) => ollama.burnoutSuggest(ctx));
+ipcMain.handle("ollama:burnoutSuggest", (_e, ctx = {}) => {
+  // Augment renderer-supplied context with academic data so suggestions
+  // are grounded in actual coursework instead of generic advice.
+  try {
+    const isoToday = new Date().toISOString().slice(0, 10);
+    const dbh = db._db();
+    // Open tasks with a course_code OR Academics category in the next 14d.
+    const openAcademicTasks = dbh
+      .prepare(
+        `SELECT id, title, priority, deadline, course_code, category
+           FROM tasks
+          WHERE completed = 0
+            AND (course_code IS NOT NULL OR category = 'Academics')
+          ORDER BY
+            CASE WHEN deadline IS NULL THEN 1 ELSE 0 END,
+            deadline ASC, priority ASC LIMIT 12`,
+      )
+      .all();
+    const upcomingDeadlines = dbh
+      .prepare(
+        `SELECT id, title, priority, deadline, course_code
+           FROM tasks
+          WHERE completed = 0
+            AND deadline IS NOT NULL
+            AND date(deadline) >= date(?)
+            AND date(deadline) <= date(?, '+7 days')
+          ORDER BY deadline ASC LIMIT 12`,
+      )
+      .all(isoToday, isoToday);
+    const recentCompletedAcademic = dbh
+      .prepare(
+        `SELECT id, title, course_code FROM tasks
+          WHERE completed = 1
+            AND date(completed_at) = date(?)
+            AND (course_code IS NOT NULL OR category = 'Academics')
+          ORDER BY completed_at DESC LIMIT 8`,
+      )
+      .all(isoToday);
+    return ollama.burnoutSuggest({
+      ...ctx,
+      openAcademicTasks,
+      upcomingDeadlines,
+      recentCompletedAcademic,
+    });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 ipcMain.handle("ollama:burnoutCheck", (_e, ctx) => ollama.burnoutCheck(ctx));
 ipcMain.handle("ollama:eveningReview", async (_e, opts = {}) => {
   // Assemble the full end-of-day context server-side so the renderer just
