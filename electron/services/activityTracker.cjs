@@ -131,8 +131,170 @@ function inferCategory(exe, title) {
   return 'neutral';
 }
 
+// PowerShell that returns ALL top-level visible non-minimized windows
+// (the focused one PLUS every other open window with a real title bar).
+// We use this for the "presence" tracker — apps that are open and on
+// screen but not currently focused (e.g. Spotify in another window,
+// Chrome on a second monitor, an IDE you stepped away from).
+const PS_VISIBLE_SCRIPT = `
+$ErrorActionPreference = 'SilentlyContinue'
+$sig = @"
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+public class W2 {
+  public delegate bool EnumWindowsProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+  [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr h);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] public static extern IntPtr GetShellWindow();
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+}
+"@
+Add-Type -TypeDefinition $sig -Language CSharp
+$shell = [W2]::GetShellWindow()
+$fg = [W2]::GetForegroundWindow()
+$out = New-Object System.Collections.Generic.List[object]
+[W2]::EnumWindows({ param($h,$l)
+  if (-not [W2]::IsWindowVisible($h)) { return $true }
+  if ([W2]::IsIconic($h)) { return $true }
+  if ($h -eq $shell) { return $true }
+  $len = [W2]::GetWindowTextLength($h)
+  if ($len -le 0) { return $true }
+  $sb = New-Object System.Text.StringBuilder ($len + 2)
+  [W2]::GetWindowText($h, $sb, $sb.Capacity) | Out-Null
+  $title = $sb.ToString()
+  if ([string]::IsNullOrWhiteSpace($title)) { return $true }
+  $pid2 = [uint32]0
+  [W2]::GetWindowThreadProcessId($h, [ref]$pid2) | Out-Null
+  $exe = $null
+  try { $exe = (Get-Process -Id $pid2 -ErrorAction Stop).ProcessName } catch {}
+  if ($exe) {
+    $out.Add(([PSCustomObject]@{ exe = $exe; title = $title; focused = ($h -eq $fg) })) | Out-Null
+  }
+  return $true
+}, [IntPtr]::Zero) | Out-Null
+$out | ConvertTo-Json -Compress
+`.trim();
+const PS_VISIBLE_ENCODED = Buffer.from(PS_VISIBLE_SCRIPT, 'utf16le').toString('base64');
+
+function getVisibleWindows() {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') return resolve([]);
+    exec(
+      `powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${PS_VISIBLE_ENCODED}`,
+      { windowsHide: true, timeout: 10_000, maxBuffer: 1024 * 512 },
+      (err, stdout) => {
+        if (err) return resolve([]);
+        const trimmed = (stdout || '').trim();
+        if (!trimmed) return resolve([]);
+        try {
+          const parsed = JSON.parse(trimmed);
+          // PowerShell's ConvertTo-Json can return either an object or an array
+          // depending on count. Normalise.
+          resolve(Array.isArray(parsed) ? parsed : [parsed]);
+        } catch { resolve([]); }
+      }
+    );
+  });
+}
+
+// Per-app "presence" sessions — separate in-memory state so a window
+// staying open (even without focus) gets its own session row. Keyed by
+// exe; merging when the same exe stays visible across ticks.
+//   { exe → { app, title, category, startedAt, lastTickAt } }
+const presenceSessions = new Map();
+
+async function tickPresence() {
+  if (process.platform !== 'win32') return;
+  const wins = await getVisibleWindows();
+  if (!Array.isArray(wins)) return;
+  const now = Date.now();
+  const seen = new Set();
+  for (const w of wins) {
+    if (!w.exe) continue;
+    // Skip the focused window — the focused tracker (`tick`) already
+    // records it under source='desktop'. Including it here would double-
+    // count whenever the user is actively using an app.
+    if (w.focused) continue;
+    const exe = String(w.exe);
+    seen.add(exe.toLowerCase());
+    const title = String(w.title || '');
+    const category = inferCategory(exe, title);
+    const key = exe.toLowerCase();
+    const existing = presenceSessions.get(key);
+    if (existing && existing.category === category) {
+      existing.lastTickAt = now;
+      existing.title = title;
+    } else {
+      // Either new app or category flipped (e.g. browser tab changed) —
+      // close out the old session and start a fresh one.
+      if (existing) finalisePresenceSession(existing, now);
+      presenceSessions.set(key, {
+        app: exe,
+        title,
+        category,
+        startedAt: now,
+        lastTickAt: now,
+      });
+    }
+  }
+  // Window closed / minimized → finalise its session.
+  for (const [key, s] of [...presenceSessions.entries()]) {
+    if (!seen.has(key)) {
+      finalisePresenceSession(s, now);
+      presenceSessions.delete(key);
+    }
+  }
+  // Checkpoint each active session so today's totals reflect it in real time.
+  for (const s of presenceSessions.values()) {
+    const mins = Math.max(1, Math.round((now - s.startedAt) / 60000));
+    if (mins < 1) continue;
+    try {
+      db.upsertActivitySession({
+        date: toIsoDate(new Date(s.startedAt)),
+        source: 'desktop-open',
+        app: s.app,
+        window_title: s.title,
+        category: s.category,
+        started_at: new Date(s.startedAt).toISOString(),
+        ended_at: new Date(now).toISOString(),
+        minutes: mins,
+      });
+    } catch { /* non-fatal */ }
+  }
+}
+
+function finalisePresenceSession(s, now) {
+  if (!s) return;
+  const ended = new Date(s.lastTickAt || now);
+  const mins = Math.max(1, Math.round((ended - new Date(s.startedAt)) / 60000));
+  if (mins < 1) return;
+  try {
+    db.upsertActivitySession({
+      date: toIsoDate(new Date(s.startedAt)),
+      source: 'desktop-open',
+      app: s.app,
+      window_title: s.title,
+      category: s.category,
+      started_at: new Date(s.startedAt).toISOString(),
+      ended_at: ended.toISOString(),
+      minutes: mins,
+    });
+  } catch { /* non-fatal */ }
+}
+
 async function tick() {
   const now = Date.now();
+  // Run the presence tracker in parallel — it manages its own state and
+  // writes to source='desktop-open' so it doesn't collide with the
+  // focused-only 'desktop' rows.
+  tickPresence().catch(() => {});
   const fg = await getForegroundWindow();
   if (!fg || !fg.exe) return rollover(now); // no foreground window → rollover current session
 
@@ -220,6 +382,11 @@ function stop() {
   if (timer) clearInterval(timer);
   timer = null;
   rollover(Date.now());
+  // Finalise all presence sessions so their final ended_at is correct
+  // and their rows aren't left mid-flight in activity_sessions.
+  const now = Date.now();
+  for (const s of presenceSessions.values()) finalisePresenceSession(s, now);
+  presenceSessions.clear();
   db.setSetting('activity.tracking', '0');
   return { ok: true };
 }

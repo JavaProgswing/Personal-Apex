@@ -7,10 +7,10 @@ import api from "../lib/api.js";
 // sparse-data fallback that still shows the latest value, click any sparkline
 // to swap to a single-metric detail view.
 const METRICS = [
-  { key: "sleep",   label: "Sleep",   color: "#7c7cff", positive: true  },
-  { key: "clarity", label: "Clarity", color: "#4ecdc4", positive: true  },
-  { key: "energy",  label: "Energy",  color: "#7aa9ff", positive: true  },
-  { key: "dread",   label: "Dread",   color: "#ef6b5a", positive: false },
+  { key: "sleep",   label: "Sleep",   color: "#9bc4d6", positive: true  }, // soft sky
+  { key: "clarity", label: "Clarity", color: "#7fc8a9", positive: true  }, // sage
+  { key: "energy",  label: "Energy",  color: "#e8a23a", positive: true  }, // honey amber
+  { key: "dread",   label: "Dread",   color: "#c4493b", positive: false }, // oxide red
 ];
 
 export default function MoodTrend() {

@@ -179,6 +179,7 @@ contextBridge.exposeInMainWorld("apex", {
   },
   activity: {
     add: (e) => invoke("activity:add", e),
+    addManual: (p) => invoke("activity:addManual", p),
     list: (opts) => invoke("activity:list", opts),
     delete: (id) => invoke("activity:delete", id),
     todayTotals: () => invoke("activity:todayTotals"),

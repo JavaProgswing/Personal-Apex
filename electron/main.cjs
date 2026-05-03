@@ -796,6 +796,47 @@ ipcMain.handle("backup:info", () => backup.dbInfo());
 
 // --- activity / time log ---
 ipcMain.handle("activity:add", (_e, entry) => activity.addEntry(entry));
+// Manual backfill — user logs an activity that happened earlier today
+// (library reading 2-4 pm, LeetCode 1h, video lecture 30 min, etc.) so
+// it shows up in Top apps + the AI sees it next time it builds context.
+// Saves as a real activity_sessions row with source='manual' and
+// computed start/end timestamps.
+ipcMain.handle("activity:addManual", (_e, p = {}) => {
+  try {
+    const dur = Math.max(1, Math.round(+p.minutes || 0));
+    if (!dur) return { ok: false, error: "Duration required" };
+    const title = (p.title || "").trim() || "manual activity";
+    const category = p.category || "neutral";
+    // Resolve start time. Caller can pass startedAtIso, or just
+    // hours-ago, or omit (defaults to "ended now, ran for `dur` min").
+    let startMs;
+    if (p.startedAtIso) {
+      const d = new Date(p.startedAtIso);
+      if (!Number.isNaN(+d)) startMs = +d;
+    }
+    if (!startMs && Number.isFinite(+p.hoursAgo)) {
+      startMs = Date.now() - (+p.hoursAgo) * 3600 * 1000 - dur * 60 * 1000;
+    }
+    if (!startMs) startMs = Date.now() - dur * 60 * 1000;
+    const start = new Date(startMs);
+    const end = new Date(startMs + dur * 60 * 1000);
+    const iso = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
+    db.addActivitySession({
+      date: iso,
+      source: "manual",
+      app: title,
+      window_title: p.kind || null,
+      category,
+      started_at: start.toISOString(),
+      ended_at: end.toISOString(),
+      minutes: dur,
+      note: p.description || null,
+    });
+    return { ok: true, date: iso, startedAtIso: start.toISOString(), minutes: dur };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 ipcMain.handle("activity:list", (_e, opts) => activity.listEntries(opts));
 ipcMain.handle("activity:delete", (_e, id) => activity.deleteEntry(id));
 ipcMain.handle("activity:todayTotals", () => activity.todayTotals());
@@ -877,6 +918,37 @@ function finishTimerToActivity(timer, reason) {
   });
   return { id, minutes };
 }
+
+// Periodic checkpoint of the active live timer into activity_sessions.
+// Without this, a timer that runs for an hour doesn't show up in Top
+// apps until it's stopped — and a crash mid-timer loses the time. Runs
+// every 60s; idempotent via upsertActivitySession's (source, started_at)
+// composite key.
+const TIMER_CHECKPOINT_MS = 60_000;
+setInterval(() => {
+  try {
+    const t = db.getActiveTimer ? db.getActiveTimer() : null;
+    if (!t) return;
+    const minutes = elapsedMinutes(t);
+    if (minutes < 1) return; // don't pollute with sub-minute partial rows
+    const noteParts = [];
+    if (t.description) noteParts.push(t.description);
+    noteParts.push("(in-progress)");
+    db.upsertActivitySession({
+      date: undefined,
+      source: "timer",
+      app: t.title || t.kind || "timer",
+      window_title: t.kind || null,
+      category: t.category || db.categoryForTimerKind(t.kind),
+      started_at: t.started_at,
+      ended_at: new Date().toISOString(),
+      minutes,
+      note: noteParts.join(" "),
+    });
+  } catch (e) {
+    console.warn("[timer.checkpoint]", e.message);
+  }
+}, TIMER_CHECKPOINT_MS);
 
 // --- per-date class overrides (cancel/move/replace/add for one day) ---
 ipcMain.handle("schedule:overridesForDate", (_e, isoDate) =>

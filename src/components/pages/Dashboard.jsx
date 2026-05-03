@@ -3824,6 +3824,13 @@ function DayNoteCard({ model, ollamaOk }) {
               </button>
             </div>
           )}
+
+          {/* Backfill earlier-today activity. Each entry becomes an
+              activity_sessions row (source='manual') so it shows up in
+              Top apps + the AI sees it in next-context calls. Useful for
+              things the tracker can't see — library reading, lecture
+              videos, paper notes, sport, etc. */}
+          <BackfillActivity todayIso={today} />
         </>
       )}
 
@@ -3857,6 +3864,217 @@ function DayNoteCard({ model, ollamaOk }) {
           onClose={() => setShowUnlock(false)}
           onUnlocked={handleUnlockSuccess}
         />
+      )}
+    </div>
+  );
+}
+
+// ─── BackfillActivity ────────────────────────────────────────────────────
+// Inline form on the Day-note card for logging activity that happened
+// earlier in the day (library reading 2-4pm, LeetCode 1h, video lecture
+// 30m, gym 45m). Writes to activity_sessions with source='manual', so
+// the entry shows up in Top apps + week trend + the AI's live context.
+//
+// Simple, fast input flow:
+//   • Quick presets ("Library reading 60m", "LC 30m", "Lecture video 45m")
+//     prefill in one tap.
+//   • Manually pick: kind / title / minutes / "how long ago started".
+//   • Recent backfilled rows render below for quick review.
+function BackfillActivity({ todayIso }) {
+  const PRESETS = [
+    { icon: "📖", title: "Library reading",  category: "productive", minutes: 60 },
+    { icon: "💻", title: "LeetCode",         category: "productive", minutes: 30 },
+    { icon: "🎥", title: "Lecture video",    category: "productive", minutes: 45 },
+    { icon: "📝", title: "Lab report",       category: "productive", minutes: 60 },
+    { icon: "📚", title: "Self-study",       category: "productive", minutes: 60 },
+    { icon: "🏋️", title: "Gym",              category: "rest",       minutes: 60 },
+    { icon: "🚶", title: "Walk / outdoor",   category: "rest",       minutes: 30 },
+    { icon: "🍴", title: "Meal",             category: "neutral",    minutes: 30 },
+  ];
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    title: "",
+    minutes: 30,
+    category: "productive",
+    hoursAgo: 1,
+    description: "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [recent, setRecent] = useState([]);
+
+  async function refreshRecent() {
+    if (!api.activity?.list) return;
+    try {
+      const rows = (await api.activity.list({ days: 1 })) || [];
+      // Activity service might not expose source filter — be defensive.
+      setRecent(
+        rows
+          .filter((r) => (r.source || r.app_name) && r.source !== "desktop" && r.source !== "desktop-open")
+          .slice(0, 5),
+      );
+    } catch { setRecent([]); }
+  }
+
+  useEffect(() => { if (open) refreshRecent(); }, [open]);
+
+  async function submit(preset) {
+    const data = preset
+      ? { ...form, ...preset }
+      : { ...form };
+    if (!data.title.trim()) {
+      setErr("Title required");
+      return;
+    }
+    if (!data.minutes || data.minutes < 1) {
+      setErr("Minutes required");
+      return;
+    }
+    setBusy(true); setErr(null);
+    try {
+      const r = await api.activity.addManual({
+        title: data.title.trim(),
+        category: data.category,
+        minutes: +data.minutes,
+        hoursAgo: +data.hoursAgo || 0,
+        description: data.description?.trim() || null,
+        kind: "backfill",
+      });
+      if (!r?.ok) {
+        setErr(r?.error || "Save failed");
+      } else {
+        setForm({
+          title: "", minutes: 30, category: "productive",
+          hoursAgo: 1, description: "",
+        });
+        await refreshRecent();
+      }
+    } finally { setBusy(false); }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="ghost small backfill-toggle"
+        onClick={() => setOpen(true)}
+        title="Add an activity that happened earlier today"
+      >
+        + 📝 Add earlier activity
+      </button>
+    );
+  }
+
+  return (
+    <div className="backfill">
+      <div className="row between" style={{ alignItems: "center", marginBottom: 6 }}>
+        <strong style={{ fontSize: 13 }}>Add earlier activity</strong>
+        <button className="ghost xsmall" onClick={() => setOpen(false)} aria-label="Close">✕</button>
+      </div>
+      <small className="muted" style={{ display: "block", marginBottom: 8 }}>
+        Log time spent off-screen — library reading, lectures, gym etc. — so
+        the AI sees the full picture of your day.
+      </small>
+
+      {/* Preset chips — tap to log instantly with default duration. */}
+      <div className="backfill-presets">
+        {PRESETS.map((p) => (
+          <button
+            key={p.title}
+            type="button"
+            className="backfill-preset"
+            onClick={() => submit({
+              title: p.title,
+              minutes: p.minutes,
+              category: p.category,
+              hoursAgo: form.hoursAgo,
+            })}
+            disabled={busy}
+            title={`Log ${p.minutes}m of ${p.title.toLowerCase()}`}
+          >
+            <span aria-hidden>{p.icon}</span> {p.title}
+            <small className="muted"> · {p.minutes}m</small>
+          </button>
+        ))}
+      </div>
+
+      {/* Manual fields. */}
+      <div className="grid-2" style={{ marginTop: 8 }}>
+        <div className="form-row">
+          <label>Title</label>
+          <input
+            value={form.title}
+            placeholder="e.g. Reading: Operating System Concepts ch.4"
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+          />
+        </div>
+        <div className="form-row">
+          <label>Category</label>
+          <select
+            value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
+          >
+            <option value="productive">productive</option>
+            <option value="neutral">neutral</option>
+            <option value="rest">rest</option>
+            <option value="leisure">leisure</option>
+            <option value="distraction">distraction</option>
+          </select>
+        </div>
+      </div>
+      <div className="grid-2">
+        <div className="form-row">
+          <label>Minutes</label>
+          <input
+            type="number"
+            min={1}
+            max={600}
+            value={form.minutes}
+            onChange={(e) => setForm({ ...form, minutes: +e.target.value || 0 })}
+          />
+        </div>
+        <div className="form-row">
+          <label>Started ~ how long ago (hours)</label>
+          <input
+            type="number"
+            min={0}
+            max={24}
+            step="0.5"
+            value={form.hoursAgo}
+            onChange={(e) => setForm({ ...form, hoursAgo: +e.target.value || 0 })}
+          />
+        </div>
+      </div>
+      <div className="form-row">
+        <label>Note (optional)</label>
+        <input
+          value={form.description}
+          placeholder="Anything Apex should know — e.g. 'finished ch 4, 12 problems'"
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+        />
+      </div>
+      {err && <div className="error">{err}</div>}
+      <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
+        <button className="primary small" onClick={() => submit(null)} disabled={busy || !form.title.trim()}>
+          {busy ? "Logging…" : "Log activity"}
+        </button>
+      </div>
+
+      {recent.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <small className="muted">Recently logged today:</small>
+          <ul className="backfill-recent">
+            {recent.map((r) => (
+              <li key={r.id}>
+                <strong>{r.app_name || r.app}</strong>{" "}
+                <small className="muted">
+                  {r.minutes}m · {r.category}
+                  {r.note ? ` — ${r.note}` : ""}
+                </small>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );
