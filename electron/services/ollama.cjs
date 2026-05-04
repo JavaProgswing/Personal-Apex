@@ -1257,10 +1257,72 @@ function safeParseJson(content) {
   return { ok: false, error: 'Could not parse Ollama output as JSON', raw: content };
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// extractTasksFromText — turn a wall of pasted text (chat transcripts,
+// meeting notes, syllabus paragraphs, plan emails, anything) into a clean
+// list of tasks the user can review + bulk-create.
+//
+// We deliberately bias toward MORE extractions than fewer — easier to
+// uncheck a noisy row than re-paste to add a missing one.
+// ───────────────────────────────────────────────────────────────────────────
+async function extractTasksFromText({ text, intent, model } = {}) {
+  if (!text || !String(text).trim()) {
+    return { ok: false, error: 'Paste something first.' };
+  }
+  const system = buildSystem(`You're an inbox-zero assistant: parse a freeform
+text dump (chat transcript, plan email, meeting recap, syllabus, etc.) and
+emit STRUCTURED TASKS the user should add to their personal tracker.
+
+Output ONLY valid JSON — no markdown fences, no preamble.
+
+For each actionable item, real plan, deadline, study topic, or "thing
+worth tracking" you find in the text, emit ONE task with:
+- "title"            : ≤72 chars, imperative voice ("Read Heartbleed write-up", not "I should read…")
+- "kind"             : "task" | "habit" | "interest"
+- "category"         : one of: "Deep work" | "DSA" | "Academics" | "Project" | "Social" | "Personal" | "Health" | "Leisure"
+- "priority"         : 1 (urgent) – 5 (someday). Use 3 by default; raise/lower only with a reason.
+- "estimated_minutes": rough time. null if unclear.
+- "deadline"         : ISO date "YYYY-MM-DD" if mentioned/implied; null otherwise.
+- "description"      : ONE sentence of grounding context pulled from the source.
+- "links"            : array of any URLs cited for that item.
+- "tags"             : array — always include "apex-import"; add "explore" or "study" if relevant.
+
+Hard rules:
+- DO NOT invent deadlines/numbers not in the source text.
+- DO NOT emit a task for advice that's purely conversational ("good luck!") — only real next-actions.
+- DEDUPE: if two parts of the source describe the same action, emit one task.
+- If the dump is a list of resources/links, group by intent (e.g. "Skim Exploit-DB CVE writeups" beats 30 individual link tasks).
+- "Long-term goals" or whole topics → kind="interest" with a generous estimate.
+- For named tools / protocols / topics, set "Project" or "Personal" category and add the topic to "tags".
+
+Return shape:
+{
+  "summary": "1-sentence read of what the dump is about",
+  "topic":   "kebab-case topic tag if obvious (e.g. 'reverse-engineering', 'dbms')",
+  "tasks":   [ {…fields above…} ]
+}`);
+
+  const intentLine = intent && intent.trim()
+    ? `User intent / framing: "${intent.trim().slice(0, 200)}"\n\n`
+    : '';
+
+  const user = `${intentLine}Source dump (verbatim, may be a chat transcript with both speakers):
+
+"""
+${String(text).slice(0, 18_000)}
+"""
+
+Extract tasks now. Return JSON only.`;
+
+  const resp = await chat({ model, system, user, json: true, temperature: 0.2 });
+  if (!resp.ok) return resp;
+  return safeParseJson(resp.content);
+}
+
 module.exports = {
   listModels, chat, planDay, burnoutSuggest, eveningReview, burnoutCheck, summarizeRepo,
   summarizeRecentChanges, recommendNow, chatAboutRepo, chatAboutCommit,
-  summarizeCpActivity,
+  summarizeCpActivity, extractTasksFromText,
   ocrTimetable, autoPickBest, resolveModel, personalContext, buildSystem,
   ping, ensureRunning,
 };

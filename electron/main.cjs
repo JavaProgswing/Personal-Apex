@@ -749,6 +749,9 @@ ipcMain.handle("ollama:burnoutSuggest", (_e, ctx = {}) => {
   }
 });
 ipcMain.handle("ollama:burnoutCheck", (_e, ctx) => ollama.burnoutCheck(ctx));
+ipcMain.handle("ollama:extractTasks", (_e, opts = {}) =>
+  ollama.extractTasksFromText(opts || {}),
+);
 ipcMain.handle("ollama:eveningReview", async (_e, opts = {}) => {
   // Assemble the full end-of-day context server-side so the renderer just
   // says "give me the review" — no need to gather completed tasks, time

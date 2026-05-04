@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../../lib/api.js";
 import { daysUntil, niceDate } from "../../lib/date.js";
+import BrainDumpModal from "../BrainDumpModal.jsx";
 
 // Simplified + split categories. SWE is now "Deep work" (clearer intent),
 // Health was added so workouts/sleep don't hide inside Personal, and Leisure
@@ -67,6 +68,8 @@ export default function Tasks() {
   const [groupBy, setGroupBy] = useState("none");
   const [editing, setEditing] = useState(null);
   const [showNew, setShowNew] = useState(false);
+  const [showBrainDump, setShowBrainDump] = useState(false);
+  const [importToast, setImportToast] = useState(null);
   const [quickTitle, setQuickTitle] = useState("");
 
   async function reload() {
@@ -77,6 +80,20 @@ export default function Tasks() {
     setTasks(await api.tasks.list(filter));
   }
   useEffect(() => { reload(); /* eslint-disable-next-line */ }, [kind, completed, category, q]);
+
+  // Cmd/Ctrl+Shift+B → open brain dump while on Tasks. (Cmd+Shift+N is
+  // already wired globally to quick-capture in App.jsx.)
+  useEffect(() => {
+    const onKey = (e) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.shiftKey && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        setShowBrainDump(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   async function toggle(id) { await api.tasks.toggle(id); reload(); }
   async function remove(id) { await api.tasks.delete(id); reload(); }
@@ -150,10 +167,35 @@ export default function Tasks() {
             One list for coursework, habits, and interests. P1 = urgent, P5 = someday.
           </p>
         </div>
-        <div className="row">
+        <div className="row" style={{ gap: 6 }}>
+          <button
+            className="ghost"
+            onClick={() => setShowBrainDump(true)}
+            title="Paste a chat or text dump and Apex extracts tasks (Ctrl+Shift+B)"
+          >
+            📋 Brain dump
+          </button>
           <button className="primary" onClick={() => setShowNew(true)}>+ New</button>
         </div>
       </div>
+
+      {importToast && (
+        <div className="card" style={{ marginBottom: 12, borderColor: "var(--accent)" }}>
+          <strong>Imported {importToast.added} task{importToast.added === 1 ? "" : "s"}</strong>
+          {importToast.summary && (
+            <small className="muted" style={{ display: "block", marginTop: 4 }}>
+              {importToast.summary}
+            </small>
+          )}
+          <button
+            className="ghost xsmall"
+            style={{ marginTop: 6 }}
+            onClick={() => setImportToast(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Stats strip — always shown, useful at a glance */}
       <div className="task-stats-strip">
@@ -305,6 +347,17 @@ export default function Tasks() {
           onSaved={() => { setEditing(null); reload(); }}
         />
       )}
+      <BrainDumpModal
+        open={showBrainDump}
+        onClose={() => setShowBrainDump(false)}
+        onCreated={(info) => {
+          setShowBrainDump(false);
+          setImportToast(info);
+          reload();
+          // Auto-dismiss the toast after a bit so the page stays clean.
+          setTimeout(() => setImportToast(null), 8000);
+        }}
+      />
     </>
   );
 }

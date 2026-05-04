@@ -132,6 +132,7 @@ contextBridge.exposeInMainWorld("apex", {
     recommend: (opts) => invoke("ollama:recommend", opts),
     burnoutCheck: (ctx) => invoke("ollama:burnoutCheck", ctx),
     eveningReview: (ctx) => invoke("ollama:eveningReview", ctx),
+    extractTasks: (opts) => invoke("ollama:extractTasks", opts),
     best: () => invoke("ollama:best"),
     start: () => invoke("ollama:start"),
     ping: () => invoke("ollama:ping"),
