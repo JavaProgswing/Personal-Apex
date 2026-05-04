@@ -95,6 +95,11 @@ contextBridge.exposeInMainWorld("apex", {
     openLoginWindow: () => invoke("srm:openLoginWindow"),
     logout: () => invoke("srm:logout"),
     diagnose: () => invoke("srm:diagnose"),
+    // Rebuild classes from cached student data with the current srm.batch setting.
+    // Call this immediately when the user changes the batch dropdown — no network.
+    rebuildBatch: () => invoke("srm:rebuildBatch"),
+    // Listen for the background auto-sync event emitted on startup.
+    onSynced: (h) => on("srm:synced", h),
   },
   courseMaterials: {
     list: (opts) => invoke("courseMaterials:list", opts),

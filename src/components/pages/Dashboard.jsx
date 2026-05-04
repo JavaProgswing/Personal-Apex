@@ -134,6 +134,26 @@ export default function Dashboard({ go }) {
     };
   }, []);
 
+  // Listen for the background startup auto-sync completing — update the
+  // schedule in-place so the user sees fresh timetable data without reload.
+  useEffect(() => {
+    const off = api.srm?.onSynced?.((payload) => {
+      api.schedule.today().then((sched) => {
+        setClasses(sched?.classes ?? []);
+        setDayOrder(sched?.dayOrder ?? null);
+      }).catch(() => {});
+      if (payload?.classes) {
+        setToast({
+          kind: "info",
+          title: "Timetable refreshed",
+          msg: `${payload.classes} classes · batch ${payload.batch ?? "?"}`,
+        });
+        setTimeout(() => setToast(null), 4000);
+      }
+    });
+    return () => off?.();
+  }, []);
+
   useEffect(() => {
     // Tracker heartbeat — short poll so the "tracking" pill + current app
     // stay in sync with whatever the foreground window actually is.

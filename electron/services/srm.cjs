@@ -547,8 +547,12 @@ function parseStudentDetails(html) {
       else if (label === 'Name:') name = $(tds[i + 1]).text().trim();
       else if (label === 'Combo / Batch:') {
         const v = $(tds[i + 1]).text().trim();
+        // The field can be "B1", "Batch 1", "CSEB/B1", "CSEB / 1", etc.
+        // Always extract the last segment after the final '/' then pull out the
+        // first digit we find (handles "B1", "Batch1", plain "1" all the same).
         const last = v.split('/').pop().trim();
-        batchStr = last;
+        const digitMatch = last.match(/\d+/);
+        batchStr = digitMatch ? digitMatch[0] : last;
       }
       else if (label === 'Mobile:') mobile = $(tds[i + 1]).text().trim();
       else if (label === 'Department:') department = $(tds[i + 1]).text().trim();
@@ -782,7 +786,17 @@ const SLOT_TIMES_24H = [
 // { day_order, period, slot, subject, code, room, faculty, start_time, end_time, kind }.
 function buildClassesRows(student) {
   if (!student?.Courses?.length) return [];
-  const batch = student.Batch === 1 ? BATCH_1 : BATCH_2;
+  // Priority order for batch resolution:
+  //   1. User's explicit setting in DB (srm.batch) — always wins when set.
+  //      This lets the user fix a wrong auto-detection without re-syncing.
+  //   2. Value parsed from the timetable HTML (digit extracted from "B1" etc.).
+  //   3. Hard default: Batch 1.
+  const storedBatch = parseInt(db.getSetting('srm.batch') || '0', 10);
+  const htmlBatch   = student.Batch;   // integer 1/2 or null
+  const resolvedBatch = (storedBatch >= 1 && storedBatch <= 2)
+    ? storedBatch
+    : (htmlBatch >= 1 && htmlBatch <= 2 ? htmlBatch : 1);
+  const batch = resolvedBatch === 1 ? BATCH_1 : BATCH_2;
 
   // slot → course
   const slotToCourse = {};
@@ -823,6 +837,28 @@ function buildClassesRows(student) {
     });
   }
   return rows;
+}
+
+// ─── rebuild from stored state ───────────────────────────────────────────────
+// Re-applies the srm.batch setting against the last-fetched student data
+// stored in settings, without hitting the network again. This is what the
+// Settings UI should call when the user flips the batch selector.
+async function rebuildFromBatch() {
+  const raw = db.getSetting('srm.lastStudentJson');
+  if (!raw) {
+    return { ok: false, error: 'No cached timetable — do a full Sync first.' };
+  }
+  let student;
+  try { student = JSON.parse(raw); } catch {
+    return { ok: false, error: 'Cached timetable is corrupted — do a full Sync first.' };
+  }
+  const classes = buildClassesRows(student);
+  if (classes.length === 0) {
+    return { ok: false, error: 'No courses in cached timetable.' };
+  }
+  db.replaceAllClasses(classes);
+  const b = parseInt(db.getSetting('srm.batch') || '1', 10);
+  return { ok: true, classes: classes.length, batch: b };
 }
 
 function shortenSubject(title, code) {
@@ -912,6 +948,9 @@ async function syncAll({ username, password, planName, useStoredSession } = {}) 
     console.warn('[srm.syncAll] calendar fetch/parse failed:', err.message);
   }
 
+  // Cache parsed student for instant batch-rebuild without network access.
+  try { db.setSetting('srm.lastStudentJson', JSON.stringify(student)); } catch { /* ignore */ }
+
   // Persist to DB.
   const classes = buildClassesRows(student);
   if (classes.length === 0) {
@@ -932,6 +971,19 @@ async function syncAll({ username, password, planName, useStoredSession } = {}) 
     }
   }
 
+  // Auto-store the HTML-detected batch ONLY when the user hasn't explicitly
+  // set one yet (preserves any manual override across re-syncs).
+  const existingBatchSetting = parseInt(db.getSetting('srm.batch') || '0', 10);
+  if (!(existingBatchSetting >= 1 && existingBatchSetting <= 2) && student.Batch) {
+    db.setSetting('srm.batch', String(student.Batch));
+  }
+
+  // Determine which batch was actually used (user setting wins).
+  const storedBatch = parseInt(db.getSetting('srm.batch') || '0', 10);
+  const resolvedBatch = (storedBatch >= 1 && storedBatch <= 2)
+    ? storedBatch
+    : (student.Batch ?? 1);
+
   return {
     ok: true,
     classes: classes.length,
@@ -939,7 +991,8 @@ async function syncAll({ username, password, planName, useStoredSession } = {}) 
     student: {
       name: student.Name,
       reg: student.RegNumber,
-      batch: student.Batch,
+      batch: resolvedBatch,
+      htmlBatch: student.Batch,
       department: student.Department,
       semester: student.Semester,
     },
@@ -1125,6 +1178,7 @@ module.exports = {
   parseCalendarEvents,
   buildClassesRows,
   syncAll,
+  rebuildFromBatch,
   diagnose,
   // Browser-based session helpers
   attachElectronSession: _attachElectronSession,

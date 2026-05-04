@@ -271,10 +271,46 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
           <small className="hint" style={{ display: "block", marginTop: 10 }}>
             Last sync: <strong>{lastSync.classes}</strong> classes
             {lastSync.calendar_rows ? ` · ${lastSync.calendar_rows} calendar dates` : ""}
+            {lastSync.student?.batch ? ` · batch ${lastSync.student.batch}` : ""}
             {lastSync.student?.semester ? ` · semester ${lastSync.student.semester}` : ""}
             {lastSync.planner ? ` · planner ${lastSync.planner}` : ""}.
           </small>
         )}
+
+        <hr className="soft" style={{ margin: "12px 0 10px" }} />
+        <div className="form-row" style={{ maxWidth: 340 }}>
+          <label style={{ fontWeight: 600 }}>
+            Your batch
+            <span className="muted" style={{ fontWeight: 400, marginLeft: 6 }}>
+              (slot table used for timetable)
+            </span>
+          </label>
+          <div className="row" style={{ gap: 8, alignItems: "center" }}>
+            <select
+              id="srm-batch-override"
+              value={all["srm.batch"] || "1"}
+              onChange={async (e) => {
+                const v = e.target.value;
+                setAll({ ...all, "srm.batch": v });
+                await save("srm.batch", v);
+                // Immediately rebuild classes from cached data — no network needed.
+                const r = await api.srm.rebuildBatch();
+                if (r?.ok) {
+                  setMsg(`✓ Schedule rebuilt for Batch ${v} — ${r.classes} classes updated.`);
+                } else {
+                  setMsg(r?.error || `Batch saved. Do a full Sync to apply.`);
+                }
+              }}
+              style={{ width: 100 }}
+            >
+              <option value="1">Batch 1</option>
+              <option value="2">Batch 2</option>
+            </select>
+            <small className="muted">
+              Changes apply instantly using cached data.
+            </small>
+          </div>
+        </div>
         {lastSync && !lastSync.ok && (
           <div className="error" style={{ marginTop: 8 }}>
             {lastSync.error || "Sync failed."}
@@ -308,6 +344,26 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
             Import from image…
           </button>
         </div>
+
+        <hr className="soft" style={{ margin: "12px 0 10px" }} />
+        <label className="row" style={{ gap: 10, alignItems: "center", cursor: "pointer" }}>
+          <input
+            id="srm-autosync-toggle"
+            type="checkbox"
+            checked={(all["srm.autoSync"] ?? "1") !== "0"}
+            onChange={(e) => {
+              const v = e.target.checked ? "1" : "0";
+              setAll({ ...all, "srm.autoSync": v });
+              save("srm.autoSync", v);
+            }}
+          />
+          <span style={{ fontSize: 13 }}>
+            Auto-sync on startup
+            <span className="muted" style={{ marginLeft: 6 }}>
+              (pulls timetable silently ~4 s after launch)
+            </span>
+          </span>
+        </label>
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>

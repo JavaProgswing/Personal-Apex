@@ -183,6 +183,37 @@ app.whenReady().then(async () => {
     }
   } catch (e) { console.warn("[ollama] autostart skipped:", e.message); }
 
+  // Auto-sync SRM Academia on startup — pulls latest timetable + calendar
+  // so the schedule is always fresh. Fires 4s after boot so it doesn't race
+  // with DB init / window creation. Controlled by srm.autoSync setting
+  // (defaults ON). Pushes "srm:synced" to the renderer on success so the
+  // Dashboard refreshes without a page reload.
+  try {
+    const srmAutoSync = db.getSetting("srm.autoSync");
+    if (srmAutoSync !== "0") {
+      setTimeout(async () => {
+        try {
+          _ensureSrmSessionAttached();
+          const loggedIn = await srm.isLoggedIn().catch(() => false);
+          if (!loggedIn) {
+            console.log("[srm] autoSync: no active session — skipping");
+            return;
+          }
+          console.log("[srm] autoSync: starting…");
+          const res = await srm.syncAll({});
+          if (res?.ok) {
+            console.log(`[srm] autoSync: done — ${res.classes} classes, batch ${res.student?.batch}`);
+            emit("srm:synced", { classes: res.classes, batch: res.student?.batch });
+          } else {
+            console.warn("[srm] autoSync: failed —", res?.error);
+          }
+        } catch (e) {
+          console.warn("[srm] autoSync threw:", e.message);
+        }
+      }, 4000);
+    }
+  } catch (e) { console.warn("[srm] autoSync setup skipped:", e.message); }
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -493,6 +524,18 @@ ipcMain.handle("srm:openLoginWindow", async () => {
 ipcMain.handle("srm:logout", async () => {
   _ensureSrmSessionAttached();
   return await srm.clearCookies();
+});
+
+// Rebuild the classes table using a new batch setting without hitting the
+// network. The user flips batch in Settings → Schedule → "Your batch",
+// we call this so the schedule reflects immediately.
+ipcMain.handle("srm:rebuildBatch", async () => {
+  try {
+    _ensureSrmSessionAttached();
+    return await srm.rebuildFromBatch();
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 });
 
 // Surfaces the deep-debug payload used by Settings → Schedule's "Diagnose"
