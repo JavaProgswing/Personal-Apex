@@ -266,7 +266,7 @@ export default function People() {
       {cpSync.active && <SyncBar label="Competitive programming" {...cpSync} />}
 
       {/* Search + grouping controls */}
-      <div className="row" style={{ marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+      <div className="row page-people-controls" style={{ flexWrap: "wrap" }}>
         <input placeholder="Search name / GitHub…" value={filter.q} onChange={(e) => setFilter({ ...filter, q: e.target.value })} style={{ maxWidth: 300 }} />
         <select value={filter.tag} onChange={(e) => setFilter({ ...filter, tag: e.target.value })} style={{ maxWidth: 200 }}>
           <option value="">All tags</option>

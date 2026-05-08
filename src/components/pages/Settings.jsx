@@ -1968,45 +1968,100 @@ function SpotifyTab({ setMsg }) {
 function AppearanceTab({ all, setAll, save }) {
   const current = all["ui.theme"] || "library";
   const customAccent = all["ui.customAccent"] || "";
-  // Group themes so the grid stays organised at a glance.
+  const [filter, setFilter] = useState(""); // search box
+  const [tag, setTag] = useState("All");    // category filter
+
+  // Big themes catalog. Each carries a `tags` array used by the chip filter.
   const THEMES = [
     // Originals
-    { key: "library", label: "Library", group: "Warm",
+    { key: "library", label: "Library", tags: ["Dark", "Warm", "Default"],
       desc: "Warm coffee + honey amber. Default.",
       swatches: ["#14110f", "#e8a23a", "#f5ecdc", "#7fc8a9"] },
-    { key: "slate", label: "Slate", group: "Cool",
+    { key: "slate", label: "Slate", tags: ["Dark", "Cool"],
       desc: "Cool blue-grey + electric cyan.",
       swatches: ["#0e1116", "#56b6c2", "#e6edf3", "#7ee787"] },
-    { key: "paper", label: "Paper", group: "Light",
+    { key: "paper", label: "Paper", tags: ["Light", "Warm"],
       desc: "Light cream parchment. Day mode.",
       swatches: ["#f4ecd8", "#9c5b25", "#3a2f1f", "#5a8761"] },
-    { key: "mono", label: "Mono", group: "Mono",
+    { key: "mono", label: "Mono", tags: ["Dark", "High contrast"],
       desc: "Greyscale + single accent. High contrast.",
       swatches: ["#0a0a0a", "#ffffff", "#888888", "#e8a23a"] },
-    // New dark variants
-    { key: "dracula", label: "Dracula", group: "Cool",
+    // Dark dev classics
+    { key: "dracula", label: "Dracula", tags: ["Dark", "Bold"],
       desc: "Cult-classic purple-pink night palette.",
       swatches: ["#282a36", "#bd93f9", "#ff79c6", "#50fa7b"] },
-    { key: "nord", label: "Nord", group: "Cool",
+    { key: "nord", label: "Nord", tags: ["Dark", "Cool"],
       desc: "Arctic blue, frost teal — calm and matte.",
       swatches: ["#2e3440", "#88c0d0", "#eceff4", "#a3be8c"] },
-    { key: "solarized-dark", label: "Solarized Dark", group: "Cool",
+    { key: "solarized-dark", label: "Solarized Dark", tags: ["Dark", "Cool"],
       desc: "Classic developer palette. Easy on the eyes.",
       swatches: ["#002b36", "#268bd2", "#fdf6e3", "#b58900"] },
-    { key: "midnight", label: "Midnight", group: "Cool",
+    { key: "midnight", label: "Midnight", tags: ["Dark", "High contrast"],
       desc: "Pure black + electric blue. Maximum contrast.",
       swatches: ["#000000", "#3b82f6", "#e5e5e5", "#22c55e"] },
-    { key: "forest", label: "Forest", group: "Warm",
+    { key: "forest", label: "Forest", tags: ["Dark", "Warm"],
       desc: "Deep green + moss + amber accents.",
       swatches: ["#0f1a14", "#5a8761", "#d4c285", "#9c5b25"] },
-    { key: "sunset", label: "Sunset", group: "Warm",
+    { key: "sunset", label: "Sunset", tags: ["Dark", "Warm"],
       desc: "Burnt orange and dusk pink over plum.",
       swatches: ["#1a0e1f", "#f97316", "#ec4899", "#fbbf24"] },
-    // New light
-    { key: "solarized-light", label: "Solarized Light", group: "Light",
+    // Badass / neon
+    { key: "synthwave", label: "Synthwave", tags: ["Dark", "Neon", "Bold"],
+      desc: "Vaporwave neon pink + cyan over deep purple.",
+      swatches: ["#1a0b2e", "#ff2a6d", "#05d9e8", "#d300c5"] },
+    { key: "cyberpunk", label: "Cyberpunk", tags: ["Dark", "Neon", "High contrast", "Bold"],
+      desc: "Yellow + cyan on near-black. Night City vibes.",
+      swatches: ["#0a0a0a", "#fcee0a", "#00f0ff", "#ff003c"] },
+    { key: "matrix", label: "Matrix", tags: ["Dark", "Neon", "High contrast"],
+      desc: "Pure green-on-black. Hacker movie aesthetic.",
+      swatches: ["#000000", "#00ff41", "#39ff14", "#b3ff66"] },
+    { key: "crimson", label: "Crimson", tags: ["Dark", "Warm", "Bold"],
+      desc: "Deep oxblood + gold. Editorial, intense.",
+      swatches: ["#1a0a0a", "#d4a04a", "#d4453a", "#f5e8d8"] },
+    { key: "ocean", label: "Ocean", tags: ["Dark", "Cool"],
+      desc: "Deep teal + coral. Cool tropical-night blend.",
+      swatches: ["#021825", "#2dd4bf", "#ff7a59", "#67e8f9"] },
+    // Modern dev favorites
+    { key: "tokyo-night", label: "Tokyo Night", tags: ["Dark", "Cool"],
+      desc: "Indigo midnight + soft pastels. Trending dev theme.",
+      swatches: ["#1a1b26", "#7aa2f7", "#bb9af7", "#9ece6a"] },
+    { key: "catppuccin", label: "Catppuccin Mocha", tags: ["Dark", "Pastel"],
+      desc: "Internet-darling pastel night palette.",
+      swatches: ["#1e1e2e", "#cba6f7", "#f5c2e7", "#a6e3a1"] },
+    { key: "gruvbox", label: "Gruvbox", tags: ["Dark", "Warm"],
+      desc: "Retro-grove warm dev theme. Earthy and rich.",
+      swatches: ["#282828", "#fabd2f", "#b8bb26", "#fb4934"] },
+    { key: "rose-pine", label: "Rosé Pine", tags: ["Dark", "Pastel", "Warm"],
+      desc: "Soft burgundy + warm pastels. Cozy night.",
+      swatches: ["#191724", "#eb6f92", "#c4a7e7", "#9ccfd8"] },
+    { key: "one-dark", label: "One Dark", tags: ["Dark", "Cool"],
+      desc: "Atom's classic. Slate blue + warm coral.",
+      swatches: ["#282c34", "#61afef", "#c678dd", "#98c379"] },
+    // Light
+    { key: "solarized-light", label: "Solarized Light", tags: ["Light", "Cool"],
       desc: "Companion light palette to Solarized Dark.",
       swatches: ["#fdf6e3", "#268bd2", "#586e75", "#b58900"] },
+    { key: "latte", label: "Latte", tags: ["Light", "Pastel"],
+      desc: "Catppuccin Latte. Soft cream + lavender.",
+      swatches: ["#eff1f5", "#8839ef", "#ea76cb", "#40a02b"] },
   ];
+
+  const ALL_TAGS = [
+    "All", "Dark", "Light", "Neon", "Pastel", "Bold", "Warm", "Cool", "High contrast",
+  ];
+
+  const filteredThemes = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    return THEMES.filter((t) => {
+      if (tag !== "All" && !t.tags.includes(tag)) return false;
+      if (!q) return true;
+      return (
+        t.label.toLowerCase().includes(q) ||
+        t.desc.toLowerCase().includes(q) ||
+        t.tags.some((x) => x.toLowerCase().includes(q))
+      );
+    });
+  }, [filter, tag]);
 
   // Curated accents the user can set on top of any theme.
   const ACCENTS = [
@@ -2045,49 +2100,93 @@ function AppearanceTab({ all, setAll, save }) {
     }
   }
 
-  // Group themes for a tidy "Dark / Light / Accent" arrangement.
-  const groups = useMemo(() => {
-    const dark = ["library", "slate", "mono", "dracula", "nord", "solarized-dark", "midnight", "forest", "sunset"];
-    return {
-      Dark:  THEMES.filter((t) => dark.includes(t.key)),
-      Light: THEMES.filter((t) => !dark.includes(t.key)),
-    };
-  }, []);
-
   return (
     <>
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-title">Theme</div>
+        <div className="row between" style={{ alignItems: "baseline", marginBottom: 6 }}>
+          <div className="card-title" style={{ margin: 0 }}>Theme</div>
+          <small className="muted">{filteredThemes.length} of {THEMES.length}</small>
+        </div>
         <small className="hint" style={{ display: "block", marginBottom: 12 }}>
-          Switch any time — changes are instant. Pick a base palette below,
-          then optionally override the accent colour.
+          Pick a palette — changes are instant. Filter by tag or search by
+          name. Custom accent below overrides the theme's default colour.
         </small>
 
-        {Object.entries(groups).map(([groupName, list]) => (
-          <div key={groupName} style={{ marginBottom: 14 }}>
-            <small className="muted" style={{ display: "block", marginBottom: 6, letterSpacing: 0.5 }}>
-              {groupName.toUpperCase()}
-            </small>
-            <div className="theme-grid">
-              {list.map((t) => (
-                <button
-                  key={t.key}
-                  type="button"
-                  className={"theme-card" + (current === t.key ? " active" : "")}
-                  onClick={() => setTheme(t.key)}
-                >
-                  <div className="theme-swatches">
-                    {t.swatches.map((c, i) => (
-                      <span key={i} style={{ background: c }} />
-                    ))}
-                  </div>
-                  <strong>{t.label}</strong>
-                  <small className="muted">{t.desc}</small>
-                </button>
-              ))}
-            </div>
+        <div className="row" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+          {ALL_TAGS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={"chip" + (tag === t ? " active" : "")}
+              onClick={() => setTag(t)}
+              style={{ fontSize: 11, padding: "4px 10px" }}
+            >
+              {t}
+            </button>
+          ))}
+          <input
+            type="search"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Search themes…"
+            style={{
+              flex: 1,
+              minWidth: 160,
+              padding: "5px 10px",
+              borderRadius: 6,
+              border: "1px solid var(--border)",
+              background: "var(--bg)",
+              color: "var(--text)",
+              fontSize: 12,
+            }}
+          />
+        </div>
+
+        {filteredThemes.length === 0 ? (
+          <div className="muted" style={{ padding: "20px 8px", textAlign: "center" }}>
+            No themes match. <button className="ghost xsmall" onClick={() => { setFilter(""); setTag("All"); }}>Clear filters</button>
           </div>
-        ))}
+        ) : (
+          <div className="theme-grid">
+            {filteredThemes.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                className={"theme-card" + (current === t.key ? " active" : "")}
+                onClick={() => setTheme(t.key)}
+              >
+                <div className="theme-swatches">
+                  {t.swatches.map((c, i) => (
+                    <span key={i} style={{ background: c }} />
+                  ))}
+                </div>
+                <div className="row between" style={{ alignItems: "baseline", width: "100%" }}>
+                  <strong>{t.label}</strong>
+                  {current === t.key && (
+                    <span className="pill teal" style={{ fontSize: 9, padding: "1px 6px" }}>active</span>
+                  )}
+                </div>
+                <small className="muted">{t.desc}</small>
+                <div className="row" style={{ gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+                  {t.tags.slice(0, 3).map((x) => (
+                    <span
+                      key={x}
+                      style={{
+                        fontSize: 9,
+                        padding: "1px 6px",
+                        borderRadius: 4,
+                        background: "var(--bg-elev-2)",
+                        color: "var(--text-faint)",
+                      }}
+                    >
+                      {x}
+                    </span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
