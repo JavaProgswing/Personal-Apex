@@ -4,20 +4,44 @@ import ScheduleEditor from "../ScheduleEditor.jsx";
 import WeeklyGoalsEditor from "../WeeklyGoalsEditor.jsx";
 import { prettyAppName } from "../../lib/appName.js";
 
+// 7 high-level groups. Each group renders one or more legacy "tabs" as
+// labelled sections inside a single scrollable column. This dramatically
+// cuts visual noise vs the old 12-chip strip while keeping every setting
+// reachable.
 const TABS = [
-  { key: "schedule",  label: "Schedule" },
-  { key: "activity",  label: "Activity" },
-  { key: "wellbeing", label: "Mobile wellbeing" },
-  { key: "goals",     label: "Weekly goals" },
-  { key: "cp",        label: "Competitive programming" },
-  { key: "ollama",    label: "Ollama" },
-  { key: "spotify",   label: "Spotify" },
-  { key: "appearance", label: "Appearance" },
-  { key: "notifications", label: "Notifications" },
-  { key: "github",    label: "GitHub" },
-  { key: "seed",      label: "Seed content" },
-  { key: "backup",    label: "Backup" },
+  { key: "schedule",      label: "Schedule",     icon: "📅" },
+  { key: "activity",      label: "Activity",     icon: "📊" },
+  { key: "goals",         label: "Goals",        icon: "🎯" },
+  { key: "integrations",  label: "Integrations", icon: "🔌" },
+  { key: "appearance",    label: "Appearance",   icon: "🎨" },
+  { key: "notifications", label: "Notifications", icon: "🔔" },
+  { key: "data",          label: "Data",         icon: "💾" },
 ];
+
+// Tiny presentational helper for in-tab section headers, so the merged
+// content doesn't read as one big wall.
+function SectionHeader({ title, hint }) {
+  return (
+    <div style={{ marginTop: 18, marginBottom: 8 }}>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: 1.4,
+          color: "var(--text-faint)",
+          textTransform: "uppercase",
+        }}
+      >
+        {title}
+      </div>
+      {hint && (
+        <small className="muted" style={{ display: "block", marginTop: 2 }}>
+          {hint}
+        </small>
+      )}
+    </div>
+  );
+}
 
 export default function Settings() {
   const [tab, setTab] = useState("schedule");
@@ -39,26 +63,124 @@ export default function Settings() {
       <h1 className="page-title">Settings</h1>
       <p className="page-sub">Local-only. All keys stored in SQLite at Documents/Apex.</p>
 
-      <div className="chip-row" style={{ marginBottom: 16, gap: 6, flexWrap: "wrap" }}>
-        {TABS.map((t) => (
-          <button key={t.key} className={"chip" + (tab === t.key ? " active" : "")} onClick={() => setTab(t.key)}>
-            {t.label}
-          </button>
-        ))}
+      <div
+        className="settings-tabs"
+        style={{
+          display: "flex",
+          gap: 4,
+          padding: 4,
+          marginBottom: 18,
+          background: "var(--bg-elev)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          overflowX: "auto",
+        }}
+      >
+        {TABS.map((t) => {
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 14px",
+                borderRadius: 8,
+                border: "none",
+                background: active ? "var(--bg)" : "transparent",
+                color: active ? "var(--text)" : "var(--text-dim)",
+                fontWeight: active ? 600 : 500,
+                fontSize: 13,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                boxShadow: active ? "0 1px 2px rgba(0,0,0,0.15)" : "none",
+                transition: "background 120ms",
+              }}
+            >
+              <span aria-hidden style={{ fontSize: 14 }}>{t.icon}</span>
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
-      {tab === "schedule"  && <ScheduleTab all={all} setAll={setAll} save={save} setMsg={setMsg} />}
-      {tab === "activity"  && <ActivityTab all={all} setAll={setAll} save={save} setMsg={setMsg} />}
-      {tab === "wellbeing" && <WellbeingTab all={all} setAll={setAll} save={save} setMsg={setMsg} />}
-      {tab === "goals"     && <WeeklyGoalsEditor />}
-      {tab === "cp"        && <CpTab all={all} setAll={setAll} save={save} />}
-      {tab === "ollama"    && <OllamaTab all={all} setAll={setAll} save={save} />}
-      {tab === "spotify"   && <SpotifyTab setMsg={setMsg} />}
-      {tab === "appearance" && <AppearanceTab all={all} setAll={setAll} save={save} />}
+      {tab === "schedule" && (
+        <ScheduleTab all={all} setAll={setAll} save={save} setMsg={setMsg} />
+      )}
+
+      {tab === "activity" && (
+        <>
+          <SectionHeader
+            title="Activity tracking"
+            hint="What counts as productive vs distraction, idle thresholds, manual entries."
+          />
+          <ActivityTab all={all} setAll={setAll} save={save} setMsg={setMsg} />
+          <SectionHeader
+            title="Mobile wellbeing"
+            hint="Phone usage caps and mobile-app overrides imported from Digital Wellbeing."
+          />
+          <WellbeingTab all={all} setAll={setAll} save={save} setMsg={setMsg} />
+        </>
+      )}
+
+      {tab === "goals" && (
+        <>
+          <SectionHeader
+            title="Weekly goals"
+            hint="Targets that show up on the dashboard and feed the AI."
+          />
+          <WeeklyGoalsEditor />
+          <SectionHeader
+            title="Competitive programming"
+            hint="LeetCode / Codeforces handles + the daily problem cadence."
+          />
+          <CpTab all={all} setAll={setAll} save={save} />
+        </>
+      )}
+
+      {tab === "integrations" && (
+        <>
+          <SectionHeader
+            title="Local AI · Ollama"
+            hint="The local model used for plan-day, recommendations, and the evening review."
+          />
+          <OllamaTab all={all} setAll={setAll} save={save} />
+          <SectionHeader
+            title="Spotify"
+            hint="Connect Spotify, pick a focus playlist, control playback from the dashboard."
+          />
+          <SpotifyTab setMsg={setMsg} />
+          <SectionHeader
+            title="GitHub"
+            hint="Username / token used for contribution counts and recent activity."
+          />
+          <GithubTab all={all} setAll={setAll} save={save} />
+        </>
+      )}
+
+      {tab === "appearance" && (
+        <AppearanceTab all={all} setAll={setAll} save={save} />
+      )}
+
       {tab === "notifications" && <NotificationsTab />}
-      {tab === "github"    && <GithubTab all={all} setAll={setAll} save={save} />}
-      {tab === "seed"      && <SeedTab setMsg={setMsg} />}
-      {tab === "backup"    && <BackupTab setMsg={setMsg} />}
+
+      {tab === "data" && (
+        <>
+          <SectionHeader
+            title="Backup"
+            hint="Export and restore the SQLite database. Local-only, no cloud."
+          />
+          <BackupTab setMsg={setMsg} />
+          <SectionHeader
+            title="Seed content"
+            hint="Populate the app with sample tasks, classes, and habits."
+          />
+          <SeedTab setMsg={setMsg} />
+        </>
+      )}
 
       {msg && <div style={{ position: "fixed", bottom: 20, right: 20 }} className="pill teal">{msg}</div>}
     </>
@@ -1694,7 +1816,7 @@ function SpotifyTab({ setMsg }) {
             <small className="muted">No focus playlist set yet.</small>
           )}
 
-          <div className="row" style={{ gap: 8, marginTop: 10, alignItems: "center" }}>
+          <div className="row" style={{ gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
             <label className="switch" title="Start the focus playlist on productive timer">
               <input
                 type="checkbox"
@@ -1704,7 +1826,57 @@ function SpotifyTab({ setMsg }) {
               />
               <span>Auto-play on productive timer</span>
             </label>
+            <button
+              className="ghost xsmall"
+              type="button"
+              disabled={!status.focusPlaylistUri}
+              onClick={async () => {
+                setMsg("Testing focus playlist…");
+                const r = await api.spotify.playFocusPlaylist();
+                if (r?.ok) {
+                  setMsg(`Playing on ${r.device || "active device"}.`);
+                } else if (r?.code === "NO_DEVICES" || r?.code === "NO_ACTIVE_DEVICE") {
+                  setMsg("No active Spotify device. Open Spotify on your desktop or phone, then try again.");
+                } else if (r?.code === "PREMIUM_REQUIRED") {
+                  setMsg("Spotify Premium is required for remote playback.");
+                } else {
+                  setMsg("Test failed: " + (r?.error || "unknown"));
+                }
+              }}
+              title="Try playing the focus playlist right now"
+            >
+              Test play
+            </button>
+            <button
+              className="ghost xsmall"
+              type="button"
+              onClick={async () => {
+                const r = await api.spotify.devices();
+                if (!r?.ok) {
+                  setMsg("Couldn't list devices: " + (r?.error || "unknown"));
+                  return;
+                }
+                if (!r.devices.length) {
+                  setMsg("No Spotify devices found. Open Spotify somewhere first.");
+                  return;
+                }
+                const lines = r.devices.map(
+                  (d) => `${d.is_active ? "● " : "○ "}${d.name} (${d.type})`,
+                );
+                setMsg("Devices: " + lines.join(" · "));
+              }}
+              title="Show which Spotify devices are reachable right now"
+            >
+              Show devices
+            </button>
           </div>
+
+          <small className="hint" style={{ display: "block", marginTop: 8 }}>
+            Auto-play needs an active Spotify session (desktop app, phone, or
+            web player) and a Premium account. If nothing's open, Apex will
+            try to wake the desktop app — but starting Spotify yourself is
+            most reliable.
+          </small>
 
           <hr className="soft" />
 
@@ -1727,27 +1899,61 @@ function SpotifyTab({ setMsg }) {
               className="spotify-playlist-grid"
               style={{ marginTop: 10 }}
             >
-              {(searchResults.length > 0 ? searchResults : playlists).map((p) => (
-                <button
-                  key={p.uri}
-                  type="button"
-                  className="spotify-playlist-card"
-                  onClick={() => pickPlaylist(p)}
-                  title={`Set as focus playlist · ${p.tracks} tracks`}
-                >
-                  {p.image ? (
-                    <img src={p.image} alt="" />
-                  ) : (
-                    <div className="spotify-playlist-fallback">♪</div>
-                  )}
-                  <div className="spotify-playlist-meta">
-                    <strong>{p.name}</strong>
-                    <small className="muted">
-                      {p.owner ? `by ${p.owner} · ` : ""}{p.tracks} tracks
-                    </small>
-                  </div>
-                </button>
-              ))}
+              {(searchResults.length > 0 ? searchResults : playlists).map((p) => {
+                const isLiked = p.synthetic && p.uri === "apex:liked-songs";
+                const isPrivate = p.private && !p.synthetic;
+                return (
+                  <button
+                    key={p.uri}
+                    type="button"
+                    className={
+                      "spotify-playlist-card" +
+                      (isLiked ? " liked" : "") +
+                      (isPrivate ? " private" : "")
+                    }
+                    onClick={() => pickPlaylist(p)}
+                    title={`Set as focus playlist · ${p.tracks} tracks`}
+                  >
+                    {p.image ? (
+                      <img src={p.image} alt="" />
+                    ) : (
+                      <div
+                        className="spotify-playlist-fallback"
+                        style={
+                          isLiked
+                            ? {
+                                background:
+                                  "linear-gradient(135deg, #4f1d8c, #aa2bd4)",
+                                color: "#fff",
+                              }
+                            : undefined
+                        }
+                      >
+                        {isLiked ? "♥" : "♪"}
+                      </div>
+                    )}
+                    <div className="spotify-playlist-meta">
+                      <strong>
+                        {p.name}
+                        {isPrivate && (
+                          <span
+                            className="pill gray"
+                            style={{ marginLeft: 6, fontSize: 9 }}
+                            title="Private playlist"
+                          >
+                            private
+                          </span>
+                        )}
+                      </strong>
+                      <small className="muted">
+                        {isLiked
+                          ? `${p.tracks} liked songs`
+                          : `${p.owner ? `by ${p.owner} · ` : ""}${p.tracks} tracks`}
+                      </small>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1761,31 +1967,61 @@ function SpotifyTab({ setMsg }) {
 // + reduced-motion toggles if we add them later.
 function AppearanceTab({ all, setAll, save }) {
   const current = all["ui.theme"] || "library";
+  const customAccent = all["ui.customAccent"] || "";
+  // Group themes so the grid stays organised at a glance.
   const THEMES = [
-    {
-      key: "library",
-      label: "Library",
+    // Originals
+    { key: "library", label: "Library", group: "Warm",
       desc: "Warm coffee + honey amber. Default.",
-      swatches: ["#14110f", "#e8a23a", "#f5ecdc", "#7fc8a9"],
-    },
-    {
-      key: "slate",
-      label: "Slate",
-      desc: "Cool blue-grey + electric cyan. Sharp, dev-tool.",
-      swatches: ["#0e1116", "#56b6c2", "#e6edf3", "#7ee787"],
-    },
-    {
-      key: "paper",
-      label: "Paper",
+      swatches: ["#14110f", "#e8a23a", "#f5ecdc", "#7fc8a9"] },
+    { key: "slate", label: "Slate", group: "Cool",
+      desc: "Cool blue-grey + electric cyan.",
+      swatches: ["#0e1116", "#56b6c2", "#e6edf3", "#7ee787"] },
+    { key: "paper", label: "Paper", group: "Light",
       desc: "Light cream parchment. Day mode.",
-      swatches: ["#f4ecd8", "#9c5b25", "#3a2f1f", "#5a8761"],
-    },
-    {
-      key: "mono",
-      label: "Mono",
+      swatches: ["#f4ecd8", "#9c5b25", "#3a2f1f", "#5a8761"] },
+    { key: "mono", label: "Mono", group: "Mono",
       desc: "Greyscale + single accent. High contrast.",
-      swatches: ["#0a0a0a", "#ffffff", "#888888", "#e8a23a"],
-    },
+      swatches: ["#0a0a0a", "#ffffff", "#888888", "#e8a23a"] },
+    // New dark variants
+    { key: "dracula", label: "Dracula", group: "Cool",
+      desc: "Cult-classic purple-pink night palette.",
+      swatches: ["#282a36", "#bd93f9", "#ff79c6", "#50fa7b"] },
+    { key: "nord", label: "Nord", group: "Cool",
+      desc: "Arctic blue, frost teal — calm and matte.",
+      swatches: ["#2e3440", "#88c0d0", "#eceff4", "#a3be8c"] },
+    { key: "solarized-dark", label: "Solarized Dark", group: "Cool",
+      desc: "Classic developer palette. Easy on the eyes.",
+      swatches: ["#002b36", "#268bd2", "#fdf6e3", "#b58900"] },
+    { key: "midnight", label: "Midnight", group: "Cool",
+      desc: "Pure black + electric blue. Maximum contrast.",
+      swatches: ["#000000", "#3b82f6", "#e5e5e5", "#22c55e"] },
+    { key: "forest", label: "Forest", group: "Warm",
+      desc: "Deep green + moss + amber accents.",
+      swatches: ["#0f1a14", "#5a8761", "#d4c285", "#9c5b25"] },
+    { key: "sunset", label: "Sunset", group: "Warm",
+      desc: "Burnt orange and dusk pink over plum.",
+      swatches: ["#1a0e1f", "#f97316", "#ec4899", "#fbbf24"] },
+    // New light
+    { key: "solarized-light", label: "Solarized Light", group: "Light",
+      desc: "Companion light palette to Solarized Dark.",
+      swatches: ["#fdf6e3", "#268bd2", "#586e75", "#b58900"] },
+  ];
+
+  // Curated accents the user can set on top of any theme.
+  const ACCENTS = [
+    { name: "honey",      hex: "#e8a23a" },
+    { name: "amber",      hex: "#fbbf24" },
+    { name: "tangerine",  hex: "#f97316" },
+    { name: "rose",       hex: "#ec4899" },
+    { name: "violet",     hex: "#8b5cf6" },
+    { name: "indigo",     hex: "#6366f1" },
+    { name: "sky",        hex: "#3b82f6" },
+    { name: "cyan",       hex: "#06b6d4" },
+    { name: "emerald",    hex: "#10b981" },
+    { name: "lime",       hex: "#84cc16" },
+    { name: "ruby",       hex: "#ef4444" },
+    { name: "ivory",      hex: "#e6edf3" },
   ];
 
   function setTheme(key) {
@@ -1793,32 +2029,110 @@ function AppearanceTab({ all, setAll, save }) {
     save("ui.theme", key);
     document.documentElement.dataset.theme = key;
   }
+  function setAccent(hex) {
+    const v = (hex || "").trim();
+    setAll({ ...all, "ui.customAccent": v });
+    save("ui.customAccent", v);
+    if (v) {
+      document.documentElement.style.setProperty("--accent", v);
+      // Derive a subtle softer + stronger sibling so cards/borders stay coherent.
+      document.documentElement.style.setProperty("--accent-soft", v + "33");
+      document.documentElement.style.setProperty("--accent-strong", v);
+    } else {
+      document.documentElement.style.removeProperty("--accent");
+      document.documentElement.style.removeProperty("--accent-soft");
+      document.documentElement.style.removeProperty("--accent-strong");
+    }
+  }
+
+  // Group themes for a tidy "Dark / Light / Accent" arrangement.
+  const groups = useMemo(() => {
+    const dark = ["library", "slate", "mono", "dracula", "nord", "solarized-dark", "midnight", "forest", "sunset"];
+    return {
+      Dark:  THEMES.filter((t) => dark.includes(t.key)),
+      Light: THEMES.filter((t) => !dark.includes(t.key)),
+    };
+  }, []);
 
   return (
-    <div className="card" style={{ marginBottom: 16 }}>
-      <div className="card-title">Appearance · theme</div>
-      <small className="hint" style={{ display: "block", marginBottom: 12 }}>
-        Pick a palette. Switch any time — the change is instant.
-      </small>
-      <div className="theme-grid">
-        {THEMES.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            className={"theme-card" + (current === t.key ? " active" : "")}
-            onClick={() => setTheme(t.key)}
-          >
-            <div className="theme-swatches">
-              {t.swatches.map((c, i) => (
-                <span key={i} style={{ background: c }} />
+    <>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-title">Theme</div>
+        <small className="hint" style={{ display: "block", marginBottom: 12 }}>
+          Switch any time — changes are instant. Pick a base palette below,
+          then optionally override the accent colour.
+        </small>
+
+        {Object.entries(groups).map(([groupName, list]) => (
+          <div key={groupName} style={{ marginBottom: 14 }}>
+            <small className="muted" style={{ display: "block", marginBottom: 6, letterSpacing: 0.5 }}>
+              {groupName.toUpperCase()}
+            </small>
+            <div className="theme-grid">
+              {list.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  className={"theme-card" + (current === t.key ? " active" : "")}
+                  onClick={() => setTheme(t.key)}
+                >
+                  <div className="theme-swatches">
+                    {t.swatches.map((c, i) => (
+                      <span key={i} style={{ background: c }} />
+                    ))}
+                  </div>
+                  <strong>{t.label}</strong>
+                  <small className="muted">{t.desc}</small>
+                </button>
               ))}
             </div>
-            <strong>{t.label}</strong>
-            <small className="muted">{t.desc}</small>
-          </button>
+          </div>
         ))}
       </div>
-    </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-title">Custom accent</div>
+        <small className="hint" style={{ display: "block", marginBottom: 12 }}>
+          Override the accent colour from the active theme. Leave blank to
+          inherit from the theme.
+        </small>
+        <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {ACCENTS.map((a) => (
+            <button
+              key={a.hex}
+              type="button"
+              className={"accent-chip" + (customAccent === a.hex ? " active" : "")}
+              onClick={() => setAccent(a.hex)}
+              title={`${a.name} · ${a.hex}`}
+              style={{
+                background: a.hex,
+                width: 28, height: 28, borderRadius: "50%",
+                border: customAccent === a.hex
+                  ? "3px solid var(--text)"
+                  : "2px solid var(--border)",
+                cursor: "pointer",
+              }}
+            />
+          ))}
+          <span className="muted" style={{ marginLeft: 8 }}>or</span>
+          <input
+            type="color"
+            value={customAccent || "#e8a23a"}
+            onChange={(e) => setAccent(e.target.value)}
+            style={{ width: 36, height: 32, padding: 0, border: "1px solid var(--border)", borderRadius: 6, background: "transparent" }}
+            title="Pick any colour"
+          />
+          {customAccent && (
+            <button className="ghost xsmall" type="button" onClick={() => setAccent("")}>
+              Reset
+            </button>
+          )}
+          {customAccent && (
+            <code style={{ marginLeft: 4, fontSize: 11 }}>{customAccent}</code>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
 

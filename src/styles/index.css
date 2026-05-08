@@ -5180,3 +5180,50 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.spotify-playlist-card.liked {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #aa2bd4 12%, var(--bg-elev)),
+    var(--bg-elev)
+  );
+  border-color: color-mix(in srgb, #aa2bd4 35%, var(--border));
+}
+.spotify-playlist-card.liked:hover {
+  border-color: #aa2bd4;
+}
+.spotify-playlist-card.private .spotify-playlist-meta strong::after {
+  /* the private pill is rendered inline already; this is just a hook */
+}
+
+/* Now-playing extra controls — make active toggles glow with the accent. */
+.np-controls button.active {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+.np-controls input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-elev-2);
+  outline: none;
+}
+.np-controls input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+}
+
+/* Custom-accent chips in Appearance settings. */
+.accent-chip {
+  outline: none;
+  transition: transform 100ms ease, border-color 100ms ease;
+  padding: 0;
+}
+.accent-chip:hover { transform: scale(1.1); }
+.accent-chip.active { transform: scale(1.15); }

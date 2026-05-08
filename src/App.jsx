@@ -28,12 +28,19 @@ export default function App() {
   // Hydrate the theme on mount. Default = "library". Stored in settings as
   // `ui.theme`; applied via a data attr on <html> so the CSS theme blocks
   // pick it up. Settings → Appearance writes to the same key.
+  // Also re-apply any custom accent override stored at `ui.customAccent`.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const t = (await api.settings?.get?.("ui.theme")) || "library";
         if (!cancelled) document.documentElement.dataset.theme = t;
+        const accent = await api.settings?.get?.("ui.customAccent");
+        if (!cancelled && accent) {
+          document.documentElement.style.setProperty("--accent", accent);
+          document.documentElement.style.setProperty("--accent-soft", accent + "33");
+          document.documentElement.style.setProperty("--accent-strong", accent);
+        }
       } catch {
         document.documentElement.dataset.theme = "library";
       }

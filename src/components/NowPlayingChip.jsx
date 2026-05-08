@@ -12,6 +12,14 @@ export default function NowPlayingChip() {
   const [now, setNow] = useState(null);         // nowPlaying() result
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Extra player state — we read these from /me/player so the popover can
+  // reflect shuffle / repeat / volume without an extra round-trip per click.
+  const [playerState, setPlayerState] = useState({
+    shuffle: false,
+    repeat: "off", // "off" | "track" | "context"
+    volume: 70,
+    saved: false, // is the current track in Liked Songs?
+  });
   const wrapRef = useRef(null);
   const pollRef = useRef(null);
 
@@ -22,6 +30,25 @@ export default function NowPlayingChip() {
       if (s?.connected) {
         const np = await api.spotify.nowPlaying();
         setNow(np?.ok ? np : null);
+        // Best-effort: read player state for shuffle/repeat/volume + the
+        // saved flag for the current track. If any call fails, fall back
+        // to the previous local state silently.
+        try {
+          const devs = await api.spotify.devices();
+          const active = (devs?.devices || []).find((d) => d.is_active);
+          let saved = false;
+          if (np?.item?.uri) {
+            try {
+              const r = await api.spotify.isTrackSaved(np.item.uri);
+              saved = !!r?.saved;
+            } catch { /* ignore */ }
+          }
+          setPlayerState((p) => ({
+            ...p,
+            volume: active ? (active.volume_percent ?? p.volume) : p.volume,
+            saved,
+          }));
+        } catch { /* ignore */ }
       } else {
         setNow(null);
       }
@@ -125,6 +152,61 @@ export default function NowPlayingChip() {
             <button className="ghost" onClick={() => press("next")} disabled={busy} title="Next">
               ⏭
             </button>
+          </div>
+          <div className="np-controls" style={{ marginTop: 4 }}>
+            <button
+              className={"ghost xsmall" + (playerState.shuffle ? " active" : "")}
+              title="Shuffle"
+              disabled={busy}
+              onClick={async () => {
+                const next = !playerState.shuffle;
+                setPlayerState((p) => ({ ...p, shuffle: next }));
+                await api.spotify.setShuffle(next);
+              }}
+            >
+              🔀
+            </button>
+            <button
+              className={"ghost xsmall" + (playerState.repeat !== "off" ? " active" : "")}
+              title={`Repeat: ${playerState.repeat}`}
+              disabled={busy}
+              onClick={async () => {
+                const order = ["off", "context", "track"];
+                const next = order[(order.indexOf(playerState.repeat) + 1) % 3];
+                setPlayerState((p) => ({ ...p, repeat: next }));
+                await api.spotify.setRepeat(next);
+              }}
+            >
+              {playerState.repeat === "track" ? "🔂" : "🔁"}
+            </button>
+            <button
+              className={"ghost xsmall" + (playerState.saved ? " active" : "")}
+              title={playerState.saved ? "Remove from Liked Songs" : "Save to Liked Songs"}
+              disabled={busy || !it.uri}
+              onClick={async () => {
+                if (!it.uri) return;
+                const next = !playerState.saved;
+                setPlayerState((p) => ({ ...p, saved: next }));
+                if (next) await api.spotify.saveTrack(it.uri);
+                else await api.spotify.unsaveTrack(it.uri);
+              }}
+            >
+              {playerState.saved ? "♥" : "♡"}
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={playerState.volume}
+              title={`Volume: ${playerState.volume}%`}
+              style={{ flex: 1, marginLeft: 6 }}
+              onChange={(e) => {
+                const v = +e.target.value;
+                setPlayerState((p) => ({ ...p, volume: v }));
+              }}
+              onMouseUp={(e) => api.spotify.setVolume(+e.target.value)}
+              onTouchEnd={(e) => api.spotify.setVolume(+e.target.value)}
+            />
           </div>
           {status.focusPlaylistUri && (
             <button

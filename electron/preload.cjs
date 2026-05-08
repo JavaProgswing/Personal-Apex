@@ -257,5 +257,20 @@ contextBridge.exposeInMainWorld("apex", {
     setAutoPlayFocus: (on) => invoke("spotify:setAutoPlayFocus", on),
     setClientId: (id) => invoke("spotify:setClientId", id),
     playFocusPlaylist: () => invoke("spotify:playFocusPlaylist"),
+    devices: () => invoke("spotify:devices"),
+    // expanded controls
+    setShuffle: (on) => invoke("spotify:setShuffle", on),
+    setRepeat: (state) => invoke("spotify:setRepeat", state),
+    setVolume: (v) => invoke("spotify:setVolume", v),
+    seek: (ms) => invoke("spotify:seek", ms),
+    transferTo: (id, startPlaying) =>
+      invoke("spotify:transferTo", id, startPlaying),
+    queue: (uri) => invoke("spotify:queue", uri),
+    recent: (n) => invoke("spotify:recent", n),
+    topTracks: (n) => invoke("spotify:topTracks", n),
+    likedSongs: (n) => invoke("spotify:likedSongs", n),
+    isTrackSaved: (uri) => invoke("spotify:isTrackSaved", uri),
+    saveTrack: (uri) => invoke("spotify:saveTrack", uri),
+    unsaveTrack: (uri) => invoke("spotify:unsaveTrack", uri),
   },
 });

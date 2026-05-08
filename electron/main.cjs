@@ -1280,11 +1280,31 @@ ipcMain.handle("spotify:setAutoPlayFocus", (_e, on) =>
 );
 ipcMain.handle("spotify:setClientId", (_e, id) => spotify.setClientId(id));
 ipcMain.handle("spotify:playFocusPlaylist", () => spotify.playFocusPlaylist());
+ipcMain.handle("spotify:devices", () => spotify.devices());
+ipcMain.handle("spotify:setShuffle", (_e, on) => spotify.setShuffle(!!on));
+ipcMain.handle("spotify:setRepeat", (_e, state) => spotify.setRepeat(state));
+ipcMain.handle("spotify:setVolume", (_e, v) => spotify.setVolume(v));
+ipcMain.handle("spotify:seek", (_e, ms) => spotify.seek(ms));
+ipcMain.handle("spotify:transferTo", (_e, id, startPlaying) =>
+  spotify.transferTo(id, !!startPlaying),
+);
+ipcMain.handle("spotify:queue", (_e, uri) => spotify.addToQueue(uri));
+ipcMain.handle("spotify:recent", (_e, n) => spotify.recent(n));
+ipcMain.handle("spotify:topTracks", (_e, n) => spotify.topTracks(n));
+ipcMain.handle("spotify:likedSongs", (_e, n) => spotify.likedSongs(n));
+ipcMain.handle("spotify:isTrackSaved", (_e, uri) => spotify.isTrackSaved(uri));
+ipcMain.handle("spotify:saveTrack", (_e, uri) => spotify.saveTrack(uri));
+ipcMain.handle("spotify:unsaveTrack", (_e, uri) => spotify.unsaveTrack(uri));
 
 // Auto-play the focus playlist when a productive timer starts, if the
 // user opted in. Hooked here (not in the timer service) so we don't
 // couple Spotify into the core data layer.
-function _maybeStartFocusMusic(timerRow) {
+//
+// Spotify's Web API can only control playback on an *active* device.
+// If nothing is open we try to wake the desktop app (best-effort) and
+// retry once. If that still fails, we surface a real notification so
+// the user knows WHY the music didn't start instead of silently dying.
+async function _maybeStartFocusMusic(timerRow) {
   try {
     if (!timerRow) return;
     if (db.getSetting("spotify.autoPlayFocus") !== "1") return;
@@ -1295,7 +1315,37 @@ function _maybeStartFocusMusic(timerRow) {
     if (!isProductive) return;
     const uri = db.getSetting("spotify.focusPlaylistUri");
     if (!uri) return;
-    spotify.play(uri).catch(() => {});
+
+    let r = await spotify.play(uri);
+    if (!r?.ok && (r?.code === "NO_DEVICES" || r?.code === "NO_ACTIVE_DEVICE")) {
+      // No reachable Spotify session -- try to wake the desktop app,
+      // wait a couple seconds for it to register, then retry.
+      try { await shell.openExternal("spotify:"); } catch { /* may not be installed */ }
+      await new Promise((res) => setTimeout(res, 2500));
+      r = await spotify.play(uri);
+    }
+
+    if (!r?.ok) {
+      const reason =
+        r?.code === "PREMIUM_REQUIRED"
+          ? "Spotify Premium is required for remote playback."
+          : r?.code === "NO_DEVICES" || r?.code === "NO_ACTIVE_DEVICE"
+            ? "Open Spotify on your desktop or phone, then start the timer again."
+            : (r?.error || "Could not start the focus playlist.");
+      console.warn("[spotify.autoPlay] failed:", reason);
+      try {
+        notifier.fire({
+          title: "Couldn't start focus music",
+          body: reason,
+          kind: "spotify",
+        });
+      } catch { /* notifier may be off */ }
+    } else {
+      console.log(
+        "[spotify.autoPlay] started focus playlist on",
+        r.device || "active device",
+      );
+    }
   } catch (e) {
     console.warn("[spotify.autoPlay]", e.message);
   }
