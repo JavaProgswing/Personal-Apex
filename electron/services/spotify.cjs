@@ -25,10 +25,13 @@
 const crypto = require("node:crypto");
 const db = require("./db.cjs");
 
-// Public client ID — works for personal use up to Spotify's quota. The user
-// can override in Settings by pasting their own from a Spotify Dev app.
-const DEFAULT_CLIENT_ID = "0a8b0c2c4f8d4a18b2c0f6c0fcd3e7a4";
-const REDIRECT_URI = "http://127.0.0.1:7787/spotify/callback";
+// Default Spotify Developer App credentials. The redirect URI MUST be
+// whitelisted in the Spotify dashboard — http://127.0.0.1:8000/callback
+// is the one configured for the bundled client. Users with their own app
+// can override the client_id in Settings → Integrations → Spotify; the
+// redirect URI for any custom app must match this exact string.
+const DEFAULT_CLIENT_ID = "ec8d15f5377e40699a668cbd38643a3c";
+const REDIRECT_URI = "http://127.0.0.1:8000/callback";
 const SCOPES = [
   "user-read-currently-playing",
   "user-read-playback-state",
@@ -89,7 +92,7 @@ function _clearTokens() {
 
 // ─── auth ───────────────────────────────────────────────────────────────
 let _authResolver = null; // resolves the open `connect` promise from the redirect
-async function connect({ BrowserWindow }) {
+async function connect({ BrowserWindow, session }) {
   if (_authResolver) {
     return { ok: false, error: "Auth window already open" };
   }
@@ -110,13 +113,17 @@ async function connect({ BrowserWindow }) {
 
   return await new Promise((resolve) => {
     let resolved = false;
+    // Use a fresh in-memory partition each time so old Spotify cookies
+    // never interfere with a new auth attempt — a stale state token from
+    // a previous session was a cause of the white-screen mystery.
+    const partition = `spotify-auth-${Date.now()}`;
     const win = new BrowserWindow({
       width: 520,
       height: 700,
       title: "Sign in to Spotify",
       autoHideMenuBar: true,
       webPreferences: {
-        partition: "persist:spotify",
+        partition,
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -130,18 +137,18 @@ async function connect({ BrowserWindow }) {
       try { win.destroy(); } catch {}
       resolve(val);
     };
-    const onNav = async (_evt, url) => {
-      if (!url.startsWith(REDIRECT_URI)) return;
+
+    const handleCallback = async (callbackUrl) => {
       try {
-        const u = new URL(url);
+        const u = new URL(callbackUrl);
         const code = u.searchParams.get("code");
         const returnedState = u.searchParams.get("state");
         const error = u.searchParams.get("error");
         if (error) return finish({ ok: false, error });
-        if (!code || returnedState !== state) {
-          return finish({ ok: false, error: "Bad state or missing code" });
+        if (!code) return finish({ ok: false, error: "No code in callback URL" });
+        if (returnedState !== state) {
+          return finish({ ok: false, error: "State mismatch — auth aborted" });
         }
-        // Exchange code → tokens.
         const tokRes = await fetch("https://accounts.spotify.com/api/token", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -156,11 +163,14 @@ async function connect({ BrowserWindow }) {
         if (!tokRes.ok) {
           let body = "";
           try { body = await tokRes.text(); } catch {}
-          return finish({ ok: false, error: `Token exchange ${tokRes.status}: ${body.slice(0, 200)}` });
+          return finish({
+            ok: false,
+            error: `Token exchange ${tokRes.status}: ${body.slice(0, 200)}`,
+          });
         }
         const tok = await tokRes.json();
         _saveTokens(tok);
-        // Best-effort fetch user profile to display in settings.
+        // Best-effort: fetch profile to display in settings.
         try {
           const me = await _fetchAuthed("/me");
           if (me?.id) {
@@ -173,8 +183,45 @@ async function connect({ BrowserWindow }) {
         finish({ ok: false, error: err.message });
       }
     };
+
+    // PRIMARY interception path: webRequest.onBeforeRequest fires BEFORE
+    // the BrowserWindow tries to actually fetch the (non-existent)
+    // 127.0.0.1 URL, so we never see the blank ERR_CONNECTION_REFUSED
+    // page that was breaking the previous flow. We cancel the request
+    // outright and pull the code out of the URL.
+    const ses = session.fromPartition(partition);
+    try {
+      ses.webRequest.onBeforeRequest(
+        { urls: [`${REDIRECT_URI}*`] },
+        (details, cb) => {
+          cb({ cancel: true });
+          handleCallback(details.url);
+        },
+      );
+    } catch (e) {
+      console.warn("[spotify] webRequest filter failed:", e.message);
+    }
+
+    // Backup paths: in case webRequest doesn't fire (some Electron
+    // versions / scenarios), also listen for navigation events. Each
+    // calls handleCallback, which is idempotent via the `resolved` guard.
+    const onNav = (_evt, url) => {
+      if (typeof url === "string" && url.startsWith(REDIRECT_URI)) {
+        try { _evt?.preventDefault?.(); } catch {}
+        handleCallback(url);
+      }
+    };
     win.webContents.on("will-redirect", onNav);
+    win.webContents.on("will-navigate", onNav);
     win.webContents.on("did-navigate", onNav);
+    // If the browser DID try to load the localhost URL and failed, the
+    // failed-load event still carries the URL — recover the code from it.
+    win.webContents.on("did-fail-load", (_e, _code, _desc, validatedURL) => {
+      if (typeof validatedURL === "string" && validatedURL.startsWith(REDIRECT_URI)) {
+        handleCallback(validatedURL);
+      }
+    });
+
     win.on("closed", () => finish({ ok: false, error: "User closed the auth window" }));
     win.loadURL(authUrl);
   });

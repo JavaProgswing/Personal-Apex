@@ -1660,7 +1660,7 @@ function SpotifyTab({ setMsg }) {
             </div>
             <small className="hint" style={{ marginTop: 4 }}>
               If using your own, register{" "}
-              <code>http://127.0.0.1:7787/spotify/callback</code> as a redirect URI.
+              <code>http://127.0.0.1:8000/callback</code> as a redirect URI.
             </small>
           </div>
         )}

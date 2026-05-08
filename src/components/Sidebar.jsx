@@ -41,12 +41,6 @@ export default function Sidebar({ current, onChange, pages, onPalette }) {
             ⌘K
           </span>
         </div>
-        <small
-          className="hint"
-          style={{ padding: "10px 8px 0", display: "block" }}
-        >
-          v0.1 · local-first
-        </small>
       </div>
     </aside>
   );

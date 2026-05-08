@@ -1258,7 +1258,9 @@ ipcMain.handle("repo:summarizeRecentChanges", async (_e, { repoId, fullName, day
 
 // --- spotify (oauth + transport) ---
 const spotify = require("./services/spotify.cjs");
-ipcMain.handle("spotify:connect", () => spotify.connect({ BrowserWindow }));
+ipcMain.handle("spotify:connect", () =>
+  spotify.connect({ BrowserWindow, session }),
+);
 ipcMain.handle("spotify:disconnect", () => spotify.disconnect());
 ipcMain.handle("spotify:status", () => spotify.status());
 ipcMain.handle("spotify:nowPlaying", () => spotify.nowPlaying());
