@@ -25,6 +25,22 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
 
+  // Hydrate the theme on mount. Default = "library". Stored in settings as
+  // `ui.theme`; applied via a data attr on <html> so the CSS theme blocks
+  // pick it up. Settings → Appearance writes to the same key.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const t = (await api.settings?.get?.("ui.theme")) || "library";
+        if (!cancelled) document.documentElement.dataset.theme = t;
+      } catch {
+        document.documentElement.dataset.theme = "library";
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     const onKey = (e) => {
       const mod = e.ctrlKey || e.metaKey;

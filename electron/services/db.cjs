@@ -37,7 +37,7 @@ function migrateFromLegacy() {
       if (fs.existsSync(legacy + ext))
         fs.copyFileSync(legacy + ext, target + ext);
     }
-    console.log("[db] migrated legacy DB from", legacy, "→", target);
+    console.log("[db] migrated legacy DB from", legacy, "->", target);
   } catch (err) {
     console.warn("[db] legacy migration failed (non-fatal):", err.message);
   }
@@ -197,7 +197,7 @@ function runMigrations() {
       });
       if (oldRows.length > 0) {
         tx(oldRows);
-        console.log("[db] migrated", oldRows.length, "interests → tasks");
+        console.log("[db] migrated", oldRows.length, "interests -> tasks");
       }
     }
   }

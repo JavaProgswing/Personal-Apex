@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../../lib/api.js";
 import LiveTimer from "../LiveTimer.jsx";
+import NowPlayingChip from "../NowPlayingChip.jsx";
 import { MarkdownBlock } from "../../lib/markdown.jsx";
 import { prettyAppName } from "../../lib/appName.js";
 
@@ -549,6 +550,7 @@ export default function Dashboard({ go }) {
           </p>
         </div>
         <div className="dashboard-actions">
+          <NowPlayingChip />
           <button className="primary small" onClick={() => setShowAskApex(true)}>
             Ask Apex
           </button>

@@ -11,6 +11,9 @@ const TABS = [
   { key: "goals",     label: "Weekly goals" },
   { key: "cp",        label: "Competitive programming" },
   { key: "ollama",    label: "Ollama" },
+  { key: "spotify",   label: "Spotify" },
+  { key: "appearance", label: "Appearance" },
+  { key: "notifications", label: "Notifications" },
   { key: "github",    label: "GitHub" },
   { key: "seed",      label: "Seed content" },
   { key: "backup",    label: "Backup" },
@@ -50,6 +53,9 @@ export default function Settings() {
       {tab === "goals"     && <WeeklyGoalsEditor />}
       {tab === "cp"        && <CpTab all={all} setAll={setAll} save={save} />}
       {tab === "ollama"    && <OllamaTab all={all} setAll={setAll} save={save} />}
+      {tab === "spotify"   && <SpotifyTab setMsg={setMsg} />}
+      {tab === "appearance" && <AppearanceTab all={all} setAll={setAll} save={save} />}
+      {tab === "notifications" && <NotificationsTab />}
       {tab === "github"    && <GithubTab all={all} setAll={setAll} save={save} />}
       {tab === "seed"      && <SeedTab setMsg={setMsg} />}
       {tab === "backup"    && <BackupTab setMsg={setMsg} />}
@@ -1524,6 +1530,429 @@ function BackupTab({ setMsg }) {
       <small className="hint" style={{ display: "block", marginTop: 8 }}>
         Importing replaces your current database. The old DB is kept next to it as <code>apex-prev.sqlite</code>.
       </small>
+    </div>
+  );
+}
+
+
+// ─── SpotifyTab ─────────────────────────────────────────────────────────
+// OAuth connect/disconnect, focus playlist picker, auto-play toggle.
+function SpotifyTab({ setMsg }) {
+  const [status, setStatus] = useState({ connected: false });
+  const [busy, setBusy] = useState(false);
+  const [playlists, setPlaylists] = useState([]);
+  const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [showCustomId, setShowCustomId] = useState(false);
+  const [customId, setCustomId] = useState("");
+
+  async function refresh() {
+    const s = await api.spotify.status();
+    setStatus(s || {});
+    setCustomId(s?.clientId || "");
+  }
+  useEffect(() => { refresh(); }, []);
+
+  async function connect() {
+    setBusy(true);
+    setMsg("Opening Spotify auth…");
+    try {
+      const r = await api.spotify.connect();
+      if (r?.ok) {
+        setMsg("Connected to Spotify.");
+        await refresh();
+      } else {
+        setMsg("Connect failed: " + (r?.error || "unknown"));
+      }
+    } finally { setBusy(false); }
+  }
+  async function disconnect() {
+    if (!confirm("Disconnect Spotify and forget tokens?")) return;
+    await api.spotify.disconnect();
+    await refresh();
+    setMsg("Disconnected.");
+  }
+  async function loadMine() {
+    const r = await api.spotify.myPlaylists(50);
+    setPlaylists(r?.items || []);
+  }
+  async function doSearch() {
+    if (!search.trim()) { setSearchResults([]); return; }
+    const r = await api.spotify.searchPlaylists(search.trim(), 20);
+    setSearchResults(r?.items || []);
+  }
+  async function pickPlaylist(p) {
+    await api.spotify.setFocusPlaylist({ uri: p.uri, name: p.name });
+    setMsg(`Focus playlist set: ${p.name}`);
+    await refresh();
+  }
+  async function clearPlaylist() {
+    await api.spotify.setFocusPlaylist({ uri: null });
+    await refresh();
+  }
+  async function toggleAutoPlay() {
+    await api.spotify.setAutoPlayFocus(!status.autoPlayFocus);
+    await refresh();
+  }
+  async function saveClientId() {
+    await api.spotify.setClientId(customId.trim() || null);
+    setMsg(customId.trim() ? "Custom client ID saved." : "Reverted to default client ID.");
+    await refresh();
+  }
+
+  return (
+    <>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="row between" style={{ alignItems: "baseline" }}>
+          <div>
+            <div className="card-title" style={{ margin: 0 }}>Spotify · connection</div>
+            <small className="hint" style={{ display: "block", marginTop: 4 }}>
+              Sign in once via OAuth (PKCE — no password handling on our side).
+              Apex can show what's playing and start a focus playlist when a
+              productive timer kicks off.
+            </small>
+          </div>
+          <span
+            className={"pill " + (status.connected ? "teal" : "gray")}
+            title={status.connected ? "Connected" : "Not connected"}
+          >
+            {status.connected ? "connected" : "off"}
+          </span>
+        </div>
+
+        <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+          {!status.connected ? (
+            <button className="primary" onClick={connect} disabled={busy}>
+              {busy ? "Opening…" : "Connect Spotify"}
+            </button>
+          ) : (
+            <>
+              <small className="muted">
+                Signed in as{" "}
+                <strong>{status.user?.displayName || status.user?.id || "—"}</strong>
+              </small>
+              <button className="ghost" onClick={disconnect}>Disconnect</button>
+            </>
+          )}
+          <button
+            type="button"
+            className="ghost xsmall"
+            onClick={() => setShowCustomId((v) => !v)}
+            title="Use your own Spotify Developer client_id"
+          >
+            {showCustomId ? "Hide advanced" : "Advanced"}
+          </button>
+        </div>
+
+        {showCustomId && (
+          <div className="form-row" style={{ marginTop: 10 }}>
+            <label>
+              Custom client_id <small className="muted">(optional — yours from developer.spotify.com)</small>
+            </label>
+            <div className="row" style={{ gap: 6 }}>
+              <input
+                value={customId}
+                placeholder="leave blank to use the bundled default"
+                onChange={(e) => setCustomId(e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <button className="ghost" onClick={saveClientId}>Save</button>
+            </div>
+            <small className="hint" style={{ marginTop: 4 }}>
+              If using your own, register{" "}
+              <code>http://127.0.0.1:7787/spotify/callback</code> as a redirect URI.
+            </small>
+          </div>
+        )}
+      </div>
+
+      {status.connected && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-title">Focus playlist</div>
+          <small className="hint" style={{ display: "block", marginBottom: 10 }}>
+            Pick a playlist to start automatically when a productive Live Timer
+            kicks off.
+          </small>
+
+          {status.focusPlaylistUri ? (
+            <div
+              className="row"
+              style={{
+                alignItems: "center",
+                gap: 10,
+                padding: "8px 10px",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                background: "var(--bg-elev)",
+              }}
+            >
+              <span style={{ fontSize: 18 }}>▶</span>
+              <strong style={{ flex: 1 }}>{status.focusPlaylistName || "(unnamed)"}</strong>
+              <button className="ghost xsmall" onClick={clearPlaylist}>Clear</button>
+            </div>
+          ) : (
+            <small className="muted">No focus playlist set yet.</small>
+          )}
+
+          <div className="row" style={{ gap: 8, marginTop: 10, alignItems: "center" }}>
+            <label className="switch" title="Start the focus playlist on productive timer">
+              <input
+                type="checkbox"
+                checked={!!status.autoPlayFocus}
+                onChange={toggleAutoPlay}
+                disabled={!status.focusPlaylistUri}
+              />
+              <span>Auto-play on productive timer</span>
+            </label>
+          </div>
+
+          <hr className="soft" />
+
+          <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button className="ghost" onClick={loadMine}>My playlists</button>
+            <input
+              value={search}
+              placeholder="Search playlists…"
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && doSearch()}
+              style={{ flex: 1, minWidth: 200 }}
+            />
+            <button className="ghost" onClick={doSearch} disabled={!search.trim()}>
+              Search
+            </button>
+          </div>
+
+          {(searchResults.length > 0 || playlists.length > 0) && (
+            <div
+              className="spotify-playlist-grid"
+              style={{ marginTop: 10 }}
+            >
+              {(searchResults.length > 0 ? searchResults : playlists).map((p) => (
+                <button
+                  key={p.uri}
+                  type="button"
+                  className="spotify-playlist-card"
+                  onClick={() => pickPlaylist(p)}
+                  title={`Set as focus playlist · ${p.tracks} tracks`}
+                >
+                  {p.image ? (
+                    <img src={p.image} alt="" />
+                  ) : (
+                    <div className="spotify-playlist-fallback">♪</div>
+                  )}
+                  <div className="spotify-playlist-meta">
+                    <strong>{p.name}</strong>
+                    <small className="muted">
+                      {p.owner ? `by ${p.owner} · ` : ""}{p.tracks} tracks
+                    </small>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── AppearanceTab ──────────────────────────────────────────────────────
+// Theme picker with live preview swatches. Also exposes the legacy density
+// + reduced-motion toggles if we add them later.
+function AppearanceTab({ all, setAll, save }) {
+  const current = all["ui.theme"] || "library";
+  const THEMES = [
+    {
+      key: "library",
+      label: "Library",
+      desc: "Warm coffee + honey amber. Default.",
+      swatches: ["#14110f", "#e8a23a", "#f5ecdc", "#7fc8a9"],
+    },
+    {
+      key: "slate",
+      label: "Slate",
+      desc: "Cool blue-grey + electric cyan. Sharp, dev-tool.",
+      swatches: ["#0e1116", "#56b6c2", "#e6edf3", "#7ee787"],
+    },
+    {
+      key: "paper",
+      label: "Paper",
+      desc: "Light cream parchment. Day mode.",
+      swatches: ["#f4ecd8", "#9c5b25", "#3a2f1f", "#5a8761"],
+    },
+    {
+      key: "mono",
+      label: "Mono",
+      desc: "Greyscale + single accent. High contrast.",
+      swatches: ["#0a0a0a", "#ffffff", "#888888", "#e8a23a"],
+    },
+  ];
+
+  function setTheme(key) {
+    setAll({ ...all, "ui.theme": key });
+    save("ui.theme", key);
+    document.documentElement.dataset.theme = key;
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-title">Appearance · theme</div>
+      <small className="hint" style={{ display: "block", marginBottom: 12 }}>
+        Pick a palette. Switch any time — the change is instant.
+      </small>
+      <div className="theme-grid">
+        {THEMES.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            className={"theme-card" + (current === t.key ? " active" : "")}
+            onClick={() => setTheme(t.key)}
+          >
+            <div className="theme-swatches">
+              {t.swatches.map((c, i) => (
+                <span key={i} style={{ background: c }} />
+              ))}
+            </div>
+            <strong>{t.label}</strong>
+            <small className="muted">{t.desc}</small>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── NotificationsTab ───────────────────────────────────────────────────
+function NotificationsTab() {
+  const [status, setStatus] = useState({});
+  const [busy, setBusy] = useState(false);
+
+  async function refresh() {
+    const s = await api.notifier.status();
+    setStatus(s || {});
+  }
+  useEffect(() => { refresh(); }, []);
+
+  async function setEnabled(on) {
+    await api.notifier.setEnabled(on);
+    refresh();
+  }
+  async function setLeads(opts) {
+    await api.notifier.setLeads(opts);
+    refresh();
+  }
+  async function test() {
+    setBusy(true);
+    await api.notifier.test();
+    setBusy(false);
+  }
+  async function setKindFlag(key, on) {
+    await api.notifier.setKindEnabled?.(key, on);
+    refresh();
+  }
+  async function setHour(key, h) {
+    await api.notifier.setHour?.(key, h);
+    refresh();
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="row between" style={{ alignItems: "center" }}>
+        <div>
+          <div className="card-title" style={{ margin: 0 }}>Notifications</div>
+          <small className="hint">
+            Local desktop notifications. {status.supported ? "Supported." : "Your OS reports no notification support."}
+          </small>
+        </div>
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={!!status.enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+          />
+          <span>{status.enabled ? "On" : "Off"}</span>
+        </label>
+      </div>
+
+      <hr className="soft" />
+
+      <div className="grid-2">
+        <div className="form-row">
+          <label>Class start lead (min)</label>
+          <input
+            type="number"
+            min={1}
+            max={60}
+            value={status.classLeadMinutes ?? 10}
+            onChange={(e) =>
+              setLeads({ classLeadMinutes: +e.target.value || 10 })
+            }
+          />
+        </div>
+        <div className="form-row">
+          <label>Deadline lead (min)</label>
+          <input
+            type="number"
+            min={5}
+            max={240}
+            value={status.deadlineLeadMinutes ?? 60}
+            onChange={(e) =>
+              setLeads({ deadlineLeadMinutes: +e.target.value || 60 })
+            }
+          />
+        </div>
+      </div>
+
+      <hr className="soft" />
+
+      <div className="grid-2">
+        <div className="form-row">
+          <label>Morning digest hour (0-23)</label>
+          <input
+            type="number"
+            min={0}
+            max={23}
+            value={status.morningHour ?? 8}
+            onChange={(e) => setHour("morningHour", +e.target.value || 8)}
+          />
+        </div>
+        <div className="form-row">
+          <label>Evening review hour (0-23)</label>
+          <input
+            type="number"
+            min={0}
+            max={23}
+            value={status.eveningHour ?? 21}
+            onChange={(e) => setHour("eveningHour", +e.target.value || 21)}
+          />
+        </div>
+      </div>
+
+      <div style={{ marginTop: 8 }}>
+        {[
+          ["class", "Class starts"],
+          ["deadline", "Task deadlines"],
+          ["timer", "Timer expiry"],
+          ["morning", "Morning digest"],
+          ["evening", "Evening review prompt"],
+          ["streak", "Habit streak at-risk"],
+        ].map(([k, label]) => (
+          <label key={k} className="switch" style={{ display: "flex", margin: "4px 0" }}>
+            <input
+              type="checkbox"
+              checked={status.kinds?.[k] !== false}
+              onChange={(e) => setKindFlag(k, e.target.checked)}
+            />
+            <span>{label}</span>
+          </label>
+        ))}
+      </div>
+
+      <div className="row" style={{ marginTop: 14 }}>
+        <button className="ghost" onClick={test} disabled={busy}>
+          Send test notification
+        </button>
+      </div>
     </div>
   );
 }

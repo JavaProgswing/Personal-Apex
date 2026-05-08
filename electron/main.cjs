@@ -19,6 +19,18 @@ const { pathToFileURL } = require("node:url");
 
 const isDev = process.env.NODE_ENV === "development";
 
+// On Windows, the default console codepage is cp437/cp1252 — Node writes
+// UTF-8 bytes and any non-ASCII glyph (em-dash, ellipsis, arrows) renders
+// as mojibake (the "ΓÇª" / "ΓÇö" garble). Switch to UTF-8 (chcp 65001) at
+// boot so console output stays readable. Best-effort, fire-and-forget.
+if (process.platform === "win32") {
+  try {
+    require("node:child_process").exec("chcp 65001", { windowsHide: true });
+    process.stdout.setDefaultEncoding?.("utf8");
+    process.stderr.setDefaultEncoding?.("utf8");
+  } catch { /* harmless if it fails */ }
+}
+
 // ---- Services (lazy-loaded so startup stays snappy) --------------------------
 const db = require("./services/db.cjs");
 const timetable = require("./services/timetable.cjs");
@@ -183,36 +195,58 @@ app.whenReady().then(async () => {
     }
   } catch (e) { console.warn("[ollama] autostart skipped:", e.message); }
 
-  // Auto-sync SRM Academia on startup — pulls latest timetable + calendar
-  // so the schedule is always fresh. Fires 4s after boot so it doesn't race
-  // with DB init / window creation. Controlled by srm.autoSync setting
-  // (defaults ON). Pushes "srm:synced" to the renderer on success so the
-  // Dashboard refreshes without a page reload.
+  // Auto-sync SRM Academia on startup. Network stack often isn't ready in
+  // the first few seconds after launch (cold boot, wake-from-sleep, Wi-Fi
+  // reconnect), so we wait 30s before the first try. On transient network
+  // failure (TypeError / fetch failed), we retry once 30s later instead
+  // of dumping noisy errors to the console. Default OFF so a quiet boot
+  // is the norm — flip srm.autoSync = "1" in Settings to opt in.
   try {
     const srmAutoSync = db.getSetting("srm.autoSync");
-    if (srmAutoSync !== "0") {
-      setTimeout(async () => {
+    if (srmAutoSync === "1") {
+      const isTransient = (msg) =>
+        /fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|network/i
+          .test(String(msg || ""));
+      const attempt = async (n) => {
         try {
           _ensureSrmSessionAttached();
           const loggedIn = await srm.isLoggedIn().catch(() => false);
           if (!loggedIn) {
-            console.log("[srm] autoSync: no active session — skipping");
+            console.log("[srm] autoSync: no active session, skipping");
             return;
           }
-          console.log("[srm] autoSync: starting…");
+          console.log(`[srm] autoSync: attempt ${n}`);
           const res = await srm.syncAll({});
           if (res?.ok) {
-            console.log(`[srm] autoSync: done — ${res.classes} classes, batch ${res.student?.batch}`);
-            emit("srm:synced", { classes: res.classes, batch: res.student?.batch });
-          } else {
-            console.warn("[srm] autoSync: failed —", res?.error);
+            console.log(
+              `[srm] autoSync: done -- ${res.classes} classes, batch ${res.student?.batch}`,
+            );
+            emit("srm:synced", {
+              classes: res.classes,
+              batch: res.student?.batch,
+            });
+            return;
           }
+          if (n < 2 && isTransient(res?.error)) {
+            console.log("[srm] autoSync: transient failure, retrying in 30s");
+            setTimeout(() => attempt(n + 1), 30_000);
+            return;
+          }
+          console.warn("[srm] autoSync: failed --", res?.error);
         } catch (e) {
+          if (n < 2 && isTransient(e.message)) {
+            console.log("[srm] autoSync: transient throw, retrying in 30s");
+            setTimeout(() => attempt(n + 1), 30_000);
+            return;
+          }
           console.warn("[srm] autoSync threw:", e.message);
         }
-      }, 4000);
+      };
+      setTimeout(() => attempt(1), 30_000);
     }
-  } catch (e) { console.warn("[srm] autoSync setup skipped:", e.message); }
+  } catch (e) {
+    console.warn("[srm] autoSync setup skipped:", e.message);
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -595,6 +629,10 @@ const notifier = require("./services/notifier.cjs");
 ipcMain.handle("notifier:status", () => notifier.getStatus());
 ipcMain.handle("notifier:setEnabled", (_e, on) => notifier.setEnabled(on));
 ipcMain.handle("notifier:setLeads", (_e, opts) => notifier.setLeads(opts || {}));
+ipcMain.handle("notifier:setHour", (_e, key, h) => notifier.setHour(key, h));
+ipcMain.handle("notifier:setKindEnabled", (_e, kind, on) =>
+  notifier.setKindEnabled(kind, on),
+);
 ipcMain.handle("notifier:test", () => {
   const ok = notifier.fire({
     title: "Apex test notification",
@@ -912,6 +950,10 @@ ipcMain.handle("timer:start", (_e, p) => {
   if (existing) finishTimerToActivity(existing, "interrupted");
   const row = db.startTimer(p || {});
   broadcastTimer(row);
+  // Optional Spotify focus playlist auto-play. Defined later in the file
+  // (after the spotify service is required); guarded with typeof so we
+  // don't blow up if the helper hasn't loaded yet.
+  if (typeof _maybeStartFocusMusic === "function") _maybeStartFocusMusic(row);
   return row;
 });
 ipcMain.handle("timer:extend", (_e, mins) => {
@@ -1213,6 +1255,49 @@ ipcMain.handle("repo:summarizeRecentChanges", async (_e, { repoId, fullName, day
     return { ok: false, error: err.message, code: err.code };
   }
 });
+
+// --- spotify (oauth + transport) ---
+const spotify = require("./services/spotify.cjs");
+ipcMain.handle("spotify:connect", () => spotify.connect({ BrowserWindow }));
+ipcMain.handle("spotify:disconnect", () => spotify.disconnect());
+ipcMain.handle("spotify:status", () => spotify.status());
+ipcMain.handle("spotify:nowPlaying", () => spotify.nowPlaying());
+ipcMain.handle("spotify:play", (_e, uri) => spotify.play(uri));
+ipcMain.handle("spotify:pause", () => spotify.pause());
+ipcMain.handle("spotify:next", () => spotify.next());
+ipcMain.handle("spotify:previous", () => spotify.previous());
+ipcMain.handle("spotify:myPlaylists", (_e, limit) => spotify.myPlaylists(limit));
+ipcMain.handle("spotify:searchPlaylists", (_e, q, limit) =>
+  spotify.searchPlaylists(q, limit),
+);
+ipcMain.handle("spotify:setFocusPlaylist", (_e, p) =>
+  spotify.setFocusPlaylist(p || {}),
+);
+ipcMain.handle("spotify:setAutoPlayFocus", (_e, on) =>
+  spotify.setAutoPlayFocus(!!on),
+);
+ipcMain.handle("spotify:setClientId", (_e, id) => spotify.setClientId(id));
+ipcMain.handle("spotify:playFocusPlaylist", () => spotify.playFocusPlaylist());
+
+// Auto-play the focus playlist when a productive timer starts, if the
+// user opted in. Hooked here (not in the timer service) so we don't
+// couple Spotify into the core data layer.
+function _maybeStartFocusMusic(timerRow) {
+  try {
+    if (!timerRow) return;
+    if (db.getSetting("spotify.autoPlayFocus") !== "1") return;
+    const productiveKinds = new Set(["task", "study", "habit"]);
+    const isProductive =
+      timerRow.category === "productive" ||
+      productiveKinds.has(timerRow.kind);
+    if (!isProductive) return;
+    const uri = db.getSetting("spotify.focusPlaylistUri");
+    if (!uri) return;
+    spotify.play(uri).catch(() => {});
+  } catch (e) {
+    console.warn("[spotify.autoPlay]", e.message);
+  }
+}
 
 // --- external links ---
 ipcMain.handle("ext:open", (_e, url) => shell.openExternal(url));
