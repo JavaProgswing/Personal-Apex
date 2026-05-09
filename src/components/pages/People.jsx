@@ -468,20 +468,29 @@ function SrmLeaderboardButton({ onSynced }) {
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState(null);
   const [msg, setMsg] = useState(null);
+  const [progress, setProgress] = useState(null); // {stage, page, totalSoFar, ...}
 
   useEffect(() => {
     api.cp.srmLeaderboardLastSync?.().then((r) => setLast(r)).catch(() => {});
+    // Stream progress events from the scraper so the user can see it
+    // working through pages instead of staring at "Syncing…" for 30s.
+    const off = api.cp.onSrmLeaderboardProgress?.((info) => setProgress(info));
+    return () => { try { off?.(); } catch {} };
   }, []);
 
   async function run() {
     setBusy(true);
+    setProgress(null);
     setMsg("Fetching SRM leaderboard…");
     try {
       const r = await api.cp.syncSrmLeaderboard();
       if (!r?.ok) {
         setMsg("Failed: " + (r?.error || "unknown"));
       } else {
-        setMsg(`Imported ${r.imported}, updated ${r.updated} of ${r.total}.`);
+        const partialNote = r.partial ? " (partial — JS-paginated source)" : "";
+        setMsg(
+          `Imported ${r.imported}, updated ${r.updated} of ${r.total}${partialNote}.`,
+        );
         setLast({ at: r.fetchedAt, ...r });
         onSynced?.();
       }
@@ -489,8 +498,27 @@ function SrmLeaderboardButton({ onSynced }) {
       setMsg("Error: " + e.message);
     } finally {
       setBusy(false);
-      setTimeout(() => setMsg(null), 4000);
+      setProgress(null);
+      setTimeout(() => setMsg(null), 5000);
     }
+  }
+
+  // Build the live label.
+  let label = "Sync SRM leaderboard";
+  if (busy) {
+    if (progress?.stage === "paginating" && progress.page) {
+      label = `Page ${progress.page}… (${progress.totalSoFar || 0} so far)`;
+    } else if (progress?.stage === "trying-json") {
+      label = "Trying JSON endpoint…";
+    } else if (progress?.stage === "parsing-next-data") {
+      label = "Parsing initial data…";
+    } else if (progress?.stage === "done") {
+      label = `Got ${progress.total || 0}…`;
+    } else {
+      label = "Syncing leaderboard…";
+    }
+  } else if (msg) {
+    label = msg;
   }
 
   return (
@@ -500,11 +528,11 @@ function SrmLeaderboardButton({ onSynced }) {
       disabled={busy}
       title={
         last
-          ? `Last sync: ${new Date(last.at).toLocaleString()} · ${last.imported || 0} new, ${last.updated || 0} updated`
+          ? `Last sync: ${new Date(last.at).toLocaleString()} · ${last.imported || 0} new, ${last.updated || 0} updated · via ${last.via || "?"}`
           : "Pull classmates from lead.aakarsh.xyz/leaderboard/master"
       }
     >
-      {busy ? "Syncing leaderboard…" : msg || "Sync SRM leaderboard"}
+      {label}
     </button>
   );
 }

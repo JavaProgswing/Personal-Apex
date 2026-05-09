@@ -862,12 +862,24 @@ ipcMain.handle("cp:submissions", (_e, personId, limit) =>
 ipcMain.handle("cp:self", () => cp.fetchSelf());
 ipcMain.handle("cp:selfCached", () => cp.selfCached());
 ipcMain.handle("cp:leaderboard", (_e, platform) => db.cpLeaderboard(platform));
-ipcMain.handle("cp:fetchSrmLeaderboard", () => cp.fetchSrmLeaderboard());
-ipcMain.handle("cp:syncSrmLeaderboard", async () => {
-  const r = await cp.fetchSrmLeaderboard();
+ipcMain.handle("cp:fetchSrmLeaderboard", (event) =>
+  cp.fetchSrmLeaderboard((info) => {
+    try { event.sender.send("cp:srmLeaderboardProgress", info); } catch {}
+  }),
+);
+ipcMain.handle("cp:syncSrmLeaderboard", async (event) => {
+  const r = await cp.fetchSrmLeaderboard((info) => {
+    try { event.sender.send("cp:srmLeaderboardProgress", info); } catch {}
+  });
   if (!r.ok) return r;
   const synced = cp.syncSrmLeaderboardToPeople(r.rows);
-  return { ...synced, fetchedAt: r.fetchedAt };
+  return {
+    ...synced,
+    fetchedAt: r.fetchedAt,
+    via: r.via,
+    partial: !!r.partial,
+    note: r.note,
+  };
 });
 ipcMain.handle(
   "cp:srmLeaderboardLastSync",

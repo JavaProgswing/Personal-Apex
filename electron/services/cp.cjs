@@ -304,49 +304,42 @@ async function fetchAllPeople(onProgress) {
 
 // ───────────────────────────────────────────────────────────────────────────
 // SRM Leaderboard scraper · https://lead.aakarsh.xyz/leaderboard/master
-// The page renders the table client-side from a JSON endpoint, but the
-// final DOM is fully present in the HTML response we can pull with a plain
-// GET. We parse the <table> with a tiny regex pipeline (no jsdom dep).
-//
-// Each row gives us:  rank, name, leetcode handle, registration, dept/sec,
-//                     easy, medium, hard, points, total
+// The page is a Next.js app with client-side pagination (483 rows / 49
+// pages by default). To get the full list we try, in order:
+//   1) Pull the embedded `__NEXT_DATA__` script — Next.js inlines initial
+//      SSR state there, often containing the entire dataset. One request,
+//      done. Cheapest path.
+//   2) Hit common JSON endpoints (`/api/leaderboard`, `/api/master`, the
+//      `_next/data/<buildId>/leaderboard/master.json` file).
+//   3) Fall back to walking pages by HTML — fetch ?page=1, ?page=2, … and
+//      merge unique rows (deduped by registration number) until we get
+//      either an empty page or hit a 60-page safety cap.
+// All three converge into the same row schema:
+//   {rank, name, leetcodeHandle, registration, section, easy, medium,
+//    hard, points, total}
 // ───────────────────────────────────────────────────────────────────────────
-async function fetchSrmLeaderboard() {
-  const url = 'https://lead.aakarsh.xyz/leaderboard/master';
-  let html;
-  try {
-    const res = await safeFetch(url, { headers: { Accept: 'text/html,application/xhtml+xml' } });
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-    html = await res.text();
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
+const SRM_LEADERBOARD_BASE = 'https://lead.aakarsh.xyz/leaderboard/master';
+const SRM_LEADERBOARD_PAGE_CAP = 60; // safety upper bound
 
-  // Pull each <tr> inside <tbody>. We don't load a full DOM parser to avoid
-  // the dep — the page's row format is stable enough for a regex pass.
+const stripTags = (s) =>
+  String(s || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+// Parse one HTML chunk's <tbody> rows.
+function parseSrmTbody(html) {
   const tbodyMatch = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
-  if (!tbodyMatch) return { ok: false, error: 'no leaderboard tbody found' };
+  if (!tbodyMatch) return [];
   const rowMatches = [...tbodyMatch[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
-  if (!rowMatches.length) return { ok: false, error: 'no rows in tbody' };
-
-  const stripTags = (s) =>
-    s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-
   const rows = [];
   for (const m of rowMatches) {
     const cells = [...m[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((x) => x[1]);
     if (cells.length < 9) continue;
 
-    // Rank may include "🥇 1" / "🥈 2" / "🥉 3" / "4" — pull the trailing int.
     const rankRaw = stripTags(cells[0]);
     const rank = parseInt(rankRaw.match(/(\d+)/)?.[1] || '0', 10);
-
-    // Student cell has TWO sub-divs: name + leetcode handle.
     const nameMatch  = cells[1].match(/<div class="font-medium"[^>]*>([\s\S]*?)<\/div>/i);
     const handleMatch = cells[1].match(/break-all"[^>]*>([\s\S]*?)<\/div>/i);
     const name   = nameMatch  ? stripTags(nameMatch[1])  : stripTags(cells[1]);
     const handle = handleMatch ? stripTags(handleMatch[1]) : null;
-
     const reg     = stripTags(cells[2]);
     const section = stripTags(cells[3]);
     const easy    = parseInt(stripTags(cells[4]) || '0', 10);
@@ -354,21 +347,276 @@ async function fetchSrmLeaderboard() {
     const hard    = parseInt(stripTags(cells[6]) || '0', 10);
     const points  = parseInt(stripTags(cells[7]) || '0', 10);
     const total   = parseInt(stripTags(cells[8]) || '0', 10);
-
     if (!name || !reg) continue;
-    rows.push({
-      rank,
-      name,
-      leetcodeHandle: handle,
-      registration: reg,
-      section,
-      easy, medium, hard,
-      points,
-      total,
+    rows.push({ rank, name, leetcodeHandle: handle, registration: reg, section, easy, medium, hard, points, total });
+  }
+  return rows;
+}
+
+// Best-effort: extract the full list from __NEXT_DATA__ if it exists.
+// Different Next.js builds nest data under varying paths; we walk the
+// tree looking for any array of objects that look like leaderboard rows.
+function extractFromNextData(html) {
+  const m = html.match(
+    /<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i,
+  );
+  if (!m) return null;
+  let payload;
+  try { payload = JSON.parse(m[1]); } catch { return null; }
+
+  const candidates = [];
+  function looksLikeRow(o) {
+    if (!o || typeof o !== 'object') return false;
+    return (
+      ('registration' in o || 'reg' in o || 'regNo' in o || 'registrationNo' in o) &&
+      ('name' in o || 'student' in o || 'studentName' in o)
+    );
+  }
+  function walk(node) {
+    if (Array.isArray(node)) {
+      if (node.length > 5 && node.every(looksLikeRow)) candidates.push(node);
+      else node.forEach(walk);
+    } else if (node && typeof node === 'object') {
+      Object.values(node).forEach(walk);
+    }
+  }
+  walk(payload);
+  if (!candidates.length) return null;
+
+  // Pick the longest candidate.
+  const best = candidates.reduce((a, b) => (b.length > a.length ? b : a));
+  return best.map((o, i) => ({
+    rank: +o.rank || i + 1,
+    name: stripTags(o.name || o.student || o.studentName || ''),
+    leetcodeHandle: stripTags(o.leetcode || o.handle || o.leetcodeHandle || o.leetcodeUsername || '') || null,
+    registration: stripTags(o.registration || o.reg || o.regNo || o.registrationNo || ''),
+    section: stripTags(o.section || o.deptSec || o.dept_section || ''),
+    easy: +o.easy || 0,
+    medium: +o.medium || 0,
+    hard: +o.hard || 0,
+    points: +o.points || +o.score || 0,
+    total: +o.total || +o.totalSolved || 0,
+  })).filter((r) => r.name && r.registration);
+}
+
+// Best-effort: try the JSON endpoint Next.js exposes per-route.
+async function tryJsonEndpoints(html) {
+  const buildIdMatch = html.match(/"buildId":"([^"]+)"/);
+  const candidateUrls = [];
+  if (buildIdMatch) {
+    candidateUrls.push(
+      `https://lead.aakarsh.xyz/_next/data/${buildIdMatch[1]}/leaderboard/master.json`,
+    );
+  }
+  candidateUrls.push(
+    'https://lead.aakarsh.xyz/api/leaderboard?type=master',
+    'https://lead.aakarsh.xyz/api/leaderboard/master',
+    'https://lead.aakarsh.xyz/api/master',
+  );
+  for (const u of candidateUrls) {
+    try {
+      const res = await safeFetch(u, { headers: { Accept: 'application/json' } });
+      if (!res.ok) continue;
+      const data = await res.json();
+      // Walk the JSON the same way we walk __NEXT_DATA__.
+      const candidates = [];
+      function looks(o) {
+        return o && typeof o === 'object' &&
+          ('registration' in o || 'reg' in o || 'regNo' in o) &&
+          ('name' in o || 'student' in o);
+      }
+      function walk(node) {
+        if (Array.isArray(node)) {
+          if (node.length > 5 && node.every(looks)) candidates.push(node);
+          else node.forEach(walk);
+        } else if (node && typeof node === 'object') {
+          Object.values(node).forEach(walk);
+        }
+      }
+      walk(data);
+      if (!candidates.length) continue;
+      const best = candidates.reduce((a, b) => (b.length > a.length ? b : a));
+      return best.map((o, i) => ({
+        rank: +o.rank || i + 1,
+        name: stripTags(o.name || o.student || ''),
+        leetcodeHandle: stripTags(o.leetcode || o.handle || o.leetcodeHandle || '') || null,
+        registration: stripTags(o.registration || o.reg || o.regNo || ''),
+        section: stripTags(o.section || o.deptSec || ''),
+        easy: +o.easy || 0,
+        medium: +o.medium || 0,
+        hard: +o.hard || 0,
+        points: +o.points || +o.score || 0,
+        total: +o.total || +o.totalSolved || 0,
+      })).filter((r) => r.name && r.registration);
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
+// Primary path: hit the documented JSON API (different subdomain than the
+// page itself!) — returns all 483 rows in one shot. The page-walking
+// fallback below stays in place so the integration survives if the API
+// schema or path ever changes.
+const SRM_LEADERBOARD_API =
+  'https://api.lead.aakarsh.xyz/api/leaderboard/master';
+
+async function fetchFromApi() {
+  try {
+    const res = await safeFetch(SRM_LEADERBOARD_API, {
+      headers: { Accept: 'application/json' },
     });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json || json.status !== 'success' || !Array.isArray(json.data)) {
+      return null;
+    }
+    return json.data.map((o, i) => {
+      const stats = o.stats || {};
+      const dept = stripTags(o.department || '');
+      const sec = stripTags(o.section || '');
+      const combined = [dept, sec].filter(Boolean).join(' ');
+      return {
+        rank: +o.rank || i + 1,
+        name: stripTags(o.name || ''),
+        leetcodeHandle: stripTags(o.leetcodeUsername || o.leetcodeHandle || '') || null,
+        registration: stripTags(o.regNo || o.registration || ''),
+        section: combined || sec,
+        easy: +stats.easySolved || 0,
+        medium: +stats.mediumSolved || 0,
+        hard: +stats.hardSolved || 0,
+        points: +stats.points || 0,
+        total: +stats.totalSolved || 0,
+      };
+    }).filter((r) => r.name && r.registration);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSrmLeaderboard(onProgress) {
+  const emit = (info) => { try { onProgress?.(info); } catch {} };
+
+  // Step 0 — primary path: the documented JSON API. One GET, full dataset.
+  emit({ stage: 'trying-api', url: SRM_LEADERBOARD_API });
+  const apiRows = await fetchFromApi();
+  if (apiRows && apiRows.length > 0) {
+    emit({ stage: 'done', via: 'api', total: apiRows.length });
+    return {
+      ok: true,
+      rows: apiRows,
+      fetchedAt: new Date().toISOString(),
+      via: 'api',
+    };
   }
 
-  return { ok: true, rows, fetchedAt: new Date().toISOString() };
+  // Step 1: fall through to HTML scraping if the API ever 404s.
+  let firstPageHtml;
+  try {
+    emit({ stage: 'fetching-home' });
+    const res = await safeFetch(SRM_LEADERBOARD_BASE, {
+      headers: { Accept: 'text/html,application/xhtml+xml' },
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    firstPageHtml = await res.text();
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+
+  // Try __NEXT_DATA__ first.
+  emit({ stage: 'parsing-next-data' });
+  let rows = extractFromNextData(firstPageHtml);
+  if (rows && rows.length > 30) {
+    emit({ stage: 'done', via: 'next-data', total: rows.length });
+    return { ok: true, rows, fetchedAt: new Date().toISOString(), via: 'next-data' };
+  }
+
+  // Try the heuristic JSON endpoints (legacy guesses).
+  emit({ stage: 'trying-json' });
+  rows = await tryJsonEndpoints(firstPageHtml);
+  if (rows && rows.length > 30) {
+    emit({ stage: 'done', via: 'json-fallback', total: rows.length });
+    return { ok: true, rows, fetchedAt: new Date().toISOString(), via: 'json-fallback' };
+  }
+
+  // Fall back to walking pages. The page accepts ?page=N as a query
+  // string; some Next.js apps use ?p=N instead, so we'll try both shapes
+  // for the first page and pick whichever returns a different rowset.
+  emit({ stage: 'paginating', cap: SRM_LEADERBOARD_PAGE_CAP });
+  const seen = new Map(); // registration -> row (dedup)
+  const firstRows = parseSrmTbody(firstPageHtml);
+  for (const r of firstRows) seen.set(r.registration, r);
+  emit({ stage: 'paginating', page: 1, totalSoFar: seen.size });
+
+  // Detect the right query-param shape by trying ?page=2 once.
+  const tryParams = ['page', 'p'];
+  let paramName = null;
+  for (const p of tryParams) {
+    try {
+      const url = `${SRM_LEADERBOARD_BASE}?${p}=2`;
+      const res = await safeFetch(url, {
+        headers: { Accept: 'text/html,application/xhtml+xml' },
+      });
+      if (!res.ok) continue;
+      const html = await res.text();
+      const r = parseSrmTbody(html);
+      if (!r.length) continue;
+      // If page-2 rows differ from page-1, this is the right param.
+      const newOnes = r.filter((x) => !seen.has(x.registration));
+      if (newOnes.length > 0) {
+        paramName = p;
+        for (const row of r) seen.set(row.registration, row);
+        emit({ stage: 'paginating', page: 2, totalSoFar: seen.size, paramName });
+        break;
+      }
+    } catch { /* try next */ }
+  }
+
+  // If neither query param produced new rows, the site doesn't support
+  // server-side pagination via query string — return what we have from
+  // page 1 with a clear note.
+  if (!paramName) {
+    if (seen.size === 0) return { ok: false, error: 'unable to extract rows' };
+    return {
+      ok: true,
+      partial: true,
+      via: 'html-page-1',
+      note: 'Only the first 10 rows are visible without a JS runtime. Install puppeteer / hit the JSON endpoint for the rest.',
+      rows: [...seen.values()],
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  // Walk subsequent pages until empty or until we stop gaining new rows.
+  for (let page = 3; page <= SRM_LEADERBOARD_PAGE_CAP; page++) {
+    const before = seen.size;
+    try {
+      const url = `${SRM_LEADERBOARD_BASE}?${paramName}=${page}`;
+      const res = await safeFetch(url, {
+        headers: { Accept: 'text/html,application/xhtml+xml' },
+      });
+      if (!res.ok) break;
+      const html = await res.text();
+      const r = parseSrmTbody(html);
+      if (!r.length) break;
+      for (const row of r) seen.set(row.registration, row);
+      emit({ stage: 'paginating', page, totalSoFar: seen.size });
+      // Stop when a fetch adds no new rows (we've wrapped past the end).
+      if (seen.size === before) break;
+      // Tiny politeness sleep so we don't hammer the host.
+      await sleep(200);
+    } catch (err) {
+      emit({ stage: 'page-error', page, err: err.message });
+      break;
+    }
+  }
+
+  emit({ stage: 'done', via: paramName, total: seen.size });
+  return {
+    ok: true,
+    rows: [...seen.values()],
+    fetchedAt: new Date().toISOString(),
+    via: `html-${paramName}`,
+  };
 }
 
 // Import / sync rows into the people table. Existing people are matched by
@@ -401,6 +649,11 @@ function syncSrmLeaderboardToPeople(rows = []) {
 
     const tags = ['classmate', 'srm-leaderboard'];
     if (row.section) tags.push(`section:${row.section.toLowerCase().replace(/\s+/g, '-')}`);
+    // The API returns "CTECH" + "H1" separately; we tag both so users can
+    // group by department alone (e.g. all CTECH people) without needing
+    // section granularity.
+    const sectionParts = (row.section || '').trim().split(/\s+/).filter(Boolean);
+    if (sectionParts[0]) tags.push(`dept:${sectionParts[0].toLowerCase()}`);
 
     if (match) {
       // Update existing — top up LC handle if missing, refresh notes.

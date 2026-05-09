@@ -172,6 +172,7 @@ contextBridge.exposeInMainWorld("apex", {
     fetchSrmLeaderboard: () => invoke("cp:fetchSrmLeaderboard"),
     syncSrmLeaderboard: () => invoke("cp:syncSrmLeaderboard"),
     srmLeaderboardLastSync: () => invoke("cp:srmLeaderboardLastSync"),
+    onSrmLeaderboardProgress: (h) => on("cp:srmLeaderboardProgress", h),
   },
   ntl: {
     scrape: (lab) => invoke("ntl:scrape", lab),
