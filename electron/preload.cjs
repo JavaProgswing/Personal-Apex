@@ -166,7 +166,7 @@ contextBridge.exposeInMainWorld("apex", {
     submissions: (id, limit) => invoke("cp:submissions", id, limit),
     self: () => invoke("cp:self"),
     selfCached: () => invoke("cp:selfCached"),
-    leaderboard: (platform) => invoke("cp:leaderboard", platform),
+    leaderboard: (platform, opts) => invoke("cp:leaderboard", platform, opts),
     summarize: (args) => invoke("cp:summarize", args),
     onProgress: (h) => on("cp:progress", h),
     fetchSrmLeaderboard: () => invoke("cp:fetchSrmLeaderboard"),

@@ -1245,7 +1245,7 @@ function recentCpSubmissions(personId, limit = 10) {
 
 // Friends' CP stats for a given platform, ranked by the most useful metric.
 // Returns [{person_id, name, handle, stats, error, fetched_at}] sorted desc.
-function cpLeaderboard(platform) {
+function cpLeaderboard(platform, opts = {}) {
   const rows = db
     .prepare(
       `SELECT cp.*, p.name AS person_name, p.avatar_url
@@ -1253,18 +1253,47 @@ function cpLeaderboard(platform) {
      WHERE cp.platform = ?`,
     )
     .all(platform);
-  const parsed = rows.map((r) => ({
-    person_id: r.person_id,
-    person_name: r.person_name,
-    avatar_url: r.avatar_url,
-    platform: r.platform,
-    handle: r.handle,
-    error: r.error,
-    fetched_at: r.fetched_at,
-    stats: safeJson(r.stats, {}),
-  }));
-  const key = platform === "leetcode" ? "totalSolved" : "rating";
-  parsed.sort((a, b) => (b.stats[key] ?? 0) - (a.stats[key] ?? 0));
+  const parsed = rows.map((r) => {
+    const stats = safeJson(r.stats, {});
+    // Combined score: weight problems-solved + contest-rating so the
+    // ranking reflects both grind AND contest skill. Rating sits on a
+    // 1500-3000 scale, totalSolved on a 0-1000 scale; we scale rating by
+    // 0.1 so a 1500-rated coder gets +150 to their score — meaningful but
+    // not overwhelming. Lets a 200-solved + 2200-rated CFist beat a
+    // 250-solved + unrated grinder.
+    const totalSolved = stats.totalSolved ?? 0;
+    const rating = stats.rating ?? 0;
+    const combinedScore = totalSolved + Math.round(rating * 0.1);
+    return {
+      person_id: r.person_id,
+      person_name: r.person_name,
+      avatar_url: r.avatar_url,
+      platform: r.platform,
+      handle: r.handle,
+      error: r.error,
+      fetched_at: r.fetched_at,
+      stats,
+      // Promote a few fields to top-level so the UI can render them
+      // without re-parsing nested stats every time.
+      rating: rating || null,
+      maxRating: stats.maxRating ?? null,
+      contests: stats.contests ?? null,
+      totalSolved,
+      combinedScore,
+    };
+  });
+  // Sort mode:
+  //   "combined" (default for leetcode) — totalSolved + rating*0.1
+  //   "rating"   (default for cf/cc)    — pure contest rating
+  //   "solved"                          — totalSolved only
+  const sortBy = opts.sortBy ||
+    (platform === "leetcode" ? "combined" : "rating");
+  const cmp = {
+    combined: (a, b) => b.combinedScore - a.combinedScore,
+    rating:   (a, b) => (b.rating || 0) - (a.rating || 0),
+    solved:   (a, b) => b.totalSolved - a.totalSolved,
+  }[sortBy] || ((a, b) => b.combinedScore - a.combinedScore);
+  parsed.sort(cmp);
   return parsed;
 }
 // Alias for parity with UI expectations.

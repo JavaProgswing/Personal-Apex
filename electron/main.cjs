@@ -861,7 +861,9 @@ ipcMain.handle("cp:submissions", (_e, personId, limit) =>
 );
 ipcMain.handle("cp:self", () => cp.fetchSelf());
 ipcMain.handle("cp:selfCached", () => cp.selfCached());
-ipcMain.handle("cp:leaderboard", (_e, platform) => db.cpLeaderboard(platform));
+ipcMain.handle("cp:leaderboard", (_e, platform, opts) =>
+  db.cpLeaderboard(platform, opts || {}),
+);
 ipcMain.handle("cp:fetchSrmLeaderboard", (event) =>
   cp.fetchSrmLeaderboard((info) => {
     try { event.sender.send("cp:srmLeaderboardProgress", info); } catch {}
@@ -1340,14 +1342,19 @@ ipcMain.handle("cp:summarize", async (_e, { personId, name, model } = {}) => {
         try { acc[row.platform] = JSON.parse(row.stats || '{}'); } catch {}
         return acc;
       }, {});
-      submissions = db.recentCpSubmissions?.({ personId, limit: 60 }) || [];
+      // recentCpSubmissions takes positional args (personId, limit). Earlier
+      // code passed an object which made better-sqlite3 throw "Too few
+      // parameter values were provided" because the prepared statement
+      // ended up with NaN as the LIMIT.
+      submissions = db.recentCpSubmissions?.(personId, 60) || [];
     } else {
       person = { name: name || "you" };
       try {
         const raw = db.getSetting("cp.self.snapshot");
         if (raw) stats = JSON.parse(raw);
       } catch { /* ignore */ }
-      submissions = db.recentCpSubmissions?.({ self: true, limit: 60 }) || [];
+      // Self has no person_id row; skip submissions to avoid the same bug.
+      submissions = [];
     }
     return await ollama.summarizeCpActivity({ person, stats, submissions, model });
   } catch (err) {

@@ -50,8 +50,18 @@ export default function People() {
   useEffect(() => { setPage(1); }, [filter.q, filter.tag, filter.source, filter.only, groupBy]);
 
   useEffect(() => {
-    const off1 = api.people.onSyncProgress((p) => setGhSync((s) => ({ ...s, ...p, active: p.done < p.total })));
-    const off2 = api.cp.onProgress((p) => setCpSync((s) => ({ ...s, ...p, active: p.done < p.total })));
+    // Only update progress numbers — don't auto-flip `active` off.
+    // The previous logic `active: p.done < p.total` made the SyncBar flash
+    // away whenever a progress event arrived with done==total==0 (e.g. no
+    // people had CP handles yet). The parent function explicitly sets
+    // active:false on completion in syncAllGh / syncAllCp, which is the
+    // single source of truth.
+    const off1 = api.people.onSyncProgress((p) =>
+      setGhSync((s) => ({ ...s, ...p })),
+    );
+    const off2 = api.cp.onProgress((p) =>
+      setCpSync((s) => ({ ...s, ...p })),
+    );
     return () => { off1?.(); off2?.(); };
   }, []);
 
@@ -169,10 +179,21 @@ export default function People() {
   }
   async function syncAllCp() {
     setCpSync({ active: true, total: 0, done: 0, ok: 0, err: 0, current: null });
-    const res = await api.cp.fetchAll();
-    setCpSync((s) => ({ ...s, active: false }));
-    setStatus({ msg: `CP sync: ${res.okCount} / ${res.total} ok` });
-    reload();
+    try {
+      const res = await api.cp.fetchAll();
+      if (!res || res.ok === false) {
+        setStatus({ err: "CP sync: " + (res?.error || "unknown error") });
+      } else if ((res.total || 0) === 0) {
+        setStatus({ msg: "CP sync: nobody has a LeetCode/CF/CC handle yet — set one in Settings or import classmates first." });
+      } else {
+        setStatus({ msg: `CP sync: ${res.okCount} / ${res.total} ok` });
+      }
+    } catch (err) {
+      setStatus({ err: "CP sync failed: " + err.message });
+    } finally {
+      setCpSync((s) => ({ ...s, active: false }));
+      reload();
+    }
   }
 
   // Tags available + source options derived from loaded people.
@@ -251,17 +272,25 @@ export default function People() {
 
   return (
     <>
-      <div className="row between" style={{ marginBottom: 18 }}>
-        <div>
+      <div className="row between" style={{ marginBottom: 18, alignItems: "flex-start" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <h1 className="page-title">People</h1>
-          <p className="page-sub">Classmates, friends, and their projects. GitHub + LeetCode/CF/CC. Click a person to see repos, activity, and AI-generated project overviews.</p>
+          <p className="page-sub">Classmates, friends, and their projects. GitHub + LeetCode/CF/CC.</p>
         </div>
-        <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
-          <button onClick={() => setShowImport(true)}>+ Import from links</button>
-          <button onClick={() => setShowAdd(true)}>+ Add person</button>
-          <button onClick={syncAllGh} disabled={ghSync.active}>{ghSync.active ? "Syncing GH…" : "Sync GitHub"}</button>
-          <button className="primary" onClick={syncAllCp} disabled={cpSync.active}>{cpSync.active ? "Syncing CP…" : "Sync CP"}</button>
-          <SrmLeaderboardButton onSynced={reload} />
+        {/* Compact action cluster: one primary CTA, one "+ Add" group, and a
+            condensed sync menu. Cuts the toolbar from 5 buttons to ~3. */}
+        <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+          <PeopleAddMenu
+            onImport={() => setShowImport(true)}
+            onAdd={() => setShowAdd(true)}
+          />
+          <PeopleSyncMenu
+            ghActive={ghSync.active}
+            cpActive={cpSync.active}
+            onSyncGh={syncAllGh}
+            onSyncCp={syncAllCp}
+            onSyncSrm={reload}
+          />
         </div>
       </div>
 
@@ -457,6 +486,180 @@ function SyncBar({ label, total, done, ok, err, current, rateLimited }) {
       </div>
       <div className="bar"><div className="bar-fill" style={{ width: `${pct}%` }} /></div>
       <small className="muted">{rateLimited ? "rate-limited; stopped" : current ? `current: ${current}` : "…"}</small>
+    </div>
+  );
+}
+
+// Compact "+ Add" split-button — one primary CTA with a chevron menu for
+// the secondary add path. Keeps the People header from sprouting buttons.
+function PeopleAddMenu({ onImport, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-flex" }}>
+      <button onClick={onAdd}>+ Add person</button>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="More ways to add"
+        style={{ marginLeft: 4, padding: "0 8px" }}
+      >
+        ▾
+      </button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            right: 0,
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            padding: 4,
+            minWidth: 200,
+            zIndex: 10,
+            boxShadow: "var(--shadow-md)",
+          }}
+        >
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => { setOpen(false); onImport(); }}
+            style={{ display: "block", width: "100%", textAlign: "left" }}
+          >
+            + Import from links…
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Single sync button with a dropdown that fans out to GitHub / CP / SRM
+// leaderboard. The visible label reflects whichever sync is currently
+// running. Replaces the three separate sync buttons in the header.
+function PeopleSyncMenu({ ghActive, cpActive, onSyncGh, onSyncCp, onSyncSrm }) {
+  const [open, setOpen] = useState(false);
+  const [last, setLast] = useState(null);
+  const [progress, setProgress] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const ref = React.useRef(null);
+
+  React.useEffect(() => {
+    api.cp.srmLeaderboardLastSync?.().then((r) => setLast(r)).catch(() => {});
+    const off = api.cp.onSrmLeaderboardProgress?.((info) => setProgress(info));
+    return () => { try { off?.(); } catch {} };
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  async function runSrm() {
+    setOpen(false); setBusy(true); setProgress(null); setMsg(null);
+    try {
+      const r = await api.cp.syncSrmLeaderboard();
+      if (!r?.ok) setMsg("Failed: " + (r?.error || "unknown"));
+      else {
+        setMsg(`Imported ${r.imported}, updated ${r.updated} of ${r.total}.`);
+        setLast({ at: r.fetchedAt, ...r });
+        onSyncSrm?.();
+      }
+    } catch (e) {
+      setMsg("Error: " + e.message);
+    } finally {
+      setBusy(false); setProgress(null);
+      setTimeout(() => setMsg(null), 5000);
+    }
+  }
+
+  // Live label.
+  let label = "Sync ▾";
+  if (ghActive) label = "Syncing GitHub…";
+  else if (cpActive) label = "Syncing CP…";
+  else if (busy) {
+    if (progress?.stage === "paginating" && progress.page) {
+      label = `SRM page ${progress.page}…`;
+    } else label = "Syncing SRM…";
+  } else if (msg) label = msg;
+
+  const anyBusy = ghActive || cpActive || busy;
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-flex" }}>
+      <button
+        className="primary"
+        onClick={() => setOpen((v) => !v)}
+        disabled={anyBusy}
+        title="Run a sync"
+      >
+        {label}
+      </button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            right: 0,
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            padding: 4,
+            minWidth: 240,
+            zIndex: 10,
+            boxShadow: "var(--shadow-md)",
+          }}
+        >
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => { setOpen(false); onSyncGh(); }}
+            disabled={ghActive}
+            style={{ display: "block", width: "100%", textAlign: "left" }}
+            title="Pull latest repos + activity for everyone"
+          >
+            ⟳ GitHub
+          </button>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => { setOpen(false); onSyncCp(); }}
+            disabled={cpActive}
+            style={{ display: "block", width: "100%", textAlign: "left" }}
+            title="Refresh LC / CF / CC stats"
+          >
+            ⟳ Competitive programming
+          </button>
+          <hr className="soft" style={{ margin: "4px 0" }} />
+          <button
+            type="button"
+            className="ghost"
+            onClick={runSrm}
+            disabled={busy}
+            style={{ display: "block", width: "100%", textAlign: "left" }}
+            title={
+              last
+                ? `Last: ${new Date(last.at).toLocaleString()} · ${last.imported || 0} new, ${last.updated || 0} updated · via ${last.via || "?"}`
+                : "Pull classmates from lead.aakarsh.xyz"
+            }
+          >
+            ⟳ SRM leaderboard
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1194,7 +1397,7 @@ function ImportByLinkModal({ onClose, onImported }) {
 // modals.
 function LeaderboardModal({ onClose }) {
   const [data, setData] = useState({ leetcode: null, codeforces: null, codechef: null });
-  const [sort, setSort] = useState("leetcode"); // which platform drives ranking
+  const [sort, setSort] = useState("leetcode-combined"); // platform-mode key
   const [loading, setLoading] = useState(true);
   // CP summaries — keyed per person_id. Each entry is the result of
   // api.cp.summarize for that person, plus a loading flag.
@@ -1243,9 +1446,12 @@ function LeaderboardModal({ onClose }) {
       }
     }
     const all = [...map.values()];
+    // Sort key like "leetcode-combined" / "codeforces" — split into platform
+    // + mode, then read whichever pre-computed field the row exposes.
+    const [platform, mode = "rating"] = sort.split("-");
     all.sort((a, b) => {
-      const av = metric(a[sort], sort) ?? -1;
-      const bv = metric(b[sort], sort) ?? -1;
+      const av = leaderboardMetric(a[platform], mode) ?? -1;
+      const bv = leaderboardMetric(b[platform], mode) ?? -1;
       return bv - av;
     });
     return all;
@@ -1260,9 +1466,22 @@ function LeaderboardModal({ onClose }) {
         </div>
         <div className="chip-row" style={{ marginTop: 8 }}>
           <small className="muted">Rank by</small>
-          {["leetcode", "codeforces", "codechef"].map((p) => (
-            <button key={p} className={"chip" + (sort === p ? " active" : "")} onClick={() => setSort(p)}>
-              {p === "leetcode" ? "LC solved" : p === "codeforces" ? "CF rating" : "CC rating"}
+          {[
+            { key: "leetcode-combined", label: "LC combined", platform: "leetcode", mode: "combined" },
+            { key: "leetcode-solved",   label: "LC solved",   platform: "leetcode", mode: "solved" },
+            { key: "leetcode-rating",   label: "LC contest",  platform: "leetcode", mode: "rating" },
+            { key: "codeforces",        label: "CF rating",   platform: "codeforces", mode: "rating" },
+            { key: "codechef",          label: "CC rating",   platform: "codechef", mode: "rating" },
+          ].map((p) => (
+            <button
+              key={p.key}
+              className={"chip" + (sort === p.key ? " active" : "")}
+              onClick={() => setSort(p.key)}
+              title={p.platform === "leetcode" && p.mode === "combined"
+                ? "totalSolved + contestRating × 0.1 (mixes grind + contest skill)"
+                : undefined}
+            >
+              {p.label}
             </button>
           ))}
         </div>
@@ -1352,19 +1571,28 @@ function LeaderboardModal({ onClose }) {
   );
 }
 
-function metric(r, plat) {
-  if (!r || !r.stats) return null;
-  if (plat === "leetcode")   return r.stats.totalSolved ?? null;
-  if (plat === "codeforces") return r.stats.rating      ?? null;
-  if (plat === "codechef")   return r.stats.rating      ?? null;
-  return null;
+function leaderboardMetric(r, mode) {
+  if (!r) return null;
+  // The DB layer pre-computes combinedScore + promotes rating/totalSolved
+  // to the top level so we don't have to dig into stats on every sort.
+  if (mode === "combined") return r.combinedScore ?? r.totalSolved ?? null;
+  if (mode === "rating")   return r.rating ?? null;
+  if (mode === "solved")   return r.totalSolved ?? r.stats?.totalSolved ?? null;
+  return r.combinedScore ?? r.totalSolved ?? null;
 }
 function statCell(r, plat) {
   if (!r) return "—";
   if (r.error) return <span className="error">{r.error}</span>;
   const s = r.stats || {};
-  if (plat === "leetcode") return s.totalSolved != null ? `${s.totalSolved} (${s.easy || 0}/${s.medium || 0}/${s.hard || 0})` : "—";
-  if (plat === "codeforces") return s.rating != null ? `${s.rating}${s.maxRating ? ` (max ${s.maxRating})` : ""}` : "—";
+  if (plat === "leetcode") {
+    const solved = s.totalSolved != null
+      ? `${s.totalSolved} (${s.easy || 0}/${s.medium || 0}/${s.hard || 0})`
+      : "—";
+    const rating = s.rating ? ` · ${s.rating}` : "";
+    const contests = s.contests ? ` · ${s.contests} contests` : "";
+    return solved + rating + contests;
+  }
+  if (plat === "codeforces") return s.rating != null ? `${s.rating}${s.maxRating ? ` (max ${s.maxRating})` : ""}${s.totalSolved ? ` · ${s.totalSolved} solved` : ""}` : "—";
   if (plat === "codechef") return s.rating != null ? `${s.rating}${s.stars ? ` · ${s.stars}★` : ""}` : "—";
   return "—";
 }
@@ -1941,88 +2169,86 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
   const next = suggestedNext();
 
   return (
-    <div className="repo-walkthrough" style={{ marginTop: 12, display: "grid", gridTemplateColumns: "200px 1fr 1fr", gap: 10, minHeight: 460 }}>
-      {/* File tree */}
-      <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "auto", maxHeight: 600, padding: 6 }}>
-        <div className="section-label" style={{ marginBottom: 4, padding: "0 4px" }}>Files</div>
-        {tree.length === 0 && <small className="muted" style={{ padding: 6 }}>Loading tree…</small>}
-        {tree.map((p) => {
-          const visited_ = visited.includes(p.path);
-          const active = p.path === currentPath;
-          return (
-            <div
-              key={p.path}
-              onClick={() => walkTo(p.path)}
-              title={p.path}
-              style={{
-                fontSize: 11,
-                padding: "3px 6px",
-                cursor: "pointer",
-                borderRadius: 4,
-                background: active ? "var(--accent-soft)" : visited_ ? "var(--bg-elev-2)" : "transparent",
-                color: active ? "var(--accent)" : "var(--text-dim)",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                fontFamily: "var(--font-mono, monospace)",
-              }}
-            >
-              {visited_ ? "● " : "○ "}{p.path}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* File viewer */}
-      <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        <div className="row between" style={{ padding: "6px 10px", background: "var(--bg-elev-2)", borderBottom: "1px solid var(--border)" }}>
-          <code style={{ fontSize: 11 }}>{currentPath || "(no file)"}</code>
-          <small className="muted">{visited.length} / {tree.length} visited</small>
+    <div className="repo-walkthrough">
+      {/* Toolbar — file path + visited progress + counter, inline. */}
+      <div className="repo-walkthrough-toolbar">
+        <code className="repo-walk-path">{currentPath || "(no file selected)"}</code>
+        <div className="repo-walk-progress">
+          <div
+            className="repo-walk-progress-bar"
+            style={{ width: tree.length ? `${(visited.length / tree.length) * 100}%` : "0%" }}
+          />
         </div>
-        <pre style={{ flex: 1, margin: 0, padding: 10, overflow: "auto", fontSize: 11, fontFamily: "var(--font-mono, monospace)", maxHeight: 540 }}>
-          {busy && !content ? "loading…" : content}
-        </pre>
-      </div>
-
-      {/* AI explanation + Q&A */}
-      <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", maxHeight: 600 }}>
-        <div className="section-label" style={{ marginBottom: 6 }}>Apex says</div>
-        <div style={{ flex: 1, overflowY: "auto", fontSize: 12 }}>
-          {!ollamaOk && <div className="muted">Ollama is offline — start it from Settings.</div>}
-          {busy && !explanation && <em className="muted">Reading the file…</em>}
-          {explanation && <MarkdownBlock text={explanation} />}
-          {qaHistory.map((m, i) => (
-            <div key={i} style={{ marginTop: 8, padding: 8, borderRadius: 6, background: m.role === "user" ? "var(--accent-soft)" : "var(--bg-elev-2)" }}>
-              <strong style={{ fontSize: 10, color: "var(--text-faint)" }}>{m.role === "user" ? "YOU" : "APEX"}</strong>
-              <MarkdownBlock text={m.content} />
-            </div>
-          ))}
-        </div>
+        <small className="muted">{visited.length} / {tree.length}</small>
         {next && (
           <button
             className="primary small"
             onClick={() => walkTo(next)}
             disabled={busy}
-            style={{ marginTop: 8 }}
             title={`Walk to ${next}`}
           >
-            Next → {next}
+            Next →
           </button>
         )}
-        <form
-          style={{ marginTop: 8, display: "flex", gap: 6 }}
-          onSubmit={(e) => { e.preventDefault(); if (!busy) askQuestion(); }}
-        >
-          <input
-            placeholder={currentPath ? `Ask about ${currentPath.split("/").pop()}…` : "Ask…"}
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            style={{ flex: 1, fontSize: 12 }}
-            disabled={!ollamaOk || busy || !currentPath}
-          />
-          <button className="ghost xsmall" type="submit" disabled={!question.trim() || busy}>Ask</button>
-        </form>
-        {err && <div className="error" style={{ marginTop: 6, fontSize: 11 }}>{err}</div>}
+      </div>
+
+      <div className="repo-walkthrough-grid">
+        {/* File tree */}
+        <div className="repo-walk-tree">
+          <div className="section-label">Files</div>
+          {tree.length === 0 && <small className="muted">Loading tree…</small>}
+          {tree.map((p) => {
+            const visited_ = visited.includes(p.path);
+            const active = p.path === currentPath;
+            return (
+              <div
+                key={p.path}
+                onClick={() => walkTo(p.path)}
+                title={p.path}
+                className={"repo-walk-tree-row" + (active ? " active" : "") + (visited_ ? " visited" : "")}
+              >
+                <span className="repo-walk-tree-mark">{visited_ ? "●" : "○"}</span>
+                <span className="repo-walk-tree-name">{p.path}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* File viewer */}
+        <pre className="repo-walk-viewer">
+          {busy && !content ? "loading…" : content || "(empty)"}
+        </pre>
+
+        {/* AI explanation + Q&A */}
+        <div className="repo-walk-side">
+          <div className="section-label">Apex says</div>
+          <div className="repo-walk-side-stream">
+            {!ollamaOk && <div className="muted">Ollama is offline — start it from Settings.</div>}
+            {busy && !explanation && <em className="muted">Reading the file…</em>}
+            {explanation && <MarkdownBlock text={explanation} />}
+            {qaHistory.map((m, i) => (
+              <div key={i} className={"repo-walk-msg " + m.role}>
+                <strong>{m.role === "user" ? "YOU" : "APEX"}</strong>
+                <MarkdownBlock text={m.content} />
+              </div>
+            ))}
+          </div>
+          <form
+            className="repo-walk-ask"
+            onSubmit={(e) => { e.preventDefault(); if (!busy) askQuestion(); }}
+          >
+            <input
+              placeholder={currentPath ? `Ask about ${currentPath.split("/").pop()}…` : "Ask…"}
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              disabled={!ollamaOk || busy || !currentPath}
+            />
+            <button className="primary small" type="submit" disabled={!question.trim() || busy}>
+              Ask
+            </button>
+          </form>
+          {err && <div className="error">{err}</div>}
+        </div>
       </div>
     </div>
   );
