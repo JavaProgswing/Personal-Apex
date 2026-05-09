@@ -679,7 +679,9 @@ function syncSrmLeaderboardToPeople(rows = []) {
       ).run(row.leetcodeHandle || null, JSON.stringify(tags), JSON.stringify(notes), match.id);
       updated++;
     } else {
-      // Insert new.
+      // Insert new — match the canonical INSERT shape used elsewhere in
+      // db.cjs. The `people` table has no created_at / updated_at; the
+      // freshness signal lives in `last_scraped_at`.
       const notes = {
         registration: regKey,
         section: row.section,
@@ -690,9 +692,8 @@ function syncSrmLeaderboardToPeople(rows = []) {
         },
       };
       dbh.prepare(
-        `INSERT INTO people
-           (name, leetcode_username, tags, notes, source, created_at, updated_at)
-          VALUES (?, ?, ?, ?, 'srm-leaderboard', datetime('now'), datetime('now'))`,
+        `INSERT INTO people (name, leetcode_username, tags, notes, source)
+          VALUES (?, ?, ?, ?, 'srm-leaderboard')`,
       ).run(row.name, row.leetcodeHandle || null, JSON.stringify(tags), JSON.stringify(notes));
       imported++;
     }
