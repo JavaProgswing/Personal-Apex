@@ -27,19 +27,43 @@ export default function App() {
 
   // Hydrate the theme on mount. Default = "library". Stored in settings as
   // `ui.theme`; applied via a data attr on <html> so the CSS theme blocks
-  // pick it up. Settings → Appearance writes to the same key.
-  // Also re-apply any custom accent override stored at `ui.customAccent`.
+  // pick it up. Settings → Appearance writes to the same key. We also
+  // re-apply any custom accent override (`ui.customAccent`), high-contrast
+  // mode (`ui.contrast`), and per-token colour overrides (`ui.customColors`).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const t = (await api.settings?.get?.("ui.theme")) || "library";
         if (!cancelled) document.documentElement.dataset.theme = t;
+
         const accent = await api.settings?.get?.("ui.customAccent");
         if (!cancelled && accent) {
           document.documentElement.style.setProperty("--accent", accent);
           document.documentElement.style.setProperty("--accent-soft", accent + "33");
           document.documentElement.style.setProperty("--accent-strong", accent);
+        }
+
+        const contrast = await api.settings?.get?.("ui.contrast");
+        if (!cancelled && contrast === "high") {
+          document.documentElement.dataset.contrast = "high";
+        }
+
+        const customColorsJson = await api.settings?.get?.("ui.customColors");
+        if (!cancelled && customColorsJson) {
+          try {
+            const obj = JSON.parse(customColorsJson) || {};
+            for (const [k, v] of Object.entries(obj)) {
+              if (typeof v === "string" && v.trim()) {
+                document.documentElement.style.setProperty(k, v);
+              }
+            }
+            // Re-derive accent siblings if accent was overridden.
+            if (obj["--accent"]) {
+              document.documentElement.style.setProperty("--accent-soft", obj["--accent"] + "33");
+              document.documentElement.style.setProperty("--accent-strong", obj["--accent"]);
+            }
+          } catch { /* invalid json — ignore */ }
         }
       } catch {
         document.documentElement.dataset.theme = "library";

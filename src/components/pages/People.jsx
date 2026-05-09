@@ -300,38 +300,49 @@ export default function People() {
         {status?.err && <small className="error" style={{ marginLeft: "auto" }}>{status.err}</small>}
       </div>
 
-      {/* Recent activity feed */}
-      <ActivityFeed
-        onOpenPerson={openPerson}
-        onOpenRepo={(r) =>
-          setOpenRepo({
-            repo: {
-              id: r.id,
-              name: r.name,
-              full_name: r.full_name,
-              description: r.description,
-              url: r.url,
-              language: r.language,
-              languages: r.languages,
-              topics: r.topics,
-              stars: r.stars,
-              forks: r.forks,
-              pushed_at: r.pushed_at,
-              person_id: r.person_id,
-            },
-            person: {
-              id: r.person_id,
-              name: r.person_name,
-              github_username: r.github_username,
-              avatar_url: r.avatar_url,
-              tags: r.person_tags,
-            },
-          })
-        }
-      />
+      {/* Recent activity feed — its own section */}
+      <section className="people-section">
+        <div className="people-section-head">
+          <h3>Recent activity</h3>
+          <span className="count-pill" title="Across everyone you follow">live feed</span>
+        </div>
+        <ActivityFeed
+          onOpenPerson={openPerson}
+          onOpenRepo={(r) =>
+            setOpenRepo({
+              repo: {
+                id: r.id,
+                name: r.name,
+                full_name: r.full_name,
+                description: r.description,
+                url: r.url,
+                language: r.language,
+                languages: r.languages,
+                topics: r.topics,
+                stars: r.stars,
+                forks: r.forks,
+                pushed_at: r.pushed_at,
+                person_id: r.person_id,
+              },
+              person: {
+                id: r.person_id,
+                name: r.person_name,
+                github_username: r.github_username,
+                avatar_url: r.avatar_url,
+                tags: r.person_tags,
+              },
+            })
+          }
+        />
+      </section>
 
-      {/* Grouped grid */}
-      {paged.map((g) => (
+      {/* Everyone — grouped grid */}
+      <section className="people-section">
+        <div className="people-section-head">
+          <h3>Everyone</h3>
+          <span className="count-pill">{shownRows} {shownRows === 1 ? "person" : "people"}</span>
+        </div>
+        {paged.map((g) => (
         <section key={g.key} style={{ marginBottom: 16 }}>
           {groupBy !== "none" && (
             <div className="section-label row between">
@@ -354,18 +365,22 @@ export default function People() {
             ))}
           </div>
         </section>
-      ))}
-      {filtered.length === 0 && (
-        <div className="muted">No people match. Try clearing filters or import from a link.</div>
-      )}
+        ))}
+        {filtered.length === 0 && (
+          <div className="muted" style={{ padding: "20px 8px", textAlign: "center" }}>
+            No people match. Try clearing filters or import from a link.
+          </div>
+        )}
 
-      {/* Pager */}
-      {shownRows < totalRows && (
-        <div className="pager row" style={{ justifyContent: "center", marginTop: 8 }}>
-          <small className="muted">{shownRows} / {totalRows}</small>
-          <button className="primary" onClick={() => setPage((p) => p + 1)}>Show more</button>
-        </div>
-      )}
+        {/* Pager */}
+        {shownRows < totalRows && (
+          <div className="pager row" style={{ justifyContent: "center", marginTop: 8 }}>
+            <small className="muted">{shownRows} / {totalRows}</small>
+            <button className="primary" onClick={() => setPage((p) => p + 1)}>Show more</button>
+          </div>
+        )}
+      </section>
+
 
       {selected && (
         <PersonModal

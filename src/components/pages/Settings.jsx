@@ -2231,7 +2231,219 @@ function AppearanceTab({ all, setAll, save }) {
           )}
         </div>
       </div>
+
+      <ContrastCard all={all} setAll={setAll} save={save} />
+
+      <CustomColorsCard all={all} setAll={setAll} save={save} />
     </>
+  );
+}
+
+// ─── ContrastCard ───────────────────────────────────────────────────────
+// Toggle a high-contrast amplification mode. Sharpens borders, boosts text,
+// saturates category swatches. Stored under `ui.contrast` = "high" | "normal".
+function ContrastCard({ all, setAll, save }) {
+  const v = all["ui.contrast"] === "high";
+  function set(on) {
+    const next = on ? "high" : "normal";
+    setAll({ ...all, "ui.contrast": next });
+    save("ui.contrast", next);
+    if (on) document.documentElement.dataset.contrast = "high";
+    else delete document.documentElement.dataset.contrast;
+  }
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-title">High contrast</div>
+      <small className="hint" style={{ display: "block", marginBottom: 10 }}>
+        Sharpens borders, boosts text, and saturates category colours across
+        the dashboard. Useful for bright rooms or OLED displays.
+      </small>
+      <label className="switch">
+        <input type="checkbox" checked={v} onChange={(e) => set(e.target.checked)} />
+        <span>{v ? "High contrast on" : "Normal contrast"}</span>
+      </label>
+    </div>
+  );
+}
+
+// ─── CustomColorsCard ───────────────────────────────────────────────────
+// Per-token colour editor. Lets the user override individual CSS variables
+// on top of the active theme. Stored under `ui.customColors` as JSON.
+const CUSTOM_TOKENS = [
+  { key: "--bg",          label: "Background" },
+  { key: "--bg-elev",     label: "Surface" },
+  { key: "--bg-elev-2",   label: "Raised surface" },
+  { key: "--border",      label: "Border" },
+  { key: "--text",        label: "Text" },
+  { key: "--text-dim",    label: "Text · dim" },
+  { key: "--accent",      label: "Accent" },
+  { key: "--productive",  label: "Productive" },
+  { key: "--distraction", label: "Distraction" },
+  { key: "--leisure",     label: "Leisure" },
+  { key: "--rest",        label: "Rest" },
+  { key: "--neutral",     label: "Neutral" },
+  { key: "--mobile",      label: "Mobile" },
+];
+
+function CustomColorsCard({ all, setAll, save }) {
+  let stored = {};
+  try { stored = JSON.parse(all["ui.customColors"] || "{}") || {}; } catch { stored = {}; }
+  const [open, setOpen] = useState(false);
+  const [exportText, setExportText] = useState("");
+
+  function applyOne(key, value) {
+    const next = { ...stored };
+    if (value) next[key] = value;
+    else delete next[key];
+    const json = JSON.stringify(next);
+    setAll({ ...all, "ui.customColors": json });
+    save("ui.customColors", json);
+    if (value) document.documentElement.style.setProperty(key, value);
+    else document.documentElement.style.removeProperty(key);
+    // Re-derive accent-soft / accent-strong if accent changed.
+    if (key === "--accent" && value) {
+      document.documentElement.style.setProperty("--accent-soft", value + "33");
+      document.documentElement.style.setProperty("--accent-strong", value);
+    }
+  }
+  function clearAll() {
+    for (const t of CUSTOM_TOKENS) {
+      document.documentElement.style.removeProperty(t.key);
+    }
+    document.documentElement.style.removeProperty("--accent-soft");
+    document.documentElement.style.removeProperty("--accent-strong");
+    setAll({ ...all, "ui.customColors": "{}" });
+    save("ui.customColors", "{}");
+  }
+  function doExport() {
+    setExportText(JSON.stringify(stored, null, 2));
+  }
+  function doImport() {
+    try {
+      const next = JSON.parse(exportText);
+      if (!next || typeof next !== "object") throw new Error("not an object");
+      for (const t of CUSTOM_TOKENS) {
+        if (next[t.key]) document.documentElement.style.setProperty(t.key, next[t.key]);
+      }
+      const json = JSON.stringify(next);
+      setAll({ ...all, "ui.customColors": json });
+      save("ui.customColors", json);
+      setExportText("");
+    } catch (e) {
+      alert("Invalid JSON: " + e.message);
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="row between" style={{ alignItems: "baseline" }}>
+        <div className="card-title" style={{ margin: 0 }}>Custom colours · advanced</div>
+        <button className="ghost xsmall" type="button" onClick={() => setOpen((v) => !v)}>
+          {open ? "Hide" : "Show"}
+        </button>
+      </div>
+      <small className="hint" style={{ display: "block", marginTop: 6 }}>
+        Override individual colour tokens on top of the active theme. Empty
+        cells inherit from the theme. Activity / category colours auto-update
+        across the whole app.
+      </small>
+
+      {open && (
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+              gap: 10,
+              marginTop: 12,
+            }}
+          >
+            {CUSTOM_TOKENS.map((t) => {
+              const cur = stored[t.key] || "";
+              return (
+                <div
+                  key={t.key}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: 8,
+                    borderRadius: 8,
+                    background: "var(--bg-elev-2)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <input
+                    type="color"
+                    value={cur || "#888888"}
+                    onChange={(e) => applyOne(t.key, e.target.value)}
+                    style={{
+                      width: 28, height: 28, padding: 0,
+                      border: "1px solid var(--border)", borderRadius: 6,
+                      background: "transparent", cursor: "pointer",
+                    }}
+                    title={t.label}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{t.label}</div>
+                    <code style={{ fontSize: 10, color: "var(--text-faint)" }}>
+                      {cur || "inherit"}
+                    </code>
+                  </div>
+                  {cur && (
+                    <button
+                      className="ghost xsmall"
+                      type="button"
+                      onClick={() => applyOne(t.key, "")}
+                      title="Reset to theme value"
+                    >
+                      ↺
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="row" style={{ gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+            <button className="ghost xsmall" type="button" onClick={clearAll}>
+              Reset all
+            </button>
+            <button className="ghost xsmall" type="button" onClick={doExport}>
+              Export JSON
+            </button>
+            <button
+              className="ghost xsmall"
+              type="button"
+              onClick={doImport}
+              disabled={!exportText.trim()}
+            >
+              Import JSON
+            </button>
+          </div>
+          {exportText && (
+            <textarea
+              value={exportText}
+              onChange={(e) => setExportText(e.target.value)}
+              rows={6}
+              style={{
+                width: "100%",
+                marginTop: 8,
+                padding: 8,
+                fontFamily: "var(--font-mono, monospace)",
+                fontSize: 11,
+                background: "var(--bg)",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                resize: "vertical",
+              }}
+              placeholder="Paste a JSON object of CSS variables here, then press Import."
+            />
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

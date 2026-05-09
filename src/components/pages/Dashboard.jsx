@@ -704,11 +704,12 @@ export default function Dashboard({ go }) {
           setToast={setToast}
         />
 
-        <div className="card">
+        <div className="card classes-card">
           <div className="row between">
             <div className="card-title">Today's classes</div>
             <span className="pill">{classes.length}</span>
           </div>
+          <div className="scroll-body">
           {classes.length === 0 && (
             <div className="muted">
               {dayOrder ? "Nothing scheduled." : "Weekend — no classes."}
@@ -812,6 +813,7 @@ export default function Dashboard({ go }) {
               </div>
             );
           })}
+          </div>
           <hr className="soft" />
           <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
             <button className="ghost" onClick={() => go("upcoming")}>
@@ -828,7 +830,7 @@ export default function Dashboard({ go }) {
         </div>
 
         {/* Weekly goals — third column of the top row. */}
-        <div className="card">
+        <div className="card goals-card">
           <div className="row between">
             <div className="card-title">Weekly goals</div>
             <span className="pill">
@@ -836,6 +838,7 @@ export default function Dashboard({ go }) {
               {goals.length} hit
             </span>
           </div>
+          <div className="scroll-body">
           {goals.length === 0 && (
             <div className="muted goal-empty">
               No goals yet — set some in <a href="#" onClick={(e) => { e.preventDefault(); go("settings"); }}>Settings → Goals</a>.
@@ -872,6 +875,7 @@ export default function Dashboard({ go }) {
                 </div>
               );
             })}
+          </div>
           </div>
           <hr className="soft" />
           <GoalQuickAdd onAdd={async (g) => {
@@ -2656,6 +2660,7 @@ function TodayCard({
 
       {tab === "tasks" ? (
         <>
+          <div className="scroll-body">
           {tasks.length === 0 ? (
             <div className="muted today-empty">
               Nothing queued — add some in <a href="#" onClick={(e) => { e.preventDefault(); go("tasks"); }}>Tasks →</a>
@@ -2747,6 +2752,7 @@ function TodayCard({
               )}
             </div>
           )}
+          </div>
           <hr className="soft" />
           <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
             <button onClick={() => go("tasks")} className="ghost small">
@@ -2827,6 +2833,7 @@ function TodayCard({
               </button>
             )}
           </div>
+          <div className="scroll-body">
           {planCard.error && (
             <div className="error" style={{ marginTop: 6 }}>
               {planCard.error}
@@ -2898,6 +2905,7 @@ function TodayCard({
               )}
             </>
           )}
+          </div>
         </>
       )}
     </div>
