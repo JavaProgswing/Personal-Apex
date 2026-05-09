@@ -1319,10 +1319,47 @@ Extract tasks now. Return JSON only.`;
   return safeParseJson(resp.content);
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// walkthroughFile — guided file-by-file repo tour. Given the current file
+// contents + the path + the repo's previously-seen files, produce a short,
+// teacher-style explanation of THIS file: what it does, why it exists in
+// this codebase, what to look at next. The model is told to assume
+// "yashasvi is reading this to learn how to build something similar".
+// ───────────────────────────────────────────────────────────────────────────
+async function walkthroughFile({
+  repo,
+  filePath,
+  fileContent,
+  visitedPaths = [],
+  treeSnapshot = [], // first ~50 paths for context
+  model,
+}) {
+  const sys =
+    `You are a senior engineer giving a guided walkthrough of an open-source ` +
+    `repo to a CS undergrad named Yashasvi who wants to learn how to build ` +
+    `something similar.\n` +
+    `Right now you are explaining ONE file. Be concrete, terse, and practical:\n` +
+    `  - 1-2 sentences on what this file is (purpose, role in the project).\n` +
+    `  - 3-5 bullets on the interesting parts (functions, patterns, gotchas).\n` +
+    `  - 1 line: "Look at next:" suggesting a specific path from the tree.\n` +
+    `Do NOT regurgitate the file. Reference real symbols. ~150 words max.\n`;
+  const treePreview = (treeSnapshot || []).slice(0, 40).join('\n');
+  const visitedPreview = (visitedPaths || []).slice(-6).join(', ');
+  const user =
+    `Repo: ${repo.full_name || repo.name}\n` +
+    `Languages: ${(repo.languages || []).join(', ') || 'unknown'}\n` +
+    `Already visited: ${visitedPreview || '(none yet — this is the entry file)'}\n\n` +
+    `--- Project tree (first 40) ---\n${treePreview}\n\n` +
+    `--- Current file: ${filePath} ---\n${(fileContent || '').slice(0, 6000)}\n\n` +
+    `Explain ${filePath} now, then suggest the next file to visit.`;
+  const r = await chat({ model, system: sys, user, temperature: 0.5 });
+  return r;
+}
+
 module.exports = {
   listModels, chat, planDay, burnoutSuggest, eveningReview, burnoutCheck, summarizeRepo,
   summarizeRecentChanges, recommendNow, chatAboutRepo, chatAboutCommit,
-  summarizeCpActivity, extractTasksFromText,
+  summarizeCpActivity, extractTasksFromText, walkthroughFile,
   ocrTimetable, autoPickBest, resolveModel, personalContext, buildSystem,
   ping, ensureRunning,
 };

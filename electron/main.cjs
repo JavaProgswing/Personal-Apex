@@ -862,6 +862,20 @@ ipcMain.handle("cp:submissions", (_e, personId, limit) =>
 ipcMain.handle("cp:self", () => cp.fetchSelf());
 ipcMain.handle("cp:selfCached", () => cp.selfCached());
 ipcMain.handle("cp:leaderboard", (_e, platform) => db.cpLeaderboard(platform));
+ipcMain.handle("cp:fetchSrmLeaderboard", () => cp.fetchSrmLeaderboard());
+ipcMain.handle("cp:syncSrmLeaderboard", async () => {
+  const r = await cp.fetchSrmLeaderboard();
+  if (!r.ok) return r;
+  const synced = cp.syncSrmLeaderboardToPeople(r.rows);
+  return { ...synced, fetchedAt: r.fetchedAt };
+});
+ipcMain.handle(
+  "cp:srmLeaderboardLastSync",
+  () => {
+    try { return JSON.parse(db.getSetting("cp.srmLeaderboard.lastSync") || "null"); }
+    catch { return null; }
+  },
+);
 
 // --- nexttechlab ---
 ipcMain.handle("ntl:scrape", (_e, lab) => nexttechlab.scrapeLab(lab));
@@ -1125,6 +1139,95 @@ ipcMain.handle("repo:summarize", async (_e, { repoId, ownRepos, model }) => {
   }
 });
 ipcMain.handle("repo:listByPerson", (_e, personId) => db.listRepos(personId));
+
+// File tree + content for the interactive walkthrough panel. Cheap calls
+// — github.fetchTree caches via the underlying ETag, so repeat hits are
+// effectively free.
+ipcMain.handle("repo:tree", async (_e, fullName) => {
+  try {
+    const tree = await github.fetchTree(fullName);
+    if (!tree) return { ok: false, error: "Tree not available" };
+    const paths = (tree.tree || [])
+      .filter((n) => n.type === "blob")
+      .map((n) => ({ path: n.path, size: n.size || 0 }));
+    return { ok: true, paths, truncated: !!tree.truncated };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+ipcMain.handle(
+  "repo:fileContent",
+  async (_e, { fullName, path, maxBytes } = {}) => {
+    try {
+      const text = await github.fetchFileContent(fullName, path, maxBytes || 16000);
+      return { ok: true, content: text || "" };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  },
+);
+// Walkthrough: per-file teacher-style explanation. Renderer holds the
+// visited-paths history and passes it back each call.
+ipcMain.handle(
+  "repo:walkthrough",
+  async (_e, { repoId, fullName, filePath, visitedPaths, model } = {}) => {
+    try {
+      const detail = await github.fetchRepoDetail(repoId);
+      const repo = detail?.repo || { full_name: fullName };
+      const content = await github.fetchFileContent(
+        repo.full_name || fullName,
+        filePath,
+        16000,
+      );
+      const tree = (detail?.paths || []).slice(0, 60);
+      const r = await ollama.walkthroughFile({
+        repo: {
+          ...repo,
+          languages: Object.keys(detail?.languages || {}),
+        },
+        filePath,
+        fileContent: content || "",
+        visitedPaths: visitedPaths || [],
+        treeSnapshot: tree,
+        model,
+      });
+      return { ok: !!r?.ok, ...r, fileContent: content || "", treeSnapshot: tree };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  },
+);
+// Compare-with-mine: returns the user's own repos that share at least one
+// language with the target repo. Used by the "Compare" panel.
+ipcMain.handle(
+  "repo:similarToMine",
+  async (_e, { repoId, myUsername } = {}) => {
+    try {
+      const detail = await github.fetchRepoDetail(repoId);
+      const targetLangs = Object.keys(detail?.languages || {})
+        .map((s) => s.toLowerCase());
+      if (!myUsername) return { ok: true, matches: [] };
+      const me = db._db()
+        .prepare("SELECT id FROM people WHERE github_username = ?")
+        .get(myUsername);
+      if (!me) return { ok: true, matches: [] };
+      const myRepos = db.listRepos(me.id) || [];
+      const matches = myRepos
+        .map((r) => {
+          const langs = (r.language ? [r.language] : [])
+            .map((s) => s.toLowerCase());
+          const overlap = langs.filter((l) => targetLangs.includes(l));
+          return { repo: r, overlap };
+        })
+        .filter((m) => m.overlap.length > 0)
+        .sort((a, b) => (b.repo.stars || 0) - (a.repo.stars || 0))
+        .slice(0, 12);
+      return { ok: true, matches, targetLangs };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  },
+);
 // Live commits via the GitHub API for the push-card expand panel.
 // Defaults to the last 14 days; capped at 20 commits per call.
 ipcMain.handle("repo:recentCommits", async (_e, { fullName, days, limit } = {}) => {

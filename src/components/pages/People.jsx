@@ -3,16 +3,23 @@ import api from "../../lib/api.js";
 import ActivityFeed from "../ActivityFeed.jsx";
 import { MarkdownBlock } from "../../lib/markdown.jsx";
 
-// Curated preset links shown in the "Import from links" modal. Includes the
-// five NextTechLab labs plus a couple of generic GitHub org pages. The user
-// can also paste any URL (github.com profile/org, linkedin, arbitrary page).
-const LINK_PRESETS = [
+// Curated preset links shown in the "Import from links" modal. Treated as
+// regular `{label, url}` pairs — no special-casing for NextTechLab. Users
+// can extend this list at runtime via `ui.linkPresets` in localStorage.
+const BUILTIN_LINK_PRESETS = [
   { label: "NextTechLab · Satoshi",  url: "https://nexttechlab.in/labs/satoshi"  },
   { label: "NextTechLab · Norman",   url: "https://nexttechlab.in/labs/norman"   },
   { label: "NextTechLab · Pausch",   url: "https://nexttechlab.in/labs/pausch"   },
   { label: "NextTechLab · McCarthy", url: "https://nexttechlab.in/labs/mccarthy" },
   { label: "NextTechLab · Tesla",    url: "https://nexttechlab.in/labs/tesla"    },
 ];
+function loadUserLinkPresets() {
+  try { return JSON.parse(localStorage.getItem("ui.linkPresets") || "[]"); }
+  catch { return []; }
+}
+function saveUserLinkPresets(arr) {
+  try { localStorage.setItem("ui.linkPresets", JSON.stringify(arr)); } catch {}
+}
 
 const PAGE_SIZE = 18;
 
@@ -254,6 +261,7 @@ export default function People() {
           <button onClick={() => setShowAdd(true)}>+ Add person</button>
           <button onClick={syncAllGh} disabled={ghSync.active}>{ghSync.active ? "Syncing GH…" : "Sync GitHub"}</button>
           <button className="primary" onClick={syncAllCp} disabled={cpSync.active}>{cpSync.active ? "Syncing CP…" : "Sync CP"}</button>
+          <SrmLeaderboardButton onSynced={reload} />
         </div>
       </div>
 
@@ -265,39 +273,68 @@ export default function People() {
       )}
       {cpSync.active && <SyncBar label="Competitive programming" {...cpSync} />}
 
-      {/* Search + grouping controls */}
-      <div className="row page-people-controls" style={{ flexWrap: "wrap" }}>
-        <input placeholder="Search name / GitHub…" value={filter.q} onChange={(e) => setFilter({ ...filter, q: e.target.value })} style={{ maxWidth: 300 }} />
-        <select value={filter.tag} onChange={(e) => setFilter({ ...filter, tag: e.target.value })} style={{ maxWidth: 200 }}>
-          <option value="">All tags</option>
-          {tagOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select value={filter.source} onChange={(e) => setFilter({ ...filter, source: e.target.value })} style={{ maxWidth: 180 }}>
-          <option value="">All sources</option>
-          {sourceOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ maxWidth: 180 }}>
-          <option value="activity">Sort · Recent activity</option>
-          <option value="name">Sort · Name</option>
-        </select>
-        <select value={groupBy} onChange={(e) => setGroupBy(e.target.value)} style={{ maxWidth: 170 }}>
-          <option value="none">No grouping</option>
-          <option value="source">Group by source</option>
-          <option value="tag">Group by tag</option>
-          <option value="syncstate">Group by sync state</option>
-        </select>
-        <button className="ghost" onClick={() => setShowLeaderboard(true)}>🏆 Leaderboard</button>
-      </div>
+      {/* Search + grouping controls — collapsed into two clean rows.
+          Row 1: search + quick chips. Row 2: tag/source/sort/group +
+          leaderboard. Reduces visual clutter from the old 9-control row. */}
+      <div
+        className="page-people-controls"
+        style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}
+      >
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            placeholder="Search name, GitHub, LeetCode…"
+            value={filter.q}
+            onChange={(e) => setFilter({ ...filter, q: e.target.value })}
+            style={{ flex: 1, minWidth: 220, maxWidth: 380 }}
+          />
+          <div className="chip-row" style={{ flex: 1, justifyContent: "flex-start" }}>
+            <button className={"chip" + (filter.only === "" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "" })}>
+              All · {people.length}
+            </button>
+            <button className={"chip" + (filter.only === "following" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "following" })}>
+              ★ Following · {people.filter((p) => Array.isArray(p.tags) && p.tags.includes("following")).length}
+            </button>
+            <button className={"chip" + (filter.only === "gh" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "gh" })}>
+              GitHub
+            </button>
+            <button className={"chip" + (filter.only === "cp" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "cp" })}>
+              CP
+            </button>
+            <button className={"chip" + (filter.only === "unsynced" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "unsynced" })}>
+              Unsynced
+            </button>
+          </div>
+          <button className="ghost" onClick={() => setShowLeaderboard(true)} title="Open leaderboard">
+            🏆 Leaderboard
+          </button>
+        </div>
 
-      {/* Only-filter chips */}
-      <div className="chip-row" style={{ marginBottom: 14 }}>
-        <button className={"chip" + (filter.only === "" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "" })}>All · {people.length}</button>
-        <button className={"chip" + (filter.only === "following" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "following" })}>★ Following · {people.filter((p) => Array.isArray(p.tags) && p.tags.includes("following")).length}</button>
-        <button className={"chip" + (filter.only === "gh" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "gh" })}>Has GitHub</button>
-        <button className={"chip" + (filter.only === "cp" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "cp" })}>Has CP handle</button>
-        <button className={"chip" + (filter.only === "unsynced" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "unsynced" })}>Never synced</button>
-        {status?.msg && <small className="muted" style={{ marginLeft: "auto" }}>{status.msg}</small>}
-        {status?.err && <small className="error" style={{ marginLeft: "auto" }}>{status.err}</small>}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <small className="muted" style={{ minWidth: 38 }}>Filter</small>
+          <select value={filter.tag} onChange={(e) => setFilter({ ...filter, tag: e.target.value })} style={{ minWidth: 140 }}>
+            <option value="">All tags</option>
+            {tagOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={filter.source} onChange={(e) => setFilter({ ...filter, source: e.target.value })} style={{ minWidth: 140 }}>
+            <option value="">All sources</option>
+            {sourceOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <span className="muted" style={{ width: 1, height: 18, background: "var(--border)" }} />
+          <small className="muted" style={{ minWidth: 30 }}>Sort</small>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ minWidth: 160 }}>
+            <option value="activity">Recent activity</option>
+            <option value="name">Name</option>
+          </select>
+          <small className="muted" style={{ minWidth: 38 }}>Group</small>
+          <select value={groupBy} onChange={(e) => setGroupBy(e.target.value)} style={{ minWidth: 140 }}>
+            <option value="none">None</option>
+            <option value="source">Source</option>
+            <option value="tag">Tag</option>
+            <option value="syncstate">Sync state</option>
+          </select>
+          {status?.msg && <small className="muted" style={{ marginLeft: "auto" }}>{status.msg}</small>}
+          {status?.err && <small className="error" style={{ marginLeft: "auto" }}>{status.err}</small>}
+        </div>
       </div>
 
       {/* Recent activity feed — its own section */}
@@ -421,6 +458,54 @@ function SyncBar({ label, total, done, ok, err, current, rateLimited }) {
       <div className="bar"><div className="bar-fill" style={{ width: `${pct}%` }} /></div>
       <small className="muted">{rateLimited ? "rate-limited; stopped" : current ? `current: ${current}` : "…"}</small>
     </div>
+  );
+}
+
+// One-click button that scrapes the SRM CP leaderboard
+// (https://lead.aakarsh.xyz/leaderboard/master) and imports / updates
+// people. Pulls name + reg + LeetCode handle + section.
+function SrmLeaderboardButton({ onSynced }) {
+  const [busy, setBusy] = useState(false);
+  const [last, setLast] = useState(null);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => {
+    api.cp.srmLeaderboardLastSync?.().then((r) => setLast(r)).catch(() => {});
+  }, []);
+
+  async function run() {
+    setBusy(true);
+    setMsg("Fetching SRM leaderboard…");
+    try {
+      const r = await api.cp.syncSrmLeaderboard();
+      if (!r?.ok) {
+        setMsg("Failed: " + (r?.error || "unknown"));
+      } else {
+        setMsg(`Imported ${r.imported}, updated ${r.updated} of ${r.total}.`);
+        setLast({ at: r.fetchedAt, ...r });
+        onSynced?.();
+      }
+    } catch (e) {
+      setMsg("Error: " + e.message);
+    } finally {
+      setBusy(false);
+      setTimeout(() => setMsg(null), 4000);
+    }
+  }
+
+  return (
+    <button
+      className="ghost"
+      onClick={run}
+      disabled={busy}
+      title={
+        last
+          ? `Last sync: ${new Date(last.at).toLocaleString()} · ${last.imported || 0} new, ${last.updated || 0} updated`
+          : "Pull classmates from lead.aakarsh.xyz/leaderboard/master"
+      }
+    >
+      {busy ? "Syncing leaderboard…" : msg || "Sync SRM leaderboard"}
+    </button>
   );
 }
 
@@ -823,76 +908,108 @@ function AddPersonModal({ onClose, onSaved }) {
   );
 }
 
-// Replacement for the old NextTechLab-only import. Accepts any URL; the
-// NextTechLab 4 presets are one-click so the old flow stays frictionless.
+// Single-flow link import. NextTechLab is no longer a separate tab — its
+// labs sit alongside any other preset as `{label, url}` pairs. Users can
+// add their own presets via the "+ Add preset" row (persisted to
+// localStorage). Multi-URL bulk scrape (e.g. all 5 NTL labs at once) is a
+// single chip that ships with the built-in presets.
 function ImportByLinkModal({ onClose, onImported }) {
   const [url, setUrl] = useState("");
-  const [tab, setTab] = useState("paste");
   const [loading, setLoading] = useState(false);
-  const [preview, setPreview] = useState(null); // { candidates: [...] }
-  const [ntl, setNtl] = useState(null);          // { 'ntl:satoshi': res, ... }
-  const [picked, setPicked] = useState(new Set()); // keys into candidates: `${source}:${i}`
+  // Combined results — both single-URL previews and multi-URL bulk runs end
+  // up here as one flat candidate list, keyed `${source}:${i}`.
+  const [results, setResults] = useState([]); // [{source, candidates}]
+  const [picked, setPicked] = useState(new Set());
   const [err, setErr] = useState(null);
 
-  async function runPreview() {
-    if (!url.trim()) return;
-    setErr(null); setLoading(true); setPreview(null);
+  // Custom presets from localStorage merged with the built-ins.
+  const [userPresets, setUserPresets] = useState(loadUserLinkPresets());
+  const [adding, setAdding] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [newUrl, setNewUrl] = useState("");
+  const allPresets = useMemo(
+    () => [...BUILTIN_LINK_PRESETS, ...userPresets],
+    [userPresets],
+  );
+
+  function addPreset() {
+    const lbl = newLabel.trim();
+    const u = newUrl.trim();
+    if (!lbl || !u) return;
+    const next = [...userPresets, { label: lbl, url: u }];
+    setUserPresets(next);
+    saveUserLinkPresets(next);
+    setNewLabel(""); setNewUrl(""); setAdding(false);
+  }
+  function deletePreset(p) {
+    if (!userPresets.find((x) => x.url === p.url && x.label === p.label)) return;
+    const next = userPresets.filter((x) => !(x.url === p.url && x.label === p.label));
+    setUserPresets(next);
+    saveUserLinkPresets(next);
+  }
+
+  async function runPreview(targetUrl = url) {
+    const u = (targetUrl || "").trim();
+    if (!u) return;
+    setErr(null); setLoading(true);
     try {
-      const res = await api.import.preview(url.trim());
+      const res = await api.import.preview(u);
       if (!res.ok) setErr(res.error || "Preview failed");
       else {
-        setPreview(res);
-        const all = new Set((res.candidates || []).map((_, i) => `ext:${i}`));
-        setPicked(all);
+        setResults((prev) => [...prev, { source: res.source || u, candidates: res.candidates || [] }]);
+        const start = results.reduce((s, r) => s + r.candidates.length, 0);
+        const next = new Set(picked);
+        (res.candidates || []).forEach((_, i) => next.add(`${start + i}`));
+        setPicked(next);
       }
     } catch (e) { setErr(e.message); }
     finally { setLoading(false); }
   }
-
-  async function runNtl4() {
-    setErr(null); setLoading(true); setNtl(null);
+  async function runNtl4Bulk() {
+    setErr(null); setLoading(true);
     try {
       const res = await api.import.previewNtl4();
-      setNtl(res);
-      const all = new Set();
+      const newResults = [];
       Object.entries(res || {}).forEach(([k, r]) => {
-        if (r?.ok) (r.candidates || []).forEach((_, i) => all.add(`${k}:${i}`));
+        if (r?.ok) newResults.push({ source: k, candidates: r.candidates || [] });
       });
-      setPicked(all);
+      setResults((prev) => {
+        const merged = [...prev, ...newResults];
+        // Auto-select all newly added candidates.
+        let cursor = prev.reduce((s, r) => s + r.candidates.length, 0);
+        const next = new Set(picked);
+        for (const r of newResults) {
+          for (let i = 0; i < r.candidates.length; i++) next.add(`${cursor++}`);
+        }
+        setPicked(next);
+        return merged;
+      });
     } catch (e) { setErr(e.message); }
     finally { setLoading(false); }
   }
 
-  async function commit() {
-    const toImport = [];
-    if (tab === "paste" && preview) {
-      (preview.candidates || []).forEach((c, i) => {
-        if (picked.has(`ext:${i}`)) toImport.push({ ...c, source: preview.source });
-      });
-    } else if (tab === "ntl4" && ntl) {
-      Object.entries(ntl).forEach(([k, r]) => {
-        if (r?.ok) (r.candidates || []).forEach((c, i) => {
-          if (picked.has(`${k}:${i}`)) toImport.push({ ...c, source: k });
-        });
-      });
+  // Flat list of candidates with stable keys.
+  const allRows = useMemo(() => {
+    const rows = [];
+    let i = 0;
+    for (const r of results) {
+      for (const c of r.candidates) {
+        rows.push({ key: String(i), c, source: r.source });
+        i++;
+      }
     }
+    return rows;
+  }, [results]);
+
+  async function commit() {
+    const toImport = allRows
+      .filter((r) => picked.has(r.key))
+      .map((r) => ({ ...r.c, source: r.source }));
     if (toImport.length === 0) return;
     const res = await api.import.commit(toImport);
     if (res?.ok) onImported();
     else setErr(res?.error || "Import failed");
   }
-
-  const allRows = useMemo(() => {
-    const rows = [];
-    if (tab === "paste" && preview) {
-      (preview.candidates || []).forEach((c, i) => rows.push({ key: `ext:${i}`, c }));
-    } else if (tab === "ntl4" && ntl) {
-      Object.entries(ntl).forEach(([k, r]) => {
-        if (r?.ok) (r.candidates || []).forEach((c, i) => rows.push({ key: `${k}:${i}`, c, group: k }));
-      });
-    }
-    return rows;
-  }, [tab, preview, ntl]);
 
   return (
     <div className="modal-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -901,38 +1018,104 @@ function ImportByLinkModal({ onClose, onImported }) {
           <h3 style={{ margin: 0 }}>Import people from links</h3>
           <button className="ghost" onClick={onClose}>✕</button>
         </div>
-        <p className="muted">Paste a URL (GitHub profile/org, LinkedIn, or any page that links to people) — Apex extracts GitHub handles + LinkedIn URLs for you. Or hit "NextTechLab 4" to scrape all five labs at once.</p>
+        <p className="muted">
+          Paste any URL (GitHub profile/org, LinkedIn, or any page that links
+          to people). Apex extracts GitHub handles + LinkedIn URLs. Add your
+          own preset URLs below for one-click runs later.
+        </p>
 
-        <div className="chip-row" style={{ marginBottom: 12 }}>
-          <button className={"chip" + (tab === "paste" ? " active" : "")} onClick={() => setTab("paste")}>Paste link</button>
-          <button className={"chip" + (tab === "ntl4" ? " active" : "")} onClick={() => setTab("ntl4")}>NextTechLab 4</button>
+        <div className="row" style={{ gap: 6 }}>
+          <input
+            autoFocus
+            placeholder="https://github.com/octocat or any URL"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            style={{ flex: 1 }}
+            onKeyDown={(e) => { if (e.key === "Enter") runPreview(); }}
+          />
+          <button
+            className="primary"
+            onClick={() => runPreview()}
+            disabled={loading || !url.trim()}
+          >
+            {loading ? "…" : "Preview"}
+          </button>
         </div>
 
-        {tab === "paste" && (
-          <>
-            <div className="row" style={{ gap: 6 }}>
-              <input autoFocus placeholder="https://github.com/octocat or https://nexttechlab.in/labs/satoshi"
-                value={url} onChange={(e) => setUrl(e.target.value)} style={{ flex: 1 }}
-                onKeyDown={(e) => { if (e.key === "Enter") runPreview(); }} />
-              <button className="primary" onClick={runPreview} disabled={loading || !url.trim()}>{loading ? "…" : "Preview"}</button>
-            </div>
-            <div className="chip-row" style={{ marginTop: 8 }}>
-              {LINK_PRESETS.map((p) => (
-                <button key={p.url} className="chip" onClick={() => { setUrl(p.url); }}>{p.label}</button>
-              ))}
-            </div>
-          </>
-        )}
-        {tab === "ntl4" && (
-          <div className="row">
-            <button className="primary" onClick={runNtl4} disabled={loading}>{loading ? "Scraping…" : "Scrape all 5 NTL labs"}</button>
-            {ntl && (
-              <small className="muted">
-                {Object.entries(ntl).map(([k, r]) => `${k.replace("ntl:", "")}: ${r?.ok ? (r.candidates?.length || 0) : "err"}`).join(" · ")}
-              </small>
-            )}
+        {/* Preset chips — built-ins + user presets, with the bulk-scrape
+            shortcut and an "+ Add preset" row that mirrors normal link
+            convention (title + URL). */}
+        <div style={{ marginTop: 12 }}>
+          <div className="section-label" style={{ marginBottom: 6 }}>
+            Presets
           </div>
-        )}
+          <div className="chip-row">
+            {allPresets.map((p) => {
+              const isUser = userPresets.some((x) => x.url === p.url && x.label === p.label);
+              return (
+                <span key={p.url + ":" + p.label} style={{ position: "relative", display: "inline-flex" }}>
+                  <button
+                    className="chip"
+                    onClick={() => { setUrl(p.url); runPreview(p.url); }}
+                    title={p.url}
+                  >
+                    {p.label}
+                  </button>
+                  {isUser && (
+                    <button
+                      type="button"
+                      className="ghost xsmall"
+                      onClick={() => deletePreset(p)}
+                      title="Remove preset"
+                      style={{ marginLeft: 2 }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+            <button
+              className="chip"
+              onClick={runNtl4Bulk}
+              disabled={loading}
+              title="Scrape all 5 NextTechLab labs in one shot"
+            >
+              ⚡ All NTL labs
+            </button>
+            <button
+              className="chip"
+              onClick={() => setAdding((v) => !v)}
+              title="Add your own preset"
+            >
+              {adding ? "Cancel" : "+ Add preset"}
+            </button>
+          </div>
+          {adding && (
+            <div className="row" style={{ gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+              <input
+                placeholder="Title (e.g. My class GitHub list)"
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                style={{ flex: 1, minWidth: 200 }}
+              />
+              <input
+                placeholder="https://…"
+                value={newUrl}
+                onChange={(e) => setNewUrl(e.target.value)}
+                style={{ flex: 1, minWidth: 240 }}
+                onKeyDown={(e) => { if (e.key === "Enter") addPreset(); }}
+              />
+              <button
+                className="primary small"
+                onClick={addPreset}
+                disabled={!newLabel.trim() || !newUrl.trim()}
+              >
+                Save preset
+              </button>
+            </div>
+          )}
+        </div>
 
         {err && <div className="error" style={{ marginTop: 10 }}>{err}</div>}
 
@@ -948,7 +1131,7 @@ function ImportByLinkModal({ onClose, onImported }) {
               </div>
             </div>
             <div style={{ maxHeight: 360, overflowY: "auto", marginTop: 8 }}>
-              {allRows.map(({ key, c, group }) => (
+              {allRows.map(({ key, c, source }) => (
                 <label key={key} className="todo-row" style={{ cursor: "pointer" }}>
                   <input type="checkbox" checked={picked.has(key)} onChange={(e) => {
                     const n = new Set(picked);
@@ -958,7 +1141,7 @@ function ImportByLinkModal({ onClose, onImported }) {
                   <div>
                     <div className="title">{c.name || c.github_username || c.linkedin_url}</div>
                     <div className="sub">
-                      {group && <span className="pill gray">{group}</span>}{" "}
+                      {source && <span className="pill gray">{source}</span>}{" "}
                       {c.github_username && <>@{c.github_username}</>}
                       {c.linkedin_url && <> · linkedin</>}
                     </div>
@@ -1291,9 +1474,33 @@ function RepoDetailModal({ repo, person, onClose }) {
           >
             Chat {chatHistory.length > 0 ? `· ${Math.ceil(chatHistory.length / 2)}` : ""}
           </button>
+          <button
+            type="button"
+            className={"today-tab" + (tab === "walkthrough" ? " active" : "")}
+            onClick={() => setTab("walkthrough")}
+            title="AI walks you through the repo file by file"
+          >
+            Walkthrough
+          </button>
+          <button
+            type="button"
+            className={"today-tab" + (tab === "compare" ? " active" : "")}
+            onClick={() => setTab("compare")}
+            title="Compare this repo to your own projects"
+          >
+            Compare
+          </button>
         </div>
 
-        {tab === "chat" ? (
+        {tab === "walkthrough" ? (
+          <RepoWalkthroughPanel
+            repo={repo}
+            ollamaOk={ollamaOk}
+            model={model}
+          />
+        ) : tab === "compare" ? (
+          <RepoComparePanel repo={repo} />
+        ) : tab === "chat" ? (
           <RepoChatPanel
             repo={repo}
             history={chatHistory}
@@ -1586,6 +1793,285 @@ function RepoChatPanel({
           {loading ? "…" : "Send"}
         </button>
       </form>
+    </div>
+  );
+}
+
+// ─── RepoWalkthroughPanel ────────────────────────────────────────────────
+// Interactive guided tour of a repo. Sidebar shows the file tree (entry
+// files highlighted), centre shows the current file's contents, right
+// shows the AI's per-file explanation. "Next" advances to the AI's
+// suggested next file, but you can click any file in the sidebar to jump.
+function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
+  const [tree, setTree] = React.useState([]);
+  const [currentPath, setCurrentPath] = React.useState(null);
+  const [content, setContent] = React.useState("");
+  const [explanation, setExplanation] = React.useState(null);
+  const [visited, setVisited] = React.useState([]);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState(null);
+  const [question, setQuestion] = React.useState("");
+  const [qaHistory, setQaHistory] = React.useState([]);
+
+  // Load tree on mount.
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await api.repo.tree(repo.full_name);
+        if (!cancelled && r?.ok) {
+          setTree(r.paths || []);
+          // Auto-suggest entry: README, then package.json, then src/index.*
+          const paths = (r.paths || []).map((p) => p.path);
+          const entryRegex = [
+            /^README\.md$/i,
+            /^package\.json$/,
+            /^src\/index\.(js|ts|tsx|jsx)$/,
+            /^src\/main\.(js|ts|py|go|rs)$/,
+            /^index\.html$/,
+            /^main\.py$/,
+          ];
+          let entry = null;
+          for (const re of entryRegex) {
+            entry = paths.find((p) => re.test(p));
+            if (entry) break;
+          }
+          if (!entry) entry = paths[0];
+          if (entry) walkTo(entry, []);
+        }
+      } catch (e) {
+        if (!cancelled) setErr(e.message);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repo.full_name]);
+
+  async function walkTo(path, prevVisited = visited) {
+    if (!path) return;
+    setBusy(true); setErr(null);
+    setCurrentPath(path);
+    setContent(""); setExplanation(null);
+    try {
+      const r = await api.repo.walkthrough({
+        repoId: repo.id,
+        fullName: repo.full_name,
+        filePath: path,
+        visitedPaths: prevVisited,
+        model,
+      });
+      if (!r?.ok) {
+        setErr(r?.error || "walkthrough failed");
+      } else {
+        setContent(r.fileContent || "");
+        setExplanation(r.text || r.summary || "");
+        setVisited([...prevVisited, path]);
+      }
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Pull "Look at next: <path>" from the explanation if present.
+  function suggestedNext() {
+    if (!explanation) return null;
+    const m = explanation.match(/look at next[:\s]*\`?([^\s`\n]+)\`?/i);
+    return m ? m[1].replace(/[.,]$/, "") : null;
+  }
+
+  async function askQuestion() {
+    const q = question.trim();
+    if (!q || !currentPath) return;
+    setBusy(true);
+    try {
+      const r = await api.repo.chat({
+        repoId: repo.id,
+        fullName: repo.full_name,
+        question: `In the file \`${currentPath}\`: ${q}`,
+        history: qaHistory,
+        model,
+      });
+      if (r?.ok) {
+        setQaHistory([
+          ...qaHistory,
+          { role: "user", content: q },
+          { role: "assistant", content: r.text || "" },
+        ]);
+        setQuestion("");
+      } else {
+        setErr(r?.error || "Q&A failed");
+      }
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const next = suggestedNext();
+
+  return (
+    <div className="repo-walkthrough" style={{ marginTop: 12, display: "grid", gridTemplateColumns: "200px 1fr 1fr", gap: 10, minHeight: 460 }}>
+      {/* File tree */}
+      <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "auto", maxHeight: 600, padding: 6 }}>
+        <div className="section-label" style={{ marginBottom: 4, padding: "0 4px" }}>Files</div>
+        {tree.length === 0 && <small className="muted" style={{ padding: 6 }}>Loading tree…</small>}
+        {tree.map((p) => {
+          const visited_ = visited.includes(p.path);
+          const active = p.path === currentPath;
+          return (
+            <div
+              key={p.path}
+              onClick={() => walkTo(p.path)}
+              title={p.path}
+              style={{
+                fontSize: 11,
+                padding: "3px 6px",
+                cursor: "pointer",
+                borderRadius: 4,
+                background: active ? "var(--accent-soft)" : visited_ ? "var(--bg-elev-2)" : "transparent",
+                color: active ? "var(--accent)" : "var(--text-dim)",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                fontFamily: "var(--font-mono, monospace)",
+              }}
+            >
+              {visited_ ? "● " : "○ "}{p.path}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* File viewer */}
+      <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        <div className="row between" style={{ padding: "6px 10px", background: "var(--bg-elev-2)", borderBottom: "1px solid var(--border)" }}>
+          <code style={{ fontSize: 11 }}>{currentPath || "(no file)"}</code>
+          <small className="muted">{visited.length} / {tree.length} visited</small>
+        </div>
+        <pre style={{ flex: 1, margin: 0, padding: 10, overflow: "auto", fontSize: 11, fontFamily: "var(--font-mono, monospace)", maxHeight: 540 }}>
+          {busy && !content ? "loading…" : content}
+        </pre>
+      </div>
+
+      {/* AI explanation + Q&A */}
+      <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", maxHeight: 600 }}>
+        <div className="section-label" style={{ marginBottom: 6 }}>Apex says</div>
+        <div style={{ flex: 1, overflowY: "auto", fontSize: 12 }}>
+          {!ollamaOk && <div className="muted">Ollama is offline — start it from Settings.</div>}
+          {busy && !explanation && <em className="muted">Reading the file…</em>}
+          {explanation && <MarkdownBlock text={explanation} />}
+          {qaHistory.map((m, i) => (
+            <div key={i} style={{ marginTop: 8, padding: 8, borderRadius: 6, background: m.role === "user" ? "var(--accent-soft)" : "var(--bg-elev-2)" }}>
+              <strong style={{ fontSize: 10, color: "var(--text-faint)" }}>{m.role === "user" ? "YOU" : "APEX"}</strong>
+              <MarkdownBlock text={m.content} />
+            </div>
+          ))}
+        </div>
+        {next && (
+          <button
+            className="primary small"
+            onClick={() => walkTo(next)}
+            disabled={busy}
+            style={{ marginTop: 8 }}
+            title={`Walk to ${next}`}
+          >
+            Next → {next}
+          </button>
+        )}
+        <form
+          style={{ marginTop: 8, display: "flex", gap: 6 }}
+          onSubmit={(e) => { e.preventDefault(); if (!busy) askQuestion(); }}
+        >
+          <input
+            placeholder={currentPath ? `Ask about ${currentPath.split("/").pop()}…` : "Ask…"}
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            style={{ flex: 1, fontSize: 12 }}
+            disabled={!ollamaOk || busy || !currentPath}
+          />
+          <button className="ghost xsmall" type="submit" disabled={!question.trim() || busy}>Ask</button>
+        </form>
+        {err && <div className="error" style={{ marginTop: 6, fontSize: 11 }}>{err}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ─── RepoComparePanel ────────────────────────────────────────────────────
+// Lists the user's own repos that share at least one language with the
+// target repo. Shows them side-by-side so the user can self-compare.
+function RepoComparePanel({ repo }) {
+  const [matches, setMatches] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [err, setErr] = React.useState(null);
+  const [myUser, setMyUser] = React.useState("");
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const u = (await api.settings?.get?.("github.username")) || "";
+        if (!cancelled) setMyUser(u);
+        const r = await api.repo.similarToMine({ repoId: repo.id, myUsername: u });
+        if (!cancelled) {
+          if (r?.ok) setMatches(r.matches || []);
+          else setErr(r?.error || "compare failed");
+          setLoading(false);
+        }
+      } catch (e) {
+        if (!cancelled) { setErr(e.message); setLoading(false); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [repo.id]);
+
+  if (loading) return <div className="muted" style={{ marginTop: 14 }}>Looking at your repos…</div>;
+  if (err) return <div className="error" style={{ marginTop: 14 }}>{err}</div>;
+  if (!myUser) return (
+    <div className="muted" style={{ marginTop: 14 }}>
+      Set your GitHub username in Settings → Integrations → GitHub to see comparisons.
+    </div>
+  );
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div className="section-label" style={{ marginBottom: 8 }}>
+        Your repos that share a language with {repo.name}
+      </div>
+      {matches.length === 0 ? (
+        <div className="muted">
+          No matches — none of your repos share a primary language with this one.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
+          {matches.map((m) => (
+            <div key={m.repo.id} className="card" style={{ padding: 12 }}>
+              <div className="row between">
+                <strong>{m.repo.name}</strong>
+                {m.repo.language && (
+                  <span className="pill gray" style={{ fontSize: 10 }}>{m.repo.language}</span>
+                )}
+              </div>
+              {m.repo.description && (
+                <small className="muted" style={{ display: "block", marginTop: 4 }}>
+                  {m.repo.description}
+                </small>
+              )}
+              <div className="row" style={{ gap: 6, marginTop: 6 }}>
+                <small className="muted">★ {m.repo.stars || 0}</small>
+                {m.repo.url && (
+                  <a href={m.repo.url} target="_blank" rel="noreferrer" className="ghost xsmall">
+                    open ↗
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

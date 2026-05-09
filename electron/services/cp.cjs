@@ -302,6 +302,156 @@ async function fetchAllPeople(onProgress) {
   return { ok: true, total, done, okCount: ok, errCount: err };
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// SRM Leaderboard scraper · https://lead.aakarsh.xyz/leaderboard/master
+// The page renders the table client-side from a JSON endpoint, but the
+// final DOM is fully present in the HTML response we can pull with a plain
+// GET. We parse the <table> with a tiny regex pipeline (no jsdom dep).
+//
+// Each row gives us:  rank, name, leetcode handle, registration, dept/sec,
+//                     easy, medium, hard, points, total
+// ───────────────────────────────────────────────────────────────────────────
+async function fetchSrmLeaderboard() {
+  const url = 'https://lead.aakarsh.xyz/leaderboard/master';
+  let html;
+  try {
+    const res = await safeFetch(url, { headers: { Accept: 'text/html,application/xhtml+xml' } });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    html = await res.text();
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+
+  // Pull each <tr> inside <tbody>. We don't load a full DOM parser to avoid
+  // the dep — the page's row format is stable enough for a regex pass.
+  const tbodyMatch = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
+  if (!tbodyMatch) return { ok: false, error: 'no leaderboard tbody found' };
+  const rowMatches = [...tbodyMatch[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+  if (!rowMatches.length) return { ok: false, error: 'no rows in tbody' };
+
+  const stripTags = (s) =>
+    s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+  const rows = [];
+  for (const m of rowMatches) {
+    const cells = [...m[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((x) => x[1]);
+    if (cells.length < 9) continue;
+
+    // Rank may include "🥇 1" / "🥈 2" / "🥉 3" / "4" — pull the trailing int.
+    const rankRaw = stripTags(cells[0]);
+    const rank = parseInt(rankRaw.match(/(\d+)/)?.[1] || '0', 10);
+
+    // Student cell has TWO sub-divs: name + leetcode handle.
+    const nameMatch  = cells[1].match(/<div class="font-medium"[^>]*>([\s\S]*?)<\/div>/i);
+    const handleMatch = cells[1].match(/break-all"[^>]*>([\s\S]*?)<\/div>/i);
+    const name   = nameMatch  ? stripTags(nameMatch[1])  : stripTags(cells[1]);
+    const handle = handleMatch ? stripTags(handleMatch[1]) : null;
+
+    const reg     = stripTags(cells[2]);
+    const section = stripTags(cells[3]);
+    const easy    = parseInt(stripTags(cells[4]) || '0', 10);
+    const medium  = parseInt(stripTags(cells[5]) || '0', 10);
+    const hard    = parseInt(stripTags(cells[6]) || '0', 10);
+    const points  = parseInt(stripTags(cells[7]) || '0', 10);
+    const total   = parseInt(stripTags(cells[8]) || '0', 10);
+
+    if (!name || !reg) continue;
+    rows.push({
+      rank,
+      name,
+      leetcodeHandle: handle,
+      registration: reg,
+      section,
+      easy, medium, hard,
+      points,
+      total,
+    });
+  }
+
+  return { ok: true, rows, fetchedAt: new Date().toISOString() };
+}
+
+// Import / sync rows into the people table. Existing people are matched by
+// registration number first (rock-solid identity), then by LeetCode handle.
+// Updates leetcode_username / tags / source on existing rows so re-running
+// is idempotent. Returns counts: {imported, updated, skipped}.
+function syncSrmLeaderboardToPeople(rows = []) {
+  const dbh = db._db();
+  let imported = 0, updated = 0, skipped = 0;
+
+  // Cache existing people once; building a Map by registration + by LC handle.
+  const existing = dbh.prepare(`SELECT id, name, leetcode_username, tags, source FROM people`).all();
+  const byHandle = new Map();
+  for (const p of existing) {
+    if (p.leetcode_username) byHandle.set(p.leetcode_username.toLowerCase(), p);
+  }
+  // We'll also key by reg-number stored in the `notes` field.
+  const byReg = new Map();
+  for (const p of existing) {
+    let n;
+    try { n = JSON.parse(p.notes || '{}'); } catch { n = {}; }
+    if (n?.registration) byReg.set(n.registration.toUpperCase(), p);
+  }
+
+  for (const row of rows) {
+    if (!row.name || !row.registration) { skipped++; continue; }
+    const regKey = row.registration.toUpperCase();
+    const lcKey = (row.leetcodeHandle || '').toLowerCase();
+    const match = byReg.get(regKey) || (lcKey && byHandle.get(lcKey)) || null;
+
+    const tags = ['classmate', 'srm-leaderboard'];
+    if (row.section) tags.push(`section:${row.section.toLowerCase().replace(/\s+/g, '-')}`);
+
+    if (match) {
+      // Update existing — top up LC handle if missing, refresh notes.
+      let prevNotes = {};
+      try { prevNotes = JSON.parse(match.notes || '{}'); } catch {}
+      const notes = {
+        ...prevNotes,
+        registration: regKey,
+        section: row.section,
+        srmLeaderboard: {
+          rank: row.rank, points: row.points, total: row.total,
+          easy: row.easy, medium: row.medium, hard: row.hard,
+          fetchedAt: new Date().toISOString(),
+        },
+      };
+      dbh.prepare(
+        `UPDATE people
+            SET leetcode_username = COALESCE(leetcode_username, ?),
+                tags = ?,
+                notes = ?,
+                source = COALESCE(NULLIF(source, ''), 'srm-leaderboard')
+          WHERE id = ?`,
+      ).run(row.leetcodeHandle || null, JSON.stringify(tags), JSON.stringify(notes), match.id);
+      updated++;
+    } else {
+      // Insert new.
+      const notes = {
+        registration: regKey,
+        section: row.section,
+        srmLeaderboard: {
+          rank: row.rank, points: row.points, total: row.total,
+          easy: row.easy, medium: row.medium, hard: row.hard,
+          fetchedAt: new Date().toISOString(),
+        },
+      };
+      dbh.prepare(
+        `INSERT INTO people
+           (name, leetcode_username, tags, notes, source, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'srm-leaderboard', datetime('now'), datetime('now'))`,
+      ).run(row.name, row.leetcodeHandle || null, JSON.stringify(tags), JSON.stringify(notes));
+      imported++;
+    }
+  }
+
+  db.setSetting(
+    'cp.srmLeaderboard.lastSync',
+    JSON.stringify({ at: new Date().toISOString(), imported, updated, skipped, total: rows.length }),
+  );
+  return { ok: true, imported, updated, skipped, total: rows.length };
+}
+
 module.exports = {
   fetchLeetCode,
   fetchCodeforces,
@@ -310,4 +460,6 @@ module.exports = {
   fetchAllPeople,
   fetchSelf,
   selfCached,
+  fetchSrmLeaderboard,
+  syncSrmLeaderboardToPeople,
 };

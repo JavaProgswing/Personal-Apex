@@ -169,6 +169,9 @@ contextBridge.exposeInMainWorld("apex", {
     leaderboard: (platform) => invoke("cp:leaderboard", platform),
     summarize: (args) => invoke("cp:summarize", args),
     onProgress: (h) => on("cp:progress", h),
+    fetchSrmLeaderboard: () => invoke("cp:fetchSrmLeaderboard"),
+    syncSrmLeaderboard: () => invoke("cp:syncSrmLeaderboard"),
+    srmLeaderboardLastSync: () => invoke("cp:srmLeaderboardLastSync"),
   },
   ntl: {
     scrape: (lab) => invoke("ntl:scrape", lab),
@@ -233,6 +236,11 @@ contextBridge.exposeInMainWorld("apex", {
     recentCommits: (args) => invoke("repo:recentCommits", args),
     summarizeRecentChanges: (args) => invoke("repo:summarizeRecentChanges", args),
     chat: (args) => invoke("repo:chat", args),
+    // Walkthrough + compare
+    tree: (fullName) => invoke("repo:tree", fullName),
+    fileContent: (args) => invoke("repo:fileContent", args),
+    walkthrough: (args) => invoke("repo:walkthrough", args),
+    similarToMine: (args) => invoke("repo:similarToMine", args),
   },
   commit: {
     detail: (args) => invoke("commit:detail", args),
