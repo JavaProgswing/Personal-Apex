@@ -1522,6 +1522,20 @@ function GithubTab({ all, setAll, save }) {
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="card-title">GitHub</div>
       <div className="form-row">
+        <label>Your GitHub username</label>
+        <input
+          type="text"
+          value={all["github.username"] || ""}
+          placeholder="e.g. yashasvi-allen-kujur"
+          onChange={(e) => setAll({ ...all, "github.username": e.target.value })}
+          onBlur={(e) => save("github.username", e.target.value.trim())}
+        />
+        <small className="hint">
+          Used by repo Compare to fetch your own repos and find ones with
+          overlapping languages/topics.
+        </small>
+      </div>
+      <div className="form-row" style={{ marginTop: 10 }}>
         <label>Personal access token (optional — boosts rate limit to 5000/hr)</label>
         <input type="password" value={all["github.token"] || ""} placeholder="ghp_…"
           onChange={(e) => setAll({ ...all, "github.token": e.target.value })}

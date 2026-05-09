@@ -1334,32 +1334,120 @@ async function walkthroughFile({
   treeSnapshot = [], // first ~50 paths for context
   model,
 }) {
+  // Concise but example-driven. The user wants enough depth to actually
+  // understand the workings, not a glorified file summary. Always
+  // reference real symbols and end with a "Look at next:" hint so the
+  // walkthrough has natural forward momentum.
   const sys =
-    `You are a senior engineer giving a guided walkthrough of an open-source ` +
-    `repo to a CS undergrad named Yashasvi who wants to learn how to build ` +
-    `something similar.\n` +
-    `Right now you are explaining ONE file. Be concrete, terse, and practical:\n` +
-    `  - 1-2 sentences on what this file is (purpose, role in the project).\n` +
-    `  - 3-5 bullets on the interesting parts (functions, patterns, gotchas).\n` +
-    `  - 1 line: "Look at next:" suggesting a specific path from the tree.\n` +
-    `Do NOT regurgitate the file. Reference real symbols. ~150 words max.\n`;
-  const treePreview = (treeSnapshot || []).slice(0, 40).join('\n');
-  const visitedPreview = (visitedPaths || []).slice(-6).join(', ');
+    `You are a senior engineer giving a guided code walkthrough to a CS ` +
+    `undergrad named Yashasvi who wants to learn how to build something ` +
+    `similar to this project.\n\n` +
+    `You are explaining ONE file at a time. Output structure (use markdown):\n` +
+    `**Purpose** — 1-2 sentences: what this file is and where it sits in ` +
+    `the runtime/build flow.\n` +
+    `**Key parts** — 3-5 bullets, each naming a real symbol/section from the ` +
+    `code (e.g. \`function foo()\`, the \`useEffect\` hook, etc.) with a ` +
+    `crisp explanation of what it does and WHY it's written that way.\n` +
+    `**Concrete example** — pick ONE non-trivial bit of logic and show how ` +
+    `it works on an actual input/example. Keep it short (≤6 lines of code).\n` +
+    `**Look at next:** \`<path/from/tree>\` — pick the most logical next ` +
+    `file from the project tree (NOT one already visited).\n\n` +
+    `Be concrete. Reference real names. Don't regurgitate the file. Stay ` +
+    `under 220 words for the whole answer.`;
+  const treePreview = (treeSnapshot || []).slice(0, 50).join('\n');
+  const visitedPreview = (visitedPaths || []).slice(-8).join(', ');
   const user =
     `Repo: ${repo.full_name || repo.name}\n` +
     `Languages: ${(repo.languages || []).join(', ') || 'unknown'}\n` +
-    `Already visited: ${visitedPreview || '(none yet — this is the entry file)'}\n\n` +
-    `--- Project tree (first 40) ---\n${treePreview}\n\n` +
-    `--- Current file: ${filePath} ---\n${(fileContent || '').slice(0, 6000)}\n\n` +
-    `Explain ${filePath} now, then suggest the next file to visit.`;
-  const r = await chat({ model, system: sys, user, temperature: 0.5 });
+    `Already visited (don't suggest these for "Look at next"): ` +
+    `${visitedPreview || '(none yet — this is the entry file)'}\n\n` +
+    `--- Project tree (first 50 paths) ---\n${treePreview}\n\n` +
+    `--- Current file: ${filePath} ---\n${(fileContent || '').slice(0, 7000)}\n\n` +
+    `Now explain ${filePath} following the structure above.`;
+  const r = await chat({ model, system: sys, user, temperature: 0.4 });
   return r;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// compareRepos — side-by-side analysis of two projects (target vs mine).
+// First call (no `question`) produces the structured comparison; later
+// calls treat `question` as a follow-up grounded in BOTH project contexts.
+// ───────────────────────────────────────────────────────────────────────────
+async function compareRepos({ target, mine, history = [], question, model }) {
+  // Trim each project's tree to the most informative paths so we don't
+  // blow the context window. Keep manifests and the top-level source dirs.
+  const trimPaths = (paths) => {
+    if (!Array.isArray(paths)) return [];
+    const noise = /(^|\/)(node_modules|dist|build|\.next|\.cache|coverage|vendor|target|venv|__pycache__)\//i;
+    return paths.filter((p) => !noise.test(p)).slice(0, 60);
+  };
+  const sketch = (r) => {
+    const t = trimPaths(r.paths || []).join('\n');
+    const manifestKeys = Object.keys(r.manifests || {});
+    const manifestPreview = manifestKeys.length
+      ? '\n--- manifests: ' + manifestKeys.join(', ')
+      : '';
+    const readmeFirst = (r.readme || '').slice(0, 1200);
+    return (
+      `# ${r.full_name || r.name}\n` +
+      `langs: ${(r.languages || []).join(', ') || 'unknown'}\n` +
+      `desc: ${r.description || '(none)'}\n` +
+      `topics: ${(r.topics || []).join(', ') || '-'}\n` +
+      manifestPreview +
+      `\n--- README (first ~1200) ---\n${readmeFirst}\n` +
+      `\n--- tree (first 60 paths) ---\n${t}\n`
+    );
+  };
+
+  if (!question) {
+    // Initial structured comparison.
+    const sys =
+      `You are a senior engineer doing a side-by-side comparison of TWO ` +
+      `projects for a CS undergrad named Yashasvi.\n\n` +
+      `One is the project he's exploring (TARGET); the other is one of his ` +
+      `OWN existing repos (MINE). Both share frameworks/ideas. Help him ` +
+      `learn by drawing the parallels — what's the same idea, what's done ` +
+      `differently, and what specific things his repo could borrow.\n\n` +
+      `Output structure (markdown):\n` +
+      `**Shared idea** — 1-2 sentences: what both projects fundamentally do ` +
+      `or share architecturally.\n` +
+      `**Same approach** — 2-4 bullets: patterns/frameworks/structures both ` +
+      `use, naming the actual paths or symbols where possible.\n` +
+      `**Different approach** — 2-4 bullets: where they diverge, with the ` +
+      `concrete what + why for each.\n` +
+      `**What MINE could borrow** — 2-4 actionable suggestions for the ` +
+      `user's own repo, prefixed by file paths in MINE that would change ` +
+      `(e.g. \`src/router.ts → switch to file-based routing because ...\`).\n\n` +
+      `Stay under 320 words. Reference real paths and library names.`;
+    const user =
+      `=== TARGET ===\n${sketch(target)}\n\n` +
+      `=== MINE ===\n${sketch(mine)}\n\n` +
+      `Now write the comparison.`;
+    return await chat({ model, system: sys, user, temperature: 0.4 });
+  }
+
+  // Follow-up Q&A — same context, conversation accumulator.
+  const sys =
+    `You are continuing a comparison conversation between TWO projects ` +
+    `(TARGET and MINE) for Yashasvi. You have full context on both. Answer ` +
+    `his follow-up question concretely, referencing actual file paths and ` +
+    `symbols. If asked "how would I do X", give a short code-shape sketch ` +
+    `(<= 8 lines) using paths from MINE so he can apply it directly. ` +
+    `Stay under 220 words.`;
+  const historyPreview = history.slice(-6)
+    .map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
+  const user =
+    `=== TARGET ===\n${sketch(target)}\n\n` +
+    `=== MINE ===\n${sketch(mine)}\n\n` +
+    (historyPreview ? `=== Conversation so far ===\n${historyPreview}\n\n` : '') +
+    `=== New question ===\n${question}\n\nAnswer.`;
+  return await chat({ model, system: sys, user, temperature: 0.4 });
 }
 
 module.exports = {
   listModels, chat, planDay, burnoutSuggest, eveningReview, burnoutCheck, summarizeRepo,
   summarizeRecentChanges, recommendNow, chatAboutRepo, chatAboutCommit,
-  summarizeCpActivity, extractTasksFromText, walkthroughFile,
+  summarizeCpActivity, extractTasksFromText, walkthroughFile, compareRepos,
   ocrTimetable, autoPickBest, resolveModel, personalContext, buildSystem,
   ping, ensureRunning,
 };

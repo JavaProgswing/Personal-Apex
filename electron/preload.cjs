@@ -242,6 +242,7 @@ contextBridge.exposeInMainWorld("apex", {
     fileContent: (args) => invoke("repo:fileContent", args),
     walkthrough: (args) => invoke("repo:walkthrough", args),
     similarToMine: (args) => invoke("repo:similarToMine", args),
+    compareWithMine: (args) => invoke("repo:compareWithMine", args),
   },
   commit: {
     detail: (args) => invoke("commit:detail", args),

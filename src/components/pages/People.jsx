@@ -2068,33 +2068,102 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
   const [err, setErr] = React.useState(null);
   const [question, setQuestion] = React.useState("");
   const [qaHistory, setQaHistory] = React.useState([]);
+  const [fullscreen, setFullscreen] = React.useState(false);
+  // Esc exits fullscreen.
+  React.useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e) => { if (e.key === "Escape") setFullscreen(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
 
-  // Load tree on mount.
+  // Compute the "essential files" tour — the ordered backbone of the
+  // project. Entry points first (README, manifests), then the canonical
+  // source roots (src/index.*, app/*, main.*), then any folder roots that
+  // hold actual code (not docs/tests/dist). The < and > buttons cycle
+  // through THIS list; you can still click any file in the tree to jump.
+  const essentialFiles = React.useMemo(() => {
+    const paths = tree.map((p) => p.path);
+    if (!paths.length) return [];
+    const taken = new Set();
+    const out = [];
+    const add = (p) => { if (p && !taken.has(p)) { taken.add(p); out.push(p); } };
+
+    // Tier 1 — orientation files (project's "what is this").
+    const tier1 = [
+      /^README(\.md|\.rst|\.txt)?$/i,
+      /^package\.json$/,
+      /^pyproject\.toml$/,
+      /^requirements\.txt$/,
+      /^Cargo\.toml$/,
+      /^go\.mod$/,
+      /^Gemfile$/,
+      /^pom\.xml$/,
+    ];
+    for (const re of tier1) {
+      const m = paths.find((p) => re.test(p));
+      if (m) add(m);
+    }
+
+    // Tier 2 — canonical entry points (where execution starts).
+    const tier2 = [
+      /^src\/index\.(jsx?|tsx?|mjs|cjs)$/,
+      /^src\/main\.(jsx?|tsx?|py|go|rs|java|kt|c|cpp)$/,
+      /^src\/App\.(jsx?|tsx?)$/,
+      /^index\.(jsx?|tsx?|html|py|js)$/,
+      /^main\.(py|go|rs|java|c|cpp)$/,
+      /^app\.(jsx?|tsx?|py)$/,
+      /^server\.(jsx?|tsx?|py|go)$/,
+      /^app\/page\.(jsx?|tsx?)$/, // Next.js
+      /^app\/layout\.(jsx?|tsx?)$/,
+      /^pages\/_app\.(jsx?|tsx?)$/,
+    ];
+    for (const re of tier2) {
+      const m = paths.find((p) => re.test(p));
+      if (m) add(m);
+    }
+
+    // Tier 3 — sample one or two from each meaningful source folder.
+    // Skip noise dirs.
+    const noise = /(^|\/)(node_modules|dist|build|\.next|\.cache|coverage|vendor|target|venv|__pycache__|tests?|spec|docs?|examples?|fixtures|assets|public|images?)\//i;
+    const codeExt = /\.(jsx?|tsx?|py|go|rs|java|kt|c|cpp|h|hpp|rb|php|cs|swift|sh|cjs|mjs|svelte|vue)$/i;
+    const folders = new Map(); // dir -> array of paths
+    for (const p of paths) {
+      if (noise.test(p)) continue;
+      if (!codeExt.test(p)) continue;
+      const dir = p.split("/").slice(0, 2).join("/"); // top-2 levels
+      if (!folders.has(dir)) folders.set(dir, []);
+      folders.get(dir).push(p);
+    }
+    // Prefer files named like "main", "index", "core", "app", "router".
+    const prefer = (a, b) => {
+      const score = (s) =>
+        /\b(main|index|core|app|router|server|cli|entry)\b/i.test(s) ? 1 : 0;
+      return score(b) - score(a) || a.localeCompare(b);
+    };
+    for (const list of folders.values()) {
+      list.sort(prefer);
+      add(list[0]);
+      if (list.length > 4) add(list[1]); // big folders get two
+    }
+
+    // Cap so the tour stays digestible.
+    return out.slice(0, 12);
+  }, [tree]);
+
+  const essentialIdx = essentialFiles.indexOf(currentPath);
+  const canPrev = essentialIdx > 0;
+  const canNext = essentialIdx >= 0 && essentialIdx < essentialFiles.length - 1;
+  const goPrev = () => canPrev && walkTo(essentialFiles[essentialIdx - 1]);
+  const goNext = () => canNext && walkTo(essentialFiles[essentialIdx + 1]);
+
+  // Load tree on mount, then auto-walk to the first essential file.
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const r = await api.repo.tree(repo.full_name);
-        if (!cancelled && r?.ok) {
-          setTree(r.paths || []);
-          // Auto-suggest entry: README, then package.json, then src/index.*
-          const paths = (r.paths || []).map((p) => p.path);
-          const entryRegex = [
-            /^README\.md$/i,
-            /^package\.json$/,
-            /^src\/index\.(js|ts|tsx|jsx)$/,
-            /^src\/main\.(js|ts|py|go|rs)$/,
-            /^index\.html$/,
-            /^main\.py$/,
-          ];
-          let entry = null;
-          for (const re of entryRegex) {
-            entry = paths.find((p) => re.test(p));
-            if (entry) break;
-          }
-          if (!entry) entry = paths[0];
-          if (entry) walkTo(entry, []);
-        }
+        if (!cancelled && r?.ok) setTree(r.paths || []);
       } catch (e) {
         if (!cancelled) setErr(e.message);
       }
@@ -2102,6 +2171,12 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo.full_name]);
+  // Auto-walk to the entry once the essential list is ready.
+  React.useEffect(() => {
+    if (currentPath || !essentialFiles.length) return;
+    walkTo(essentialFiles[0], []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [essentialFiles.length]);
 
   async function walkTo(path, prevVisited = visited) {
     if (!path) return;
@@ -2120,8 +2195,11 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
         setErr(r?.error || "walkthrough failed");
       } else {
         setContent(r.fileContent || "");
-        setExplanation(r.text || r.summary || "");
-        setVisited([...prevVisited, path]);
+        // chat() returns `content`, not `text`. Earlier code read `r.text`
+        // and silently rendered nothing. Map all the plausible field
+        // names so we render whichever the model service returned.
+        setExplanation(r.content || r.text || r.summary || "");
+        setVisited((prev) => prev.includes(path) ? prev : [...prev, path]);
       }
     } catch (e) {
       setErr(e.message);
@@ -2130,11 +2208,36 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
     }
   }
 
-  // Pull "Look at next: <path>" from the explanation if present.
+  // Pull "Look at next: <path>" from the explanation if present. The model
+  // wraps the marker in **bold** and the path in `inline-code`, so we
+  // skip those formatting characters explicitly. Validate the result is
+  // a plausible file path before returning it (otherwise Jump → goes to
+  // garbage like "**" or the literal placeholder text).
   function suggestedNext() {
     if (!explanation) return null;
-    const m = explanation.match(/look at next[:\s]*\`?([^\s`\n]+)\`?/i);
-    return m ? m[1].replace(/[.,]$/, "") : null;
+    // Match: "Look at next:" optionally followed by ** (bold close) and
+    // a backtick, then capture the path inside backticks OR up to space.
+    const re = /look\s+at\s+next\s*:?\s*\**\s*`?([^\s`\n*]+)/i;
+    const m = explanation.match(re);
+    if (!m) return null;
+    let path = m[1].replace(/[.,)]+$/, "").trim();
+    // Reject obvious garbage: pure punctuation, or a "<placeholder>".
+    if (!path || /^[*<>{}\[\]()_`-]+$/.test(path)) return null;
+    if (/^<.+>$/.test(path)) return null;
+    // Must look like a path: at least a slash OR a known file extension.
+    const looksLikePath =
+      path.includes("/") ||
+      /\.(jsx?|tsx?|py|go|rs|java|kt|c|cpp|h|hpp|rb|php|cs|swift|sh|cjs|mjs|svelte|vue|html|css|md|json|toml|yaml|yml|ya?ml|lock|env)$/i.test(path);
+    if (!looksLikePath) return null;
+    // And it should actually exist in the tree we know about.
+    if (tree.length && !tree.some((t) => t.path === path)) {
+      // Try a relaxed match (basename only) before giving up.
+      const base = path.split("/").pop();
+      const hit = tree.find((t) => t.path.endsWith("/" + base) || t.path === base);
+      if (hit) return hit.path;
+      return null;
+    }
+    return path;
   }
 
   async function askQuestion() {
@@ -2169,27 +2272,59 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
   const next = suggestedNext();
 
   return (
-    <div className="repo-walkthrough">
-      {/* Toolbar — file path + visited progress + counter, inline. */}
+    <div className={"repo-walkthrough" + (fullscreen ? " fullscreen" : "")}>
+      {/* Toolbar — < / > cycle through the essential-files tour, then the
+          current file path, then a progress bar of the tour, then a "next
+          suggested" jump if the AI proposed one outside the tour. */}
       <div className="repo-walkthrough-toolbar">
-        <code className="repo-walk-path">{currentPath || "(no file selected)"}</code>
+        <button
+          className="ghost xsmall"
+          onClick={goPrev}
+          disabled={!canPrev || busy}
+          title={canPrev ? `Previous: ${essentialFiles[essentialIdx - 1]}` : "Already at the first essential file"}
+        >
+          ◀
+        </button>
+        <button
+          className="ghost xsmall"
+          onClick={goNext}
+          disabled={!canNext || busy}
+          title={canNext ? `Next: ${essentialFiles[essentialIdx + 1]}` : "End of the essential-files tour"}
+        >
+          ▶
+        </button>
+        <code className="repo-walk-path" title={currentPath || ""}>
+          {currentPath || "(no file selected)"}
+        </code>
+        {essentialFiles.length > 0 && essentialIdx >= 0 && (
+          <small className="muted" title="Position in the essential-files tour">
+            tour {essentialIdx + 1} / {essentialFiles.length}
+          </small>
+        )}
         <div className="repo-walk-progress">
           <div
             className="repo-walk-progress-bar"
-            style={{ width: tree.length ? `${(visited.length / tree.length) * 100}%` : "0%" }}
+            style={{ width: essentialFiles.length ? `${((essentialIdx + 1) / essentialFiles.length) * 100}%` : "0%" }}
           />
         </div>
-        <small className="muted">{visited.length} / {tree.length}</small>
-        {next && (
+        {next && next !== currentPath && (
           <button
             className="primary small"
             onClick={() => walkTo(next)}
             disabled={busy}
-            title={`Walk to ${next}`}
+            title={`AI suggests: ${next}`}
           >
-            Next →
+            Jump → {next.split("/").pop()}
           </button>
         )}
+        <button
+          className="ghost xsmall"
+          onClick={() => setFullscreen((v) => !v)}
+          title={fullscreen ? "Exit fullscreen (Esc)" : "Expand to fullscreen"}
+          style={{ marginLeft: 4 }}
+        >
+          {fullscreen ? "✕ Exit" : "⤢ Fullscreen"}
+        </button>
       </div>
 
       <div className="repo-walkthrough-grid">
@@ -2261,69 +2396,260 @@ function RepoComparePanel({ repo }) {
   const [matches, setMatches] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState(null);
-  const [myUser, setMyUser] = React.useState("");
+  const [errCode, setErrCode] = React.useState(null);
+  const [meta, setMeta] = React.useState({ myUsername: "", myRepoCount: 0, viaLive: false, target: { languages: [] } });
 
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const u = (await api.settings?.get?.("github.username")) || "";
-        if (!cancelled) setMyUser(u);
-        const r = await api.repo.similarToMine({ repoId: repo.id, myUsername: u });
-        if (!cancelled) {
-          if (r?.ok) setMatches(r.matches || []);
-          else setErr(r?.error || "compare failed");
-          setLoading(false);
-        }
-      } catch (e) {
-        if (!cancelled) { setErr(e.message); setLoading(false); }
+  // Selected match's full comparison + chat history.
+  const [selected, setSelected] = React.useState(null); // { repo, score, overlapLangs, ... }
+  const [analysis, setAnalysis] = React.useState(null);
+  const [analysisLoading, setAnalysisLoading] = React.useState(false);
+  const [analysisErr, setAnalysisErr] = React.useState(null);
+  const [chatHistory, setChatHistory] = React.useState([]);
+  const [chatInput, setChatInput] = React.useState("");
+  const [chatBusy, setChatBusy] = React.useState(false);
+
+  async function load() {
+    setLoading(true);
+    setErr(null); setErrCode(null);
+    try {
+      const u = (await api.settings?.get?.("github.username")) || "";
+      const r = await api.repo.similarToMine({
+        repoId: repo.id,
+        myUsername: u,
+      });
+      if (r?.ok) {
+        setMatches(r.matches || []);
+        setMeta({
+          myUsername: r.myUsername || u,
+          myRepoCount: r.myRepoCount || 0,
+          viaLive: !!r.viaLive,
+          target: r.target || { languages: [] },
+        });
+        // Auto-pick the top match if there's a clear winner.
+        if (r.matches?.length) selectMatch(r.matches[0]);
+      } else {
+        setErr(r?.message || r?.error || "compare failed");
+        setErrCode(r?.error || null);
       }
-    })();
-    return () => { cancelled = true; };
-  }, [repo.id]);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  if (loading) return <div className="muted" style={{ marginTop: 14 }}>Looking at your repos…</div>;
-  if (err) return <div className="error" style={{ marginTop: 14 }}>{err}</div>;
-  if (!myUser) return (
-    <div className="muted" style={{ marginTop: 14 }}>
-      Set your GitHub username in Settings → Integrations → GitHub to see comparisons.
-    </div>
-  );
+  async function selectMatch(m) {
+    setSelected(m);
+    setAnalysis(null); setAnalysisErr(null); setChatHistory([]);
+    if (!m?.repo?.full_name) {
+      // Live-fetched repos may not have full_name; reconstruct from username.
+      const fn = m?.repo?.full_name ||
+        (meta.myUsername ? `${meta.myUsername}/${m?.repo?.name || ""}` : null);
+      if (!fn) return;
+      m = { ...m, repo: { ...m.repo, full_name: fn } };
+      setSelected(m);
+    }
+    setAnalysisLoading(true);
+    try {
+      const r = await api.repo.compareWithMine({
+        repoId: repo.id,
+        mineFullName: m.repo.full_name,
+      });
+      if (r?.ok) setAnalysis(r.content || r.text || "");
+      else setAnalysisErr(r?.error || "comparison failed");
+    } catch (e) {
+      setAnalysisErr(e.message);
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }
+
+  async function sendChat(q) {
+    const question = (q ?? chatInput).trim();
+    if (!question || !selected?.repo?.full_name) return;
+    setChatBusy(true);
+    setChatHistory((h) => [...h, { role: "user", content: question }]);
+    setChatInput("");
+    try {
+      const r = await api.repo.compareWithMine({
+        repoId: repo.id,
+        mineFullName: selected.repo.full_name,
+        history: chatHistory,
+        question,
+      });
+      const text = r?.ok ? (r.content || r.text || "") : ("Error: " + (r?.error || "unknown"));
+      setChatHistory((h) => [...h, { role: "assistant", content: text }]);
+    } catch (e) {
+      setChatHistory((h) => [...h, { role: "assistant", content: "Error: " + e.message }]);
+    } finally {
+      setChatBusy(false);
+    }
+  }
+
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [repo.id]);
+
+  if (loading) return <div className="muted" style={{ marginTop: 14 }}>Scanning your repos…</div>;
+
+  if (errCode === "no-username") {
+    return (
+      <div className="card" style={{ marginTop: 14, padding: 16 }}>
+        <strong>Set your GitHub username</strong>
+        <p className="muted" style={{ marginTop: 6, marginBottom: 10 }}>
+          Compare needs to know who you are on GitHub so it can find your
+          own repos. Add it once in Settings → Integrations → GitHub.
+        </p>
+        <div className="row" style={{ gap: 8 }}>
+          <button
+            className="primary"
+            onClick={() => { try { window.location.hash = "#settings/integrations"; } catch {} }}
+          >
+            Open Settings
+          </button>
+          <button className="ghost" onClick={load}>Retry</button>
+        </div>
+      </div>
+    );
+  }
+  if (err) {
+    return (
+      <div className="error" style={{ marginTop: 14 }}>
+        {err}
+        <div style={{ marginTop: 6 }}>
+          <button className="ghost xsmall" onClick={load}>Retry</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ marginTop: 14 }}>
-      <div className="section-label" style={{ marginBottom: 8 }}>
-        Your repos that share a language with {repo.name}
+    <div className="repo-compare">
+      {/* Header — who we matched against, how many, and meta. */}
+      <div className="row between" style={{ marginBottom: 10, alignItems: "baseline" }}>
+        <div>
+          <div className="section-label">Compare {repo.name} with your repos</div>
+          <small className="muted">
+            Matched on shared languages, GitHub topics, and name/description
+            keywords. {matches.length} of your {meta.myRepoCount} repo{meta.myRepoCount === 1 ? "" : "s"} look related.
+          </small>
+        </div>
+        <small className="muted">@{meta.myUsername} · {meta.viaLive ? "live" : "cached"}</small>
       </div>
+
       {matches.length === 0 ? (
-        <div className="muted">
-          No matches — none of your repos share a primary language with this one.
+        <div className="muted" style={{ padding: "20px 8px", textAlign: "center" }}>
+          No clear matches — none of your repos share a language, topic, or
+          obvious keyword with this one.
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
-          {matches.map((m) => (
-            <div key={m.repo.id} className="card" style={{ padding: 12 }}>
-              <div className="row between">
-                <strong>{m.repo.name}</strong>
-                {m.repo.language && (
-                  <span className="pill gray" style={{ fontSize: 10 }}>{m.repo.language}</span>
-                )}
+        <div className="repo-compare-grid">
+          {/* Left rail — list of similar repos with scores */}
+          <div className="repo-compare-list">
+            <div className="section-label" style={{ marginBottom: 6 }}>Your similar repos</div>
+            {matches.map((m) => {
+              const isSel = selected?.repo?.id === m.repo.id;
+              return (
+                <button
+                  key={m.repo.id}
+                  type="button"
+                  className={"repo-compare-item" + (isSel ? " active" : "")}
+                  onClick={() => selectMatch(m)}
+                  title={`Score: ${m.score}`}
+                >
+                  <div className="row between" style={{ alignItems: "baseline" }}>
+                    <strong>{m.repo.name}</strong>
+                    <small className="muted">{m.score}</small>
+                  </div>
+                  {m.repo.description && (
+                    <small className="muted compare-desc">{m.repo.description}</small>
+                  )}
+                  <div className="compare-tags">
+                    {m.overlapTopics?.slice(0, 3).map((t) => (
+                      <span key={t} className="pill teal">{t}</span>
+                    ))}
+                    {m.overlapLangs?.slice(0, 2).map((l) => (
+                      <span key={l} className="pill gray">{l}</span>
+                    ))}
+                    {m.overlapKeywords?.slice(0, 3).map((k) => (
+                      <span key={k} className="pill" style={{ fontSize: 10 }}>{k}</span>
+                    ))}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Right pane — full AI comparison + chat for the selected match */}
+          <div className="repo-compare-detail">
+            {!selected ? (
+              <div className="muted" style={{ padding: 20, textAlign: "center" }}>
+                Pick a repo on the left to see how it compares.
               </div>
-              {m.repo.description && (
-                <small className="muted" style={{ display: "block", marginTop: 4 }}>
-                  {m.repo.description}
-                </small>
-              )}
-              <div className="row" style={{ gap: 6, marginTop: 6 }}>
-                <small className="muted">★ {m.repo.stars || 0}</small>
-                {m.repo.url && (
-                  <a href={m.repo.url} target="_blank" rel="noreferrer" className="ghost xsmall">
-                    open ↗
-                  </a>
+            ) : (
+              <>
+                <div className="row between" style={{ marginBottom: 8 }}>
+                  <strong>
+                    {repo.name} <span className="muted">vs</span> {selected.repo.name}
+                  </strong>
+                  {selected.repo.url && (
+                    <a href={selected.repo.url} target="_blank" rel="noreferrer" className="ghost xsmall">
+                      open ↗
+                    </a>
+                  )}
+                </div>
+                <div className="repo-compare-stream">
+                  {analysisLoading && <em className="muted">Reading both projects + comparing…</em>}
+                  {analysisErr && <div className="error">{analysisErr}</div>}
+                  {analysis && <MarkdownBlock text={analysis} />}
+                  {chatHistory.map((m, i) => (
+                    <div key={i} className={"repo-walk-msg " + m.role}>
+                      <strong>{m.role === "user" ? "YOU" : "APEX"}</strong>
+                      <MarkdownBlock text={m.content} />
+                    </div>
+                  ))}
+                  {chatBusy && (
+                    <div className="repo-walk-msg assistant">
+                      <strong>APEX</strong>
+                      <em className="muted">Thinking…</em>
+                    </div>
+                  )}
+                </div>
+                <form
+                  className="repo-walk-ask"
+                  onSubmit={(e) => { e.preventDefault(); if (!chatBusy) sendChat(); }}
+                >
+                  <input
+                    placeholder={`Ask about ${repo.name} vs ${selected.repo.name}…`}
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    disabled={chatBusy || analysisLoading}
+                  />
+                  <button className="primary small" type="submit" disabled={!chatInput.trim() || chatBusy}>
+                    Ask
+                  </button>
+                </form>
+                {/* Quick-prompt chips */}
+                {!chatBusy && analysis && (
+                  <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                    {[
+                      "What patterns from this should I borrow into mine?",
+                      "Show me a code shape for the main difference",
+                      "What's the simpler / cleaner approach?",
+                    ].map((p, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className="ghost xsmall"
+                        onClick={() => sendChat(p)}
+                        disabled={chatBusy}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
                 )}
-              </div>
-            </div>
-          ))}
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>

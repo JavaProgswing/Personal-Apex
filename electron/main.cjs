@@ -1211,32 +1211,206 @@ ipcMain.handle(
     }
   },
 );
-// Compare-with-mine: returns the user's own repos that share at least one
-// language with the target repo. Used by the "Compare" panel.
+// Multi-signal similarity scoring. We don't just look at the primary
+// language — we score each of the user's repos against the target on:
+//   - languages overlap (count of shared, weighted by surface area)
+//   - topics overlap (GitHub `topics` array — strong framework signal)
+//   - keyword overlap in name + description (catches "react", "express",
+//     "nextjs", "tauri" etc. when topics aren't set)
+// Topics + name keywords are heavier signals than a shared language alone,
+// so a user's React project compared to a target React project beats two
+// random Python repos that just happen to share `python`.
+function scoreSimilarity(target, mine) {
+  const tLangs = new Set((target.languages || []).map((s) => s.toLowerCase()));
+  const tTopics = new Set((target.topics || []).map((s) => s.toLowerCase()));
+  const tKeywords = new Set(
+    (
+      (target.name || "") + " " +
+      (target.description || "") + " " +
+      [...tTopics].join(" ")
+    )
+      .toLowerCase()
+      .split(/[^a-z0-9+]+/)
+      .filter((w) => w.length >= 3),
+  );
+
+  const mLangs = mine.language ? [mine.language.toLowerCase()] : [];
+  const mTopics = (mine.topics || []).map((s) => s.toLowerCase());
+  const mKeywords = (
+    (mine.name || "") + " " +
+    (mine.description || "") + " " +
+    mTopics.join(" ")
+  )
+    .toLowerCase()
+    .split(/[^a-z0-9+]+/)
+    .filter((w) => w.length >= 3);
+
+  const overlapLangs = mLangs.filter((l) => tLangs.has(l));
+  const overlapTopics = mTopics.filter((t) => tTopics.has(t));
+  const overlapKeywords = [...new Set(mKeywords.filter((k) => tKeywords.has(k)))];
+
+  // Score: language=2, topic=4, keyword=1. Topics are the strongest
+  // framework signal so they get the biggest weight.
+  const score =
+    overlapLangs.length * 2 +
+    overlapTopics.length * 4 +
+    overlapKeywords.length * 1;
+
+  return { score, overlapLangs, overlapTopics, overlapKeywords };
+}
+
 ipcMain.handle(
   "repo:similarToMine",
   async (_e, { repoId, myUsername } = {}) => {
     try {
       const detail = await github.fetchRepoDetail(repoId);
-      const targetLangs = Object.keys(detail?.languages || {})
-        .map((s) => s.toLowerCase());
-      if (!myUsername) return { ok: true, matches: [] };
+      const targetMeta = {
+        name: detail?.repo?.name || "",
+        description: detail?.repo?.description || "",
+        languages: Object.keys(detail?.languages || {}),
+        topics: detail?.repo?.topics || [],
+      };
+      const username = (myUsername || db.getSetting("github.username") || "")
+        .trim();
+      if (!username) {
+        return {
+          ok: false,
+          error: "no-username",
+          message: "Set your GitHub username in Settings → Integrations → GitHub.",
+        };
+      }
+
+      // 1) Fast path — DB lookup if the user is already a person + synced.
+      let myRepos = [];
       const me = db._db()
-        .prepare("SELECT id FROM people WHERE github_username = ?")
-        .get(myUsername);
-      if (!me) return { ok: true, matches: [] };
-      const myRepos = db.listRepos(me.id) || [];
+        .prepare("SELECT id FROM people WHERE LOWER(github_username) = LOWER(?)")
+        .get(username);
+      if (me) myRepos = db.listRepos(me.id) || [];
+
+      // 2) Fallback — live GitHub fetch. Cheap (one API call) and always
+      // current. We don't try to persist these because they're "yours";
+      // we just want to render the compare panel.
+      let liveFetched = false;
+      if (!myRepos.length) {
+        try {
+          const live = await github.fetchRepos(username, { includeForks: false });
+          myRepos = (live || []).map((r) => ({
+            id: r.id || `live-${r.name}`,
+            name: r.name,
+            full_name: r.full_name,
+            description: r.description,
+            url: r.html_url || r.url,
+            language: r.language,
+            topics: r.topics || [],
+            stars: r.stargazers_count ?? r.stars ?? 0,
+            forks: r.forks_count ?? r.forks ?? 0,
+            pushed_at: r.pushed_at,
+          }));
+          liveFetched = true;
+        } catch (err) {
+          return {
+            ok: false,
+            error: "github-fetch-failed",
+            message: `Could not fetch ${username}'s repos: ${err.message}`,
+          };
+        }
+      }
+
       const matches = myRepos
         .map((r) => {
-          const langs = (r.language ? [r.language] : [])
-            .map((s) => s.toLowerCase());
-          const overlap = langs.filter((l) => targetLangs.includes(l));
-          return { repo: r, overlap };
+          // Some DB rows have topics as a JSON string column; parse it.
+          let topics = r.topics;
+          if (typeof topics === "string") {
+            try { topics = JSON.parse(topics); } catch { topics = []; }
+          }
+          if (!Array.isArray(topics)) topics = [];
+          const sim = scoreSimilarity(targetMeta, { ...r, topics });
+          return {
+            repo: { ...r, topics },
+            ...sim,
+          };
         })
-        .filter((m) => m.overlap.length > 0)
-        .sort((a, b) => (b.repo.stars || 0) - (a.repo.stars || 0))
+        .filter((m) => m.score > 0)
+        .sort((a, b) => b.score - a.score || (b.repo.stars || 0) - (a.repo.stars || 0))
         .slice(0, 12);
-      return { ok: true, matches, targetLangs };
+
+      return {
+        ok: true,
+        matches,
+        target: targetMeta,
+        viaLive: liveFetched,
+        myUsername: username,
+        myRepoCount: myRepos.length,
+      };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  },
+);
+
+// Pull a deeper compare between the target repo and one of the user's
+// repos. Fetches both repos' tree + manifests + READMEs, then asks
+// Ollama to produce a structured comparison: shared patterns, what each
+// does differently, what the user's repo could borrow. Optional
+// follow-up Q&A keeps the conversation grounded in BOTH project contexts.
+ipcMain.handle(
+  "repo:compareWithMine",
+  async (_e, { repoId, mineFullName, history, question, model } = {}) => {
+    try {
+      const targetDetail = await github.fetchRepoDetail(repoId);
+      // Mine is identified by full_name (live or DB). Find a repoId if the
+      // DB has it; otherwise fetch tree + readme directly.
+      const dbh = db._db();
+      const myRow = mineFullName
+        ? dbh
+            .prepare("SELECT id FROM repos WHERE LOWER(full_name) = LOWER(?)")
+            .get(mineFullName)
+        : null;
+      let mineDetail;
+      if (myRow) {
+        mineDetail = await github.fetchRepoDetail(myRow.id);
+      } else if (mineFullName) {
+        // Live path — assemble the same shape from primitive fetches.
+        const [tree, readme, languages] = await Promise.all([
+          github.fetchTree(mineFullName).catch(() => null),
+          github.fetchReadme(mineFullName).catch(() => null),
+          github.fetchLanguages(mineFullName).catch(() => ({})),
+        ]);
+        mineDetail = {
+          repo: { full_name: mineFullName, name: mineFullName.split("/")[1] },
+          paths: tree?.tree
+            ? tree.tree.filter((n) => n.type === "blob").map((n) => n.path).slice(0, 200)
+            : [],
+          readme,
+          languages,
+          manifests: {},
+        };
+      } else {
+        return { ok: false, error: "no mineFullName" };
+      }
+
+      // Run the comparison. If `question` is set, treat it as a chat
+      // follow-up; otherwise produce the initial structured comparison.
+      const r = await ollama.compareRepos({
+        target: {
+          ...targetDetail.repo,
+          languages: Object.keys(targetDetail.languages || {}),
+          paths: targetDetail.paths || [],
+          readme: targetDetail.readme,
+          manifests: targetDetail.manifests || {},
+        },
+        mine: {
+          ...mineDetail.repo,
+          languages: Object.keys(mineDetail.languages || {}),
+          paths: mineDetail.paths || [],
+          readme: mineDetail.readme,
+          manifests: mineDetail.manifests || {},
+        },
+        history: history || [],
+        question: question || null,
+        model,
+      });
+      return r;
     } catch (err) {
       return { ok: false, error: err.message };
     }
