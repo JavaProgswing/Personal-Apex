@@ -119,6 +119,7 @@ export default function CommandPalette({ open, onClose, onNavigate }) {
       ["dracula", "Dracula"], ["nord", "Nord"], ["solarized-dark", "Solarized Dark"],
       ["midnight", "Midnight"], ["forest", "Forest"], ["sunset", "Sunset"],
       ["synthwave", "Synthwave"], ["cyberpunk", "Cyberpunk"], ["matrix", "Matrix"],
+      ["obsidian", "Obsidian"], ["carbon", "Carbon"], ["eclipse", "Eclipse"],
       ["tokyo-night", "Tokyo Night"], ["catppuccin", "Catppuccin Mocha"],
       ["gruvbox", "Gruvbox"], ["rose-pine", "Rosé Pine"], ["one-dark", "One Dark"],
       ["crimson", "Crimson"], ["ocean", "Ocean"],

@@ -2044,6 +2044,16 @@ function AppearanceTab({ all, setAll, save }) {
     { key: "latte", label: "Latte", tags: ["Light", "Pastel"],
       desc: "Catppuccin Latte. Soft cream + lavender.",
       swatches: ["#eff1f5", "#8839ef", "#ea76cb", "#40a02b"] },
+    // Ultra-dark / high contrast
+    { key: "obsidian", label: "Obsidian", tags: ["Dark", "Neon", "High contrast", "Bold"],
+      desc: "Pure-void OLED black + electric cyan glow.",
+      swatches: ["#000000", "#00e5ff", "#00ffa3", "#ff3b6b"] },
+    { key: "carbon", label: "Carbon", tags: ["Dark", "High contrast", "Bold"],
+      desc: "Charcoal industrial + neon-lime accent.",
+      swatches: ["#0a0c0e", "#b3ff00", "#4dd0ff", "#ff5c4c"] },
+    { key: "eclipse", label: "Eclipse", tags: ["Dark", "Neon", "High contrast", "Bold"],
+      desc: "Pitch-black void with royal violet glow.",
+      swatches: ["#050308", "#a855f7", "#ec4899", "#4ade80"] },
   ];
 
   const ALL_TAGS = [

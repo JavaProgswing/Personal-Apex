@@ -25,32 +25,33 @@
    this on mount from settings. All other CSS targets the var() tokens so
    no rules below need to change for new themes. */
 
-/* Library — warm coffee + honey amber. Default. */
+/* Library — warm coffee + honey amber. Default. Ramp tightened, categories
+   share a warm undertone so they feel related to the amber accent. */
 :root,
 [data-theme="library"] {
-  --bg: #14110f;
-  --bg-elev: #1c1814;
-  --bg-elev-2: #251f19;
-  --border: #322a23;
+  --bg: #14110e;
+  --bg-elev: #1d1814;
+  --bg-elev-2: #28211a;
+  --border: #3a2f24;
 
-  --text: #f5ecdc;
-  --text-dim: #a89985;
-  --text-faint: #6b5e4e;
+  --text: #f6ecdb;
+  --text-dim: #b6a48e;
+  --text-faint: #74634f;
 
   --accent: #e8a23a;
-  --accent-soft: rgba(232, 162, 58, 0.12);
+  --accent-soft: rgba(232, 162, 58, 0.16);
   --accent-strong: #f5b94a;
 
-  --productive: #7fc8a9;
-  --productive-soft: rgba(127, 200, 169, 0.14);
-  --distraction: #d97757;
-  --distraction-soft: rgba(217, 119, 87, 0.14);
-  --leisure: #d4889a;
-  --leisure-soft: rgba(212, 136, 154, 0.14);
-  --rest: #9bc4d6;
-  --rest-soft: rgba(155, 196, 214, 0.14);
-  --neutral: #b09e89;
-  --neutral-soft: rgba(176, 158, 137, 0.14);
+  --productive: #82caa9;
+  --productive-soft: rgba(130, 202, 169, 0.16);
+  --distraction: #e07a5f;
+  --distraction-soft: rgba(224, 122, 95, 0.16);
+  --leisure: #d68aa1;
+  --leisure-soft: rgba(214, 138, 161, 0.16);
+  --rest: #9cc3d8;
+  --rest-soft: rgba(156, 195, 216, 0.16);
+  --neutral: #b6a48e;
+  --neutral-soft: rgba(182, 164, 142, 0.16);
   --mobile: #b8a9d6;
 
   --ok: var(--productive);
@@ -362,32 +363,34 @@
   color-scheme: light;
 }
 
-/* Midnight — deep blue/black, OLED-friendly. */
+/* Midnight — deep blue/black, OLED-friendly. Heightened contrast with
+   electric indigo, near-black ramp, vivid categoricals that share the
+   same indigo-violet undertone. */
 [data-theme="midnight"] {
-  --bg: #060812;
-  --bg-elev: #0d1020;
-  --bg-elev-2: #131730;
-  --border: #1f244a;
+  --bg: #03050e;
+  --bg-elev: #0a0e1c;
+  --bg-elev-2: #131830;
+  --border: #232a52;
 
-  --text: #e6e9ff;
-  --text-dim: #8b8fb8;
-  --text-faint: #525570;
+  --text: #f0f2ff;
+  --text-dim: #9aa0d0;
+  --text-faint: #5c628a;
 
-  --accent: #6f6cff;
-  --accent-soft: rgba(111, 108, 255, 0.14);
-  --accent-strong: #9696ff;
+  --accent: #7c7cff;
+  --accent-soft: rgba(124, 124, 255, 0.18);
+  --accent-strong: #a5a5ff;
 
-  --productive: #5fe0a8;
-  --productive-soft: rgba(95, 224, 168, 0.14);
-  --distraction: #ff5e7a;
-  --distraction-soft: rgba(255, 94, 122, 0.14);
-  --leisure: #d97ce0;
-  --leisure-soft: rgba(217, 124, 224, 0.14);
-  --rest: #5ec6ff;
-  --rest-soft: rgba(94, 198, 255, 0.14);
-  --neutral: #8b8fb8;
-  --neutral-soft: rgba(139, 143, 184, 0.14);
-  --mobile: #d97ce0;
+  --productive: #5ce5b0;
+  --productive-soft: rgba(92, 229, 176, 0.16);
+  --distraction: #ff6788;
+  --distraction-soft: rgba(255, 103, 136, 0.16);
+  --leisure: #e088f0;
+  --leisure-soft: rgba(224, 136, 240, 0.16);
+  --rest: #5fcaff;
+  --rest-soft: rgba(95, 202, 255, 0.16);
+  --neutral: #9aa0d0;
+  --neutral-soft: rgba(154, 160, 208, 0.16);
+  --mobile: #e088f0;
 
   --ok: var(--productive);
   --ok-soft: var(--productive-soft);
@@ -404,31 +407,32 @@
   color-scheme: dark;
 }
 
-/* Forest — deep green, calm. */
+/* Forest — deep green, calm. Smoother bg ramp with a hint of forest blue
+   in the shadows; categories share a warm-mossy undertone. */
 [data-theme="forest"] {
-  --bg: #0f1a14;
-  --bg-elev: #16241c;
-  --bg-elev-2: #1d2f24;
-  --border: #2a4334;
+  --bg: #0d1a14;
+  --bg-elev: #14241d;
+  --bg-elev-2: #1c2f26;
+  --border: #2c4738;
 
-  --text: #e7f1ea;
-  --text-dim: #94a89c;
-  --text-faint: #5d6f64;
+  --text: #ecf5ee;
+  --text-dim: #9eb1a4;
+  --text-faint: #647668;
 
-  --accent: #7fc8a9;
-  --accent-soft: rgba(127, 200, 169, 0.14);
-  --accent-strong: #98d6bb;
+  --accent: #82d4b0;
+  --accent-soft: rgba(130, 212, 176, 0.18);
+  --accent-strong: #9be0c0;
 
-  --productive: #95d5ba;
-  --productive-soft: rgba(149, 213, 186, 0.14);
-  --distraction: #d97757;
-  --distraction-soft: rgba(217, 119, 87, 0.14);
-  --leisure: #c8a98a;
-  --leisure-soft: rgba(200, 169, 138, 0.14);
+  --productive: #9adfb5;
+  --productive-soft: rgba(154, 223, 181, 0.16);
+  --distraction: #d97a5a;
+  --distraction-soft: rgba(217, 122, 90, 0.16);
+  --leisure: #d4b485;
+  --leisure-soft: rgba(212, 180, 133, 0.16);
   --rest: #94c6d6;
-  --rest-soft: rgba(148, 198, 214, 0.14);
-  --neutral: #94a89c;
-  --neutral-soft: rgba(148, 168, 156, 0.14);
+  --rest-soft: rgba(148, 198, 214, 0.16);
+  --neutral: #9eb1a4;
+  --neutral-soft: rgba(158, 177, 164, 0.16);
   --mobile: #b8a9d6;
 
   --ok: var(--productive);
@@ -446,32 +450,33 @@
   color-scheme: dark;
 }
 
-/* Sunset — orange/purple gradient vibe. */
+/* Sunset — orange/purple gradient vibe. Tighter bg ramp transitioning
+   from plum to dusk; categoricals all live on the warm-magenta gradient. */
 [data-theme="sunset"] {
-  --bg: #1a0e1f;
-  --bg-elev: #261527;
-  --bg-elev-2: #331b32;
-  --border: #4a2848;
+  --bg: #170a1c;
+  --bg-elev: #221128;
+  --bg-elev-2: #321a35;
+  --border: #4a274d;
 
-  --text: #f9ecdf;
-  --text-dim: #c0a3aa;
-  --text-faint: #7a5d68;
+  --text: #faecd8;
+  --text-dim: #cba8b3;
+  --text-faint: #8a6470;
 
-  --accent: #ff7e5f;
-  --accent-soft: rgba(255, 126, 95, 0.14);
-  --accent-strong: #ff9a7d;
+  --accent: #ff8366;
+  --accent-soft: rgba(255, 131, 102, 0.18);
+  --accent-strong: #ffa080;
 
-  --productive: #ffd066;
-  --productive-soft: rgba(255, 208, 102, 0.14);
-  --distraction: #c1408e;
-  --distraction-soft: rgba(193, 64, 142, 0.14);
-  --leisure: #b985d8;
-  --leisure-soft: rgba(185, 133, 216, 0.14);
-  --rest: #88c0d0;
-  --rest-soft: rgba(136, 192, 208, 0.14);
-  --neutral: #c0a3aa;
-  --neutral-soft: rgba(192, 163, 170, 0.14);
-  --mobile: #b985d8;
+  --productive: #ffce63;
+  --productive-soft: rgba(255, 206, 99, 0.16);
+  --distraction: #d04c97;
+  --distraction-soft: rgba(208, 76, 151, 0.16);
+  --leisure: #c490e0;
+  --leisure-soft: rgba(196, 144, 224, 0.16);
+  --rest: #8eb8d4;
+  --rest-soft: rgba(142, 184, 212, 0.16);
+  --neutral: #cba8b3;
+  --neutral-soft: rgba(203, 168, 179, 0.16);
+  --mobile: #c490e0;
 
   --ok: #95d5ba;
   --ok-soft: rgba(149, 213, 186, 0.14);
@@ -824,32 +829,33 @@
   color-scheme: dark;
 }
 
-/* Crimson — deep oxblood + gold. Bold, editorial. */
+/* Crimson — deep oxblood + gold. Bold, editorial. Smoother bg ramp,
+   warm-tinted categoricals so everything reads as one editorial palette. */
 [data-theme="crimson"] {
-  --bg: #1a0a0a;
-  --bg-elev: #251111;
-  --bg-elev-2: #321818;
-  --border: #4a2424;
+  --bg: #170808;
+  --bg-elev: #221010;
+  --bg-elev-2: #301818;
+  --border: #4d2828;
 
-  --text: #f5e8d8;
-  --text-dim: #c4a89c;
-  --text-faint: #7a5b56;
+  --text: #f7eadb;
+  --text-dim: #c8aa9e;
+  --text-faint: #84605b;
 
-  --accent: #d4a04a;
-  --accent-soft: rgba(212, 160, 74, 0.14);
-  --accent-strong: #e6b865;
+  --accent: #d8a44e;
+  --accent-soft: rgba(216, 164, 78, 0.18);
+  --accent-strong: #e8bd6a;
 
-  --productive: #95c98e;
-  --productive-soft: rgba(149, 201, 142, 0.14);
-  --distraction: #d4453a;
-  --distraction-soft: rgba(212, 69, 58, 0.14);
-  --leisure: #c4708c;
-  --leisure-soft: rgba(196, 112, 140, 0.14);
-  --rest: #8aa8b8;
-  --rest-soft: rgba(138, 168, 184, 0.14);
-  --neutral: #c4a89c;
-  --neutral-soft: rgba(196, 168, 156, 0.14);
-  --mobile: #c4708c;
+  --productive: #a4cd92;
+  --productive-soft: rgba(164, 205, 146, 0.16);
+  --distraction: #d8493e;
+  --distraction-soft: rgba(216, 73, 62, 0.16);
+  --leisure: #c97894;
+  --leisure-soft: rgba(201, 120, 148, 0.16);
+  --rest: #92acba;
+  --rest-soft: rgba(146, 172, 186, 0.16);
+  --neutral: #c8aa9e;
+  --neutral-soft: rgba(200, 170, 158, 0.16);
+  --mobile: #c97894;
 
   --ok: var(--productive);
   --ok-soft: var(--productive-soft);
@@ -866,32 +872,34 @@
   color-scheme: dark;
 }
 
-/* Ocean — deep teal + coral. Cool tropical-night blend. */
+/* Ocean — deep teal + coral. Cool tropical-night blend. Smoother teal
+   ramp with a touch of cyan in the highlights; categoricals follow the
+   complementary teal/coral split so everything reads as a single mood. */
 [data-theme="ocean"] {
-  --bg: #021825;
-  --bg-elev: #052838;
-  --bg-elev-2: #093a4f;
-  --border: #115270;
+  --bg: #021824;
+  --bg-elev: #062a3a;
+  --bg-elev-2: #0c3d52;
+  --border: #145672;
 
-  --text: #d4f1f9;
-  --text-dim: #8fb8c4;
-  --text-faint: #506d78;
+  --text: #d8f2fa;
+  --text-dim: #9bc1cd;
+  --text-faint: #5a7682;
 
-  --accent: #ff7a59;
-  --accent-soft: rgba(255, 122, 89, 0.16);
-  --accent-strong: #ff9a7e;
+  --accent: #ff8366;
+  --accent-soft: rgba(255, 131, 102, 0.18);
+  --accent-strong: #ffa080;
 
-  --productive: #2dd4bf;
-  --productive-soft: rgba(45, 212, 191, 0.14);
-  --distraction: #ff7a59;
-  --distraction-soft: rgba(255, 122, 89, 0.14);
-  --leisure: #a78bfa;
-  --leisure-soft: rgba(167, 139, 250, 0.14);
-  --rest: #67e8f9;
-  --rest-soft: rgba(103, 232, 249, 0.14);
-  --neutral: #8fb8c4;
-  --neutral-soft: rgba(143, 184, 196, 0.14);
-  --mobile: #a78bfa;
+  --productive: #38d8c4;
+  --productive-soft: rgba(56, 216, 196, 0.16);
+  --distraction: #ff8366;
+  --distraction-soft: rgba(255, 131, 102, 0.16);
+  --leisure: #b298fb;
+  --leisure-soft: rgba(178, 152, 251, 0.16);
+  --rest: #6ce9f7;
+  --rest-soft: rgba(108, 233, 247, 0.16);
+  --neutral: #9bc1cd;
+  --neutral-soft: rgba(155, 193, 205, 0.16);
+  --mobile: #b298fb;
 
   --ok: var(--productive);
   --ok-soft: var(--productive-soft);
@@ -948,6 +956,144 @@
   --shadow-md: 0 6px 20px rgba(60, 60, 100, 0.10);
 
   color-scheme: light;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ULTRA-DARK / HIGH-CONTRAST THEMES
+   Pure-void backgrounds, electric accents, max text contrast. Designed for
+   OLED displays + bright rooms. Each category colour is fully saturated to
+   stay legible against the deep black surfaces.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Obsidian — pure void black + electric cyan. The OLED-optimised one.
+   Every surface is near-perfectly black (so OLED pixels actually switch
+   off), text is bright white, accent glows. */
+[data-theme="obsidian"] {
+  --bg: #000000;
+  --bg-elev: #060608;
+  --bg-elev-2: #0e0e12;
+  --border: #1c1c24;
+
+  --text: #ffffff;
+  --text-dim: #b8b8c8;
+  --text-faint: #6a6a7a;
+
+  --accent: #00e5ff;
+  --accent-soft: rgba(0, 229, 255, 0.18);
+  --accent-strong: #4df0ff;
+
+  --productive: #00ffa3;
+  --productive-soft: rgba(0, 255, 163, 0.18);
+  --distraction: #ff3b6b;
+  --distraction-soft: rgba(255, 59, 107, 0.18);
+  --leisure: #ff7ad9;
+  --leisure-soft: rgba(255, 122, 217, 0.18);
+  --rest: #5fc8ff;
+  --rest-soft: rgba(95, 200, 255, 0.18);
+  --neutral: #8a8aa3;
+  --neutral-soft: rgba(138, 138, 163, 0.16);
+  --mobile: #c084fc;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: #ffd60a;
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(135deg, #00e5ff, #00ffa3);
+  --grad-card: linear-gradient(135deg, rgba(0,229,255,0.06), transparent 60%);
+
+  --shadow-sm: 0 1px 2px rgba(0, 229, 255, 0.10);
+  --shadow-md: 0 0 32px rgba(0, 229, 255, 0.10), 0 8px 28px rgba(0, 0, 0, 0.95);
+
+  color-scheme: dark;
+}
+
+/* Carbon — charcoal industrial + neon-lime. Stark, technical, high
+   contrast. Everything reads with a slight industrial edge. */
+[data-theme="carbon"] {
+  --bg: #0a0c0e;
+  --bg-elev: #14161a;
+  --bg-elev-2: #1d2026;
+  --border: #2c303a;
+
+  --text: #f4f7f9;
+  --text-dim: #aab2bc;
+  --text-faint: #5e6670;
+
+  --accent: #b3ff00;
+  --accent-soft: rgba(179, 255, 0, 0.16);
+  --accent-strong: #c8ff4d;
+
+  --productive: #b3ff00;
+  --productive-soft: rgba(179, 255, 0, 0.14);
+  --distraction: #ff5c4c;
+  --distraction-soft: rgba(255, 92, 76, 0.16);
+  --leisure: #ff9f47;
+  --leisure-soft: rgba(255, 159, 71, 0.16);
+  --rest: #4dd0ff;
+  --rest-soft: rgba(77, 208, 255, 0.16);
+  --neutral: #aab2bc;
+  --neutral-soft: rgba(170, 178, 188, 0.14);
+  --mobile: #c084fc;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: var(--leisure);
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(135deg, #b3ff00, #4dd0ff);
+  --grad-card: linear-gradient(135deg, rgba(179,255,0,0.04), transparent 60%);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.7);
+  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.85);
+
+  color-scheme: dark;
+}
+
+/* Eclipse — pitch-black with deep violet accent. The mysterious one.
+   Almost-black surfaces, royal violet glow, vibrant saturated categoricals
+   that all lean cool/violet. */
+[data-theme="eclipse"] {
+  --bg: #050308;
+  --bg-elev: #0c0810;
+  --bg-elev-2: #16101e;
+  --border: #261a36;
+
+  --text: #f0e8ff;
+  --text-dim: #a896c4;
+  --text-faint: #5e4f7a;
+
+  --accent: #a855f7;
+  --accent-soft: rgba(168, 85, 247, 0.20);
+  --accent-strong: #c47dff;
+
+  --productive: #4ade80;
+  --productive-soft: rgba(74, 222, 128, 0.16);
+  --distraction: #f43f5e;
+  --distraction-soft: rgba(244, 63, 94, 0.16);
+  --leisure: #ec4899;
+  --leisure-soft: rgba(236, 72, 153, 0.16);
+  --rest: #38bdf8;
+  --rest-soft: rgba(56, 189, 248, 0.16);
+  --neutral: #a896c4;
+  --neutral-soft: rgba(168, 150, 196, 0.16);
+  --mobile: #ec4899;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: #fbbf24;
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(135deg, #a855f7, #ec4899);
+  --grad-card: linear-gradient(135deg, rgba(168,85,247,0.06), transparent 60%);
+
+  --shadow-sm: 0 1px 2px rgba(168, 85, 247, 0.10);
+  --shadow-md: 0 0 28px rgba(168, 85, 247, 0.10), 0 8px 28px rgba(0, 0, 0, 0.9);
+
+  color-scheme: dark;
 }
 
 * {
