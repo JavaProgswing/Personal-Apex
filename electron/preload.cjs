@@ -153,6 +153,8 @@ contextBridge.exposeInMainWorld("apex", {
     list: (f) => invoke("people:list", f),
     upsert: (p) => invoke("people:upsert", p),
     delete: (id) => invoke("people:delete", id),
+    deleteBulk: (ids) => invoke("people:deleteBulk", ids),
+    deleteAll: () => invoke("people:deleteAll"),
     findDuplicates: () => invoke("people:findDuplicates"),
     merge: (args) => invoke("people:merge", args),
     repos: (id) => invoke("people:repos", id),

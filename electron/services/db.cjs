@@ -955,6 +955,16 @@ function deletePerson(id) {
   db.prepare("DELETE FROM people WHERE id = ?").run(id);
   return true;
 }
+function deletePeople(ids) {
+  if (!ids || ids.length === 0) return true;
+  const placeholders = ids.map(() => '?').join(',');
+  db.prepare(`DELETE FROM people WHERE id IN (${placeholders})`).run(...ids);
+  return true;
+}
+function deleteAllPeople() {
+  db.prepare("DELETE FROM people").run();
+  return true;
+}
 
 // ───────────────────────────────────────────────────────────────────────────
 // Duplicate detection + merging.
@@ -973,9 +983,26 @@ function _normalizeName(s) {
     .toLowerCase()
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "") // strip diacritics
+    // LinkedIn slugs end with a hash ID like "-ba5a1533b" or "_ab12cd34" —
+    // strip them so "yashasvi-allen-kujur-ba5a1533b" matches "Yashasvi Allen Kujur".
+    .replace(/[-_][a-z0-9]{6,}$/i, "")
+    // Dashes / underscores → spaces (LinkedIn slugs use dashes).
+    .replace(/[-_]+/g, " ")
     .replace(/[^a-z0-9 ]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+// Extract the LinkedIn slug from a profile URL (e.g.
+// "https://linkedin.com/in/yashasvi-allen-kujur-ba5a1533b" →
+// "yashasvi allen kujur"). Used as an extra dedup signal when one record
+// has a real name and another only has the LinkedIn URL.
+function _normalizeLinkedinSlug(url) {
+  if (!url) return "";
+  try {
+    const m = String(url).match(/linkedin\.com\/(?:in|pub)\/([^/?#]+)/i);
+    if (!m) return "";
+    return _normalizeName(m[1]);
+  } catch { return ""; }
 }
 function _completenessScore(p) {
   // More filled fields → higher score → preferred as merge target.
@@ -1001,11 +1028,14 @@ function findDuplicateGroups() {
     )
     .all();
 
-  // Build candidate-key indices.
+  // Build candidate-key indices. The LinkedIn slug index is keyed by the
+  // *normalized* slug ("yashasvi allen kujur") — same shape as `byNorm`,
+  // so it cross-matches with people who only have a real name field.
   const byReg = new Map(); // regNo -> [person...]
   const byGh  = new Map(); // gh username -> [person...]
   const byLc  = new Map(); // lc handle  -> [person...]
   const byNorm = new Map(); // normalized name -> [person...]
+  const byLnSlug = new Map(); // normalized LinkedIn slug -> [person...]
 
   for (const p of all) {
     let notes = {};
@@ -1030,6 +1060,19 @@ function findDuplicateGroups() {
     if (norm) {
       if (!byNorm.has(norm)) byNorm.set(norm, []);
       byNorm.get(norm).push(p);
+    }
+    const slug = _normalizeLinkedinSlug(p.linkedin_url);
+    if (slug) {
+      // Add to the slug index AND link slug→name via byNorm so a record
+      // with only a LinkedIn URL gets paired with one that has the real name.
+      if (!byLnSlug.has(slug)) byLnSlug.set(slug, []);
+      byLnSlug.get(slug).push(p);
+      if (!byNorm.has(slug)) byNorm.set(slug, []);
+      // Avoid double-pushing if name happened to normalize to the same
+      // string — guard against duplicates.
+      if (!byNorm.get(slug).find((q) => q.id === p.id)) {
+        byNorm.get(slug).push(p);
+      }
     }
   }
 
@@ -1065,10 +1108,19 @@ function findDuplicateGroups() {
     }
   }
 
-  for (const list of byReg.values())  unionList(list, "registration");
-  for (const list of byGh.values())   unionList(list, "github handle");
-  for (const list of byLc.values())   unionList(list, "leetcode handle");
-  for (const list of byNorm.values()) unionList(list, "name");
+  for (const list of byReg.values())   unionList(list, "registration");
+  for (const list of byGh.values())    unionList(list, "github handle");
+  for (const list of byLc.values())    unionList(list, "leetcode handle");
+  for (const list of byNorm.values())  unionList(list, "name / linkedin slug");
+  for (const list of byLnSlug.values()) unionList(list, "linkedin slug");
+
+  // Skip groups that are huge AND only matched by name (likely a junk
+  // name like "syndicate" used as a placeholder during scraping). 8+
+  // people sharing exactly one name with no shared handles is almost
+  // certainly an import bug rather than a duplicate cluster — surfacing
+  // them as ONE giant merge group spams the UI. We surface them in a
+  // separate "needs-cleanup" return key so the UI can offer a fix-names
+  // flow instead of a merge flow.
 
   // Collect groups.
   const groups = new Map(); // root id -> [persons]
@@ -1080,26 +1132,37 @@ function findDuplicateGroups() {
   }
 
   const out = [];
+  const placeholders = []; // big name-only collisions ("syndicate", "Unknown", etc)
   for (const [root, members] of groups.entries()) {
     if (members.length < 2) continue;
     // Sort members so the most-complete is first (the "primary").
     members.sort(
       (a, b) =>
         _completenessScore(b) - _completenessScore(a) ||
-        (a.id - b.id), // tie-break: keep oldest id
+        (a.id - b.id),
     );
-    out.push({
-      members,
-      reasons: [...(groupReason.get(root) || ["match"])],
-    });
+    const reasons = [...(groupReason.get(root) || ["match"])];
+    // Detect placeholder-name collision: 6+ members ALL sharing the same
+    // (case-insensitive) name with no other matching signal.
+    const names = new Set(members.map((m) => String(m.name).toLowerCase()));
+    const onlyNameSignal = reasons.length === 1 &&
+      (reasons[0] === "name / linkedin slug" || reasons[0] === "name");
+    const placeholderName = members.length >= 6 && names.size === 1 && onlyNameSignal;
+    if (placeholderName) {
+      placeholders.push({ members, reasons, placeholderName: members[0].name });
+    } else {
+      out.push({ members, reasons });
+    }
   }
   // Stable order for the UI: largest groups first, then by primary name.
-  out.sort(
-    (a, b) =>
-      b.members.length - a.members.length ||
-      String(a.members[0].name).localeCompare(String(b.members[0].name)),
-  );
-  return out;
+  const cmp = (a, b) =>
+    b.members.length - a.members.length ||
+    String(a.members[0].name).localeCompare(String(b.members[0].name));
+  out.sort(cmp);
+  placeholders.sort(cmp);
+  // Return both lists; the UI shows real merge groups by default and
+  // the placeholders behind a separate "Fix names" tab.
+  return { groups: out, placeholders };
 }
 
 // Merge the listed personIds into `keepId`. Combines all fillable fields
@@ -1354,7 +1417,9 @@ const PERSON_ROLE_WORDS = new Set([
   "founder", "cofounder", "co-founder", "faculty", "advisor", "advisors",
   "coordinator", "coordinators", "director", "intern", "interns",
   "contributor", "contributors", "maintainer", "maintainers",
-  "student", "students", "staff", "team",
+  "student", "students", "staff", "team", "meettheteam",
+  "syndicate", "syndicates", "github", "linkedin", "twitter",
+  "website", "portfolio", "email", "mail", "resume"
 ]);
 
 function looksLikeRoleName(name) {
@@ -2223,6 +2288,8 @@ module.exports = {
   listPeople,
   upsertPerson,
   deletePerson,
+  deletePeople,
+  deleteAllPeople,
   findDuplicateGroups,
   mergePeople,
   touchPersonScraped,

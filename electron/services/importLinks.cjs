@@ -22,6 +22,113 @@ const PRESETS = {
   'ntl:tesla':    'https://nexttechlab.in/labs/tesla',
 };
 
+/**
+ * Specialized scrapers for specific sites.
+ */
+const SPECIALIZED_SCRAPERS = [
+  {
+    name: "NextTechLab",
+    match: (url, html) => /nexttechlab\.in\/labs\//i.test(url) || /nexttechlab\.io/i.test(url) || html.includes('labcard?name='),
+    scrape: ($, html, url) => {
+      const results = [];
+      // PRIMARY: Extract from script tags (Next.js data layer)
+      const seen = new Set();
+      $('script').each((_, script) => {
+        const text = $(script).html();
+        if (!text || !text.includes('name:')) return;
+        
+        // Match objects that look like members: have _id, name, and either lab or regnumber
+        const blockRegex = /\{_id:"[^"]+"[^}]*?name:"[^"]+"[^}]*\}/g;
+        let blockMatch;
+        while ((blockMatch = blockRegex.exec(text)) !== null) {
+          const block = blockMatch[0];
+          
+          // Check if this is likely a member object (should have a lab or regnumber)
+          if (!block.includes('lab:') && !block.includes('regnumber:')) continue;
+
+          const name = (block.match(/name:"([^"]+)"/) || [])[1];
+          const ghRaw = (block.match(/github:("([^"]+)"|null)/) || [])[2];
+          const liRaw = (block.match(/linkedin:("([^"]+)"|null)/) || [])[2];
+          const reg = (block.match(/regnumber:("([^"]+)"|null)/) || [])[2];
+          const labId = (block.match(/lab:"([^"]+)"/) || [])[1];
+          const role = (block.match(/role:"([^"]+)"/) || [])[1];
+          
+          const gh = ghRaw && ghRaw !== 'null' ? ghRaw : null;
+          const li = liRaw && liRaw !== 'null' ? liRaw : null;
+          const key = (gh || li || name || '').toLowerCase();
+          if (!key || seen.has(key)) continue;
+
+          if (name || gh || li) {
+            results.push({
+              name: name || gh || (li ? linkedinHandleFromUrl(li) : null),
+              github_username: ghHandleFromHref(gh),
+              linkedin_url: liUrlFromHref(li),
+              notes: JSON.stringify({ registration: reg, role, lab: labId }),
+              reg_number: reg,
+              role,
+              lab: labId,
+              tags: [labId ? `lab:${labId}` : null, role].filter(Boolean)
+            });
+            seen.add(key);
+          }
+        }
+      });
+
+      // SECONDARY: Fallback to DOM for any uniquely identifiable cards missed by scripts
+      if (results.length === 0) {
+        $('.relative.group.rounded-xl').each((_, el) => {
+          const $card = $(el);
+          const $img = $card.find('img');
+          const alt = $img.attr('alt');
+          const imgSrc = $img.attr('src');
+          
+          let nameFromCard = $card.find('.text-lg.font-bold').text().trim() || null;
+          if (alt && alt.toLowerCase().endsWith(' card')) {
+            nameFromCard = alt.replace(/\s+card$/i, '').trim();
+          }
+          
+          let reg = $card.find('.text-xs').text().trim() || null;
+          let gh = null, li = null, role = null, lab = null;
+          $card.find('a[href]').each((_, a) => {
+            const href = $(a).attr('href');
+            const ghHandle = ghHandleFromHref(href);
+            const liUrl = liUrlFromHref(href);
+            if (ghHandle) gh = ghHandle;
+            if (liUrl) li = liUrl;
+          });
+          if (imgSrc && imgSrc.includes('/api/labcard')) {
+            try {
+              const imgUrl = imgSrc.replace(/&amp;/g, '&');
+              const u = new URL(imgUrl, 'https://nexttechlab.in');
+              nameFromCard = nameFromCard || u.searchParams.get('name');
+              reg = reg || u.searchParams.get('regnumber');
+              role = u.searchParams.get('role');
+              lab = u.searchParams.get('lab');
+            } catch (e) {}
+          }
+          const name = nameFromCard || gh || (li ? linkedinHandleFromUrl(li) : null);
+          const key = (gh || li || name || '').toLowerCase();
+          if (name && !seen.has(key)) {
+            results.push({
+              name,
+              github_username: gh,
+              linkedin_url: li,
+              notes: JSON.stringify({ registration: reg, role, lab }),
+              reg_number: reg,
+              role,
+              lab,
+              tags: [lab ? `lab:${lab}` : null, role].filter(Boolean)
+            });
+            seen.add(key);
+          }
+        });
+      }
+
+      return results;
+    }
+  }
+];
+
 async function fetchHtml(url) {
   const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 apex-desktop' } });
   if (!res.ok) throw new Error(`${url} returned ${res.status}`);
@@ -43,17 +150,47 @@ function liUrlFromHref(href) {
   return /^https?:\/\/(?:www\.)?linkedin\.com\/in\//i.test(href) ? href : null;
 }
 
+function linkedinHandleFromUrl(url) {
+  if (!url) return null;
+  const m = String(url).match(/linkedin\.com\/in\/([^/?#]+)/i);
+  return m ? decodeURIComponent(m[1]).replace(/\/+$/, "") : null;
+}
+
+const PERSON_ROLE_WORDS = new Set([
+  "associate", "associates", "mentor", "mentors", "member", "members",
+  "alumni", "alumnus", "lead", "leads", "head", "heads", "president",
+  "vicepresident", "vice-president", "secretary", "treasurer",
+  "founder", "cofounder", "co-founder", "faculty", "advisor", "advisors",
+  "coordinator", "coordinators", "director", "intern", "interns",
+  "contributor", "contributors", "maintainer", "maintainers",
+  "student", "students", "staff", "team", "meettheteam",
+  "syndicate", "syndicates", "github", "linkedin", "twitter",
+  "website", "portfolio", "email", "mail", "resume"
+]);
+
+function looksLikeRoleName(name) {
+  if (!name) return false;
+  const normalised = String(name).trim().toLowerCase().replace(/[^a-z\s-]/g, "").replace(/\s+/g, "");
+  if (!normalised) return false;
+  return PERSON_ROLE_WORDS.has(normalised);
+}
+
 // Walk up from an anchor trying to find a name.
 function nameForAnchor($, $a) {
   let $cur = $a;
   for (let i = 0; i < 6; i++) {
     $cur = $cur.parent();
     if ($cur.length === 0) break;
-    const heading = $cur.find('h1, h2, h3, h4, h5, strong, b').first();
-    if (heading.length) {
-      const t = heading.text().trim();
-      if (t && t.length < 80) return t;
-    }
+    
+    let foundName = null;
+    $cur.find('h1, h2, h3, h4, h5, strong, b').each((_, el) => {
+      if (foundName) return;
+      const t = $(el).text().trim();
+      if (t && t.length < 80 && !looksLikeRoleName(t)) {
+        foundName = t;
+      }
+    });
+    if (foundName) return foundName;
   }
   return null;
 }
@@ -75,7 +212,10 @@ function extractFromHtml(html, sourceLabel) {
     const gh = ghHandleFromHref(href);
     const li = liUrlFromHref(href);
     if (!gh && !li) return;
-    const name = nameForAnchor($, $a) || $a.text().trim() || gh || li;
+    
+    let name = nameForAnchor($, $a) || $a.text().trim() || gh || linkedinHandleFromUrl(li);
+    if (looksLikeRoleName(name)) name = gh || linkedinHandleFromUrl(li);
+    
     add({ name, github_username: gh || undefined, linkedin_url: li || undefined });
   });
 
@@ -116,16 +256,23 @@ async function previewUrl(url) {
     return { ok: true, source: 'gh-org', candidates: cands };
   }
 
-  // Case 3: NextTechLab lab page
-  if (/nexttechlab\.in\/labs\//i.test(trimmed)) {
-    const html = await fetchHtml(trimmed);
-    const lab = trimmed.split('/labs/')[1]?.replace(/\/$/, '') || 'ntl';
-    const cands = extractFromHtml(html, 'ntl:' + lab);
-    return { ok: true, source: 'ntl', lab, candidates: cands };
+  // Case 3: Specialized Scrapers (NextTechLab, etc.)
+  const html = await fetchHtml(trimmed);
+  const $ = cheerio.load(html);
+  for (const scraper of SPECIALIZED_SCRAPERS) {
+    if (scraper.match(trimmed, html)) {
+      try {
+        const cands = scraper.scrape($, html, trimmed);
+        if (cands && cands.length > 0) {
+          return { ok: true, source: scraper.name.toLowerCase(), candidates: cands };
+        }
+      } catch (err) {
+        console.warn(`[scraper:${scraper.name}] failed:`, err.message);
+      }
+    }
   }
 
-  // Case 4: arbitrary web page
-  const html = await fetchHtml(trimmed);
+  // Case 4: arbitrary web page fallback
   const cands = extractFromHtml(html, 'link:' + new URL(trimmed).hostname);
   return { ok: true, source: 'generic', candidates: cands };
 }

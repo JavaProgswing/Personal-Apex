@@ -844,6 +844,8 @@ ipcMain.handle("github:rateLimit", () => github.rateLimit());
 ipcMain.handle("people:list", (_e, filter) => db.listPeople(filter));
 ipcMain.handle("people:upsert", (_e, person) => db.upsertPerson(person));
 ipcMain.handle("people:delete", (_e, id) => db.deletePerson(id));
+ipcMain.handle("people:deleteBulk", (_e, ids) => db.deletePeople(ids));
+ipcMain.handle("people:deleteAll", () => db.deleteAllPeople());
 ipcMain.handle("people:findDuplicates", () => db.findDuplicateGroups());
 ipcMain.handle("people:merge", (_e, { keepId, mergeIds } = {}) =>
   db.mergePeople(keepId, mergeIds || []),

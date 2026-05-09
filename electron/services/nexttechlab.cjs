@@ -126,7 +126,6 @@ function extractLinkedinUrl(href) {
     return null;
   }
 }
-
 async function scrapeLab(lab) {
   const url = urlFor(lab);
   const html = await fetchHtml(url);
@@ -136,44 +135,142 @@ async function scrapeLab(lab) {
   const byGithub = new Map();
   // members with only linkedin
   const liOnly = [];
+  const seen = new Set();
 
-  $("a[href]").each((_, el) => {
-    const href = $(el).attr("href");
-    if (!href) return;
-    const gh = extractGithubUsername(href);
-    const li = extractLinkedinUrl(href);
-    if (!gh && !li) return;
+  // PRIMARY: Extract from script tags (Next.js hydration data)
+  $("script").each((_, script) => {
+    const text = $(script).html();
+    if (!text || !text.includes("name:")) return;
 
-    const name = nameForAnchor($, $(el)) || (gh ? gh : "(unknown)");
+    // Match objects that look like members: have _id, name, and either lab or regnumber
+    const blockRegex = /\{_id:"[^"]+"[^}]*?name:"[^"]+"[^}]*\}/g;
+    let blockMatch;
+    while ((blockMatch = blockRegex.exec(text)) !== null) {
+      const block = blockMatch[0];
 
-    if (gh) {
-      const prev = byGithub.get(gh);
-      if (!prev) {
-        byGithub.set(gh, {
-          name,
-          github_username: gh,
-          linkedin_url: null,
-          source: `ntl:${lab}`,
-          tags: [`lab:${lab}`],
-        });
-      } else if (prev.name === "(unknown)" || prev.name === gh) {
-        prev.name = name;
+      // Check if this is likely a member object
+      if (!block.includes("lab:") && !block.includes("regnumber:")) continue;
+
+      const name = (block.match(/name:"([^"]+)"/) || [])[1];
+      const ghRaw = (block.match(/github:("([^"]+)"|null)/) || [])[2];
+      const liRaw = (block.match(/linkedin:("([^"]+)"|null)/) || [])[2];
+      const reg = (block.match(/regnumber:("([^"]+)"|null)/) || [])[2];
+      const labId = (block.match(/lab:"([^"]+)"/) || [])[1];
+      const role = (block.match(/role:"([^"]+)"/) || [])[1];
+
+      const gh = ghRaw && ghRaw !== "null" ? ghRaw : null;
+      const li = liRaw && liRaw !== "null" ? liRaw : null;
+      const key = (gh || li || name || "").toLowerCase();
+      if (!key || seen.has(key)) continue;
+
+      if (name || gh || li) {
+        if (gh) {
+          const handle = extractGithubUsername(gh);
+          if (handle) {
+            byGithub.set(handle, {
+              name: name || handle,
+              github_username: handle,
+              linkedin_url: extractLinkedinUrl(li),
+              source: `ntl:${lab}`,
+              tags: [`lab:${lab}`],
+              notes: JSON.stringify({ registration: reg, role, lab: labId || lab }),
+            });
+            seen.add(key);
+          }
+        } else if (li) {
+          const liUrl = extractLinkedinUrl(li);
+          if (liUrl) {
+            liOnly.push({
+              name: name || "(unknown)",
+              linkedin_url: liUrl,
+              source: `ntl:${lab}`,
+              tags: [`lab:${lab}`],
+              notes: JSON.stringify({ registration: reg, role, lab: labId || lab }),
+            });
+            seen.add(key);
+          }
+        }
       }
-      // Try to also attach a linkedin found in the same card
-      const $card = $(el).closest("div, li, article, section");
-      $card.find('a[href*="linkedin.com"]').each((_, li2) => {
-        const liUrl = extractLinkedinUrl($(li2).attr("href"));
-        if (liUrl) byGithub.get(gh).linkedin_url = liUrl;
-      });
-    } else if (li) {
-      liOnly.push({
-        name,
-        linkedin_url: li,
-        source: `ntl:${lab}`,
-        tags: [`lab:${lab}`],
-      });
     }
   });
+
+  // SECONDARY: Fallback to DOM only if scripts missed everything
+  if (byGithub.size === 0 && liOnly.length === 0) {
+    $("a[href]").each((_, el) => {
+      const href = $(el).attr("href");
+      if (!href) return;
+      const gh = extractGithubUsername(href);
+      const li = extractLinkedinUrl(href);
+      if (!gh && !li) return;
+
+      const $card = $(el).closest("div, li, article, section");
+      const $img = $card.find("img");
+      const alt = $img.attr("alt");
+      const imgSrc = $img.attr("src");
+
+      let nameFromCard = null;
+      if (alt && alt.toLowerCase().endsWith(" card")) {
+        nameFromCard = alt.replace(/\s+card$/i, "").trim();
+      }
+
+      let reg = null,
+        role = null,
+        labFromUrl = null;
+      if (imgSrc && imgSrc.includes("/api/labcard")) {
+        try {
+          const u = new URL(
+            imgSrc.replace(/&amp;/g, "&"),
+            "https://nexttechlab.in",
+          );
+          nameFromCard = nameFromCard || u.searchParams.get("name");
+          reg = u.searchParams.get("regnumber");
+          role = u.searchParams.get("role");
+          labFromUrl = u.searchParams.get("lab");
+        } catch (e) {}
+      }
+
+      const name =
+        nameFromCard || nameForAnchor($, $(el)) || (gh ? gh : "(unknown)");
+
+      if (gh) {
+        const prev = byGithub.get(gh);
+        if (!prev) {
+          byGithub.set(gh, {
+            name,
+            github_username: gh,
+            linkedin_url: null,
+            source: `ntl:${lab}`,
+            tags: [`lab:${lab}`],
+            notes: JSON.stringify({
+              registration: reg,
+              role,
+              lab: labFromUrl || lab,
+            }),
+          });
+        } else if (prev.name === "(unknown)" || prev.name === gh) {
+          prev.name = name;
+        }
+        // Try to also attach a linkedin found in the same card
+        const $card = $(el).closest("div, li, article, section");
+        $card.find('a[href*="linkedin.com"]').each((_, li2) => {
+          const liUrl = extractLinkedinUrl($(li2).attr("href"));
+          if (liUrl) byGithub.get(gh).linkedin_url = liUrl;
+        });
+      } else if (li) {
+        liOnly.push({
+          name,
+          linkedin_url: li,
+          source: `ntl:${lab}`,
+          tags: [`lab:${lab}`],
+          notes: JSON.stringify({
+            registration: reg,
+            role,
+            lab: labFromUrl || lab,
+          }),
+        });
+      }
+    });
+  }
 
   return { lab, url, members: [...byGithub.values(), ...liOnly] };
 }

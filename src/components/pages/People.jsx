@@ -41,6 +41,7 @@ export default function People() {
   const [showImport, setShowImport] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showMergeDuplicates, setShowMergeDuplicates] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
   const [openRepo, setOpenRepo] = useState(null); // repo row to open in detail
 
   const [ghSync, setGhSync] = useState({ active: false, total: 0, done: 0, current: null, rateLimited: false, resetAt: null });
@@ -178,6 +179,9 @@ export default function People() {
     setStatus({ msg: `GitHub sync: ${res.filter((r) => r.ok).length} / ${res.length} ok` });
     reload();
   }
+  function handleClearData() {
+    setShowBulkDelete(true);
+  }
   async function syncAllCp() {
     setCpSync({ active: true, total: 0, done: 0, ok: 0, err: 0, current: null });
     try {
@@ -285,6 +289,7 @@ export default function People() {
             onImport={() => setShowImport(true)}
             onAdd={() => setShowAdd(true)}
             onMergeDuplicates={() => setShowMergeDuplicates(true)}
+            onClearData={handleClearData}
           />
           <PeopleSyncMenu
             ghActive={ghSync.active}
@@ -407,6 +412,14 @@ export default function People() {
         <MergeDuplicatesModal
           onClose={() => setShowMergeDuplicates(false)}
           onMerged={() => { setShowMergeDuplicates(false); reload(); }}
+        />
+      )}
+
+      {showBulkDelete && (
+        <BulkDeleteModal
+          people={people}
+          onClose={() => setShowBulkDelete(false)}
+          onDeleted={() => { setShowBulkDelete(false); reload(); setStatus({ msg: "Selected people deleted" }); }}
         />
       )}
 
@@ -594,7 +607,7 @@ function FilterField({ label, children }) {
   );
 }
 
-function PeopleAddMenu({ onImport, onAdd, onMergeDuplicates }) {
+function PeopleAddMenu({ onImport, onAdd, onMergeDuplicates, onClearData }) {
   const [open, setOpen] = useState(false);
   const ref = React.useRef(null);
   React.useEffect(() => {
@@ -649,6 +662,20 @@ function PeopleAddMenu({ onImport, onAdd, onMergeDuplicates }) {
                 title="Find people that are likely duplicates and merge them"
               >
                 ⚙ Merge duplicates…
+              </button>
+            </>
+          )}
+          {onClearData && (
+            <>
+              <hr className="soft" style={{ margin: "4px 0" }} />
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => { setOpen(false); onClearData(); }}
+                style={{ display: "block", width: "100%", textAlign: "left", color: "#ef6b5a" }}
+                title="Bulk delete specific people or everyone"
+              >
+                🗑 Bulk delete people…
               </button>
             </>
           )}
@@ -1064,7 +1091,7 @@ function PersonModal({ person, repos, cpStats, activity, onClose, onSyncGh, onSy
           <div className="person-modal-actions">
             {hasGh && <button className="small primary" onClick={onSyncGh} title="Fetch repos from GitHub">Sync GitHub</button>}
             {hasCpHandles && <button className="small" onClick={onSyncCp} title="Refresh CP stats">Sync CP</button>}
-            <button className="small ghost" onClick={() => setEditMode((v) => !v)}>{editMode ? "Cancel" : "Edit handles"}</button>
+            <button className="small ghost" onClick={() => setEditMode((v) => !v)}>{editMode ? "Cancel" : "Edit profile"}</button>
             <button className="small ghost danger" onClick={onDelete} title="Remove this person">Delete</button>
             <button onClick={onClose} className="ghost icon-btn" aria-label="Close">✕</button>
           </div>
@@ -1193,23 +1220,33 @@ function safeJson(v) { try { return JSON.parse(v); } catch { return {}; } }
 
 function HandleEdit({ person, onSaved }) {
   const [form, setForm] = useState({
+    name: person.name || "",
     leetcode_username: person.leetcode_username || "",
     codeforces_username: person.codeforces_username || "",
     codechef_username: person.codechef_username || "",
   });
   async function save() {
+    if (!form.name.trim()) return alert("Name is required");
     await api.people.upsert({ ...person, ...form });
     onSaved();
   }
   return (
     <div className="card" style={{ background: "var(--bg-elev-2)", marginBottom: 8 }}>
+      <div className="form-row">
+        <label>Display name</label>
+        <input
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          placeholder="Arnav Singh Negi"
+        />
+      </div>
       <div className="grid-2">
         <div className="form-row"><label>LeetCode username</label><input value={form.leetcode_username} onChange={(e) => setForm({ ...form, leetcode_username: e.target.value })} /></div>
         <div className="form-row"><label>Codeforces handle</label><input value={form.codeforces_username} onChange={(e) => setForm({ ...form, codeforces_username: e.target.value })} /></div>
       </div>
       <div className="form-row"><label>CodeChef handle</label><input value={form.codechef_username} onChange={(e) => setForm({ ...form, codechef_username: e.target.value })} /></div>
       <div className="row" style={{ justifyContent: "flex-end" }}>
-        <button className="primary" onClick={save}>Save handles</button>
+        <button className="primary" onClick={save}>Save changes</button>
       </div>
     </div>
   );
@@ -1221,26 +1258,31 @@ function HandleEdit({ person, onSaved }) {
 // complete row) becomes the keeper; the rest are merged into it. Repos +
 // CP stats + submissions are reassigned to the keeper inside one DB tx.
 function MergeDuplicatesModal({ onClose, onMerged }) {
-  const [groups, setGroups] = useState(null);
+  const [data, setData] = useState({ groups: [], placeholders: [] });
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
-  // Per-group: which member id is the keeper (defaults to the primary).
+  const [tab, setTab] = useState("duplicates"); // duplicates | placeholders
   const [keeperByGroup, setKeeperByGroup] = useState({});
   const [doneIds, setDoneIds] = useState(new Set());
+  // Per-person rename buffer keyed by person id.
+  const [renames, setRenames] = useState({});
 
   async function load() {
-    setLoading(true); setErr(null);
+    setLoading(true); setErr(null); setDoneIds(new Set());
     try {
       const res = await api.people.findDuplicates();
-      if (Array.isArray(res)) {
-        setGroups(res);
-        const init = {};
-        for (let i = 0; i < res.length; i++) init[i] = res[i].members[0]?.id;
-        setKeeperByGroup(init);
-      } else {
-        setErr("Could not load duplicates.");
+      // Backwards-compat: old API returned an array, new returns
+      // { groups, placeholders }.
+      const shaped = Array.isArray(res)
+        ? { groups: res, placeholders: [] }
+        : (res && typeof res === "object" ? res : { groups: [], placeholders: [] });
+      setData(shaped);
+      const init = {};
+      for (let i = 0; i < shaped.groups.length; i++) {
+        init[i] = shaped.groups[i].members[0]?.id;
       }
+      setKeeperByGroup(init);
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -1249,8 +1291,58 @@ function MergeDuplicatesModal({ onClose, onMerged }) {
   }
   useEffect(() => { load(); }, []);
 
-  async function mergeGroup(idx) {
-    const g = groups[idx];
+  async function saveRename(member) {
+    const next = (renames[member.id] || "").trim();
+    if (!next || next === member.name) {
+      setRenames((r) => { const c = { ...r }; delete c[member.id]; return c; });
+      return;
+    }
+    try {
+      // Pass the full row + new name so other columns (notes, tags, handles)
+      // aren't wiped by the COALESCE-less UPDATE branch in upsertPerson.
+      let tags = member.tags;
+      if (typeof tags === "string") {
+        try { tags = JSON.parse(tags); } catch { tags = []; }
+      }
+      await api.people.upsert({
+        ...member,
+        name: next,
+        tags: Array.isArray(tags) ? tags : [],
+      });
+      // Reflect locally so the row repaints with the new name.
+      setData((d) => ({
+        ...d,
+        groups: d.groups.map((g) => ({
+          ...g,
+          members: g.members.map((m) =>
+            m.id === member.id ? { ...m, name: next } : m,
+          ),
+        })),
+        placeholders: d.placeholders.map((g) => ({
+          ...g,
+          members: g.members.map((m) =>
+            m.id === member.id ? { ...m, name: next } : m,
+          ),
+        })),
+      }));
+      setRenames((r) => { const c = { ...r }; delete c[member.id]; return c; });
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  async function deleteMember(member) {
+    if (!window.confirm(`Delete ${member.name}? This cannot be undone.`)) return;
+    try {
+      await api.people.delete(member.id);
+      load();
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  async function mergeGroup(idx, list = data.groups) {
+    const g = list[idx];
     if (!g) return;
     const keepId = keeperByGroup[idx] || g.members[0].id;
     const mergeIds = g.members.map((m) => m.id).filter((id) => id !== keepId);
@@ -1258,11 +1350,8 @@ function MergeDuplicatesModal({ onClose, onMerged }) {
     setBusy(true);
     try {
       const r = await api.people.merge({ keepId, mergeIds });
-      if (r?.ok) {
-        setDoneIds((s) => new Set(s).add(idx));
-      } else {
-        setErr(r?.error || "merge failed");
-      }
+      if (r?.ok) setDoneIds((s) => new Set(s).add(idx));
+      else setErr(r?.error || "merge failed");
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -1270,34 +1359,54 @@ function MergeDuplicatesModal({ onClose, onMerged }) {
     }
   }
   async function mergeAll() {
-    if (!groups) return;
     setBusy(true);
-    for (let i = 0; i < groups.length; i++) {
+    for (let i = 0; i < data.groups.length; i++) {
       if (doneIds.has(i)) continue;
-      const g = groups[i];
+      const g = data.groups[i];
       const keepId = keeperByGroup[i] || g.members[0].id;
       const mergeIds = g.members.map((m) => m.id).filter((id) => id !== keepId);
       if (!mergeIds.length) continue;
       try {
         const r = await api.people.merge({ keepId, mergeIds });
         if (r?.ok) setDoneIds((s) => new Set(s).add(i));
-      } catch { /* keep going */ }
+      } catch {}
     }
     setBusy(false);
     onMerged?.();
   }
 
+  const list = tab === "duplicates" ? data.groups : data.placeholders;
+  const showCount = (data.placeholders || []).length;
+
   return (
     <div className="modal-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal wide" style={{ width: 760, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+      <div className="modal wide merge-modal">
         <div className="row between" style={{ marginBottom: 8 }}>
           <div>
-            <h3 style={{ margin: 0 }}>Merge duplicates</h3>
+            <h3 style={{ margin: 0 }}>Merge & clean people</h3>
             <small className="muted">
-              People that look like the same person across multiple sources (LinkedIn, GitHub, leaderboard imports).
+              Likely duplicates from LinkedIn, GitHub, and leaderboard imports.
             </small>
           </div>
           <button className="ghost" onClick={onClose}>✕</button>
+        </div>
+
+        {/* Tabs — duplicates vs placeholder names. */}
+        <div className="chip-row" style={{ marginBottom: 10 }}>
+          <button
+            className={"chip" + (tab === "duplicates" ? " active" : "")}
+            onClick={() => setTab("duplicates")}
+          >
+            Duplicates · {data.groups.length}
+          </button>
+          <button
+            className={"chip" + (tab === "placeholders" ? " active" : "")}
+            onClick={() => setTab("placeholders")}
+            disabled={showCount === 0}
+            title={showCount === 0 ? "No placeholder-name groups" : "People imported with the same junk name (e.g. \"syndicate\") — fix their names so they stop being grouped together."}
+          >
+            Fix names · {showCount}
+          </button>
         </div>
 
         {loading && (
@@ -1308,39 +1417,55 @@ function MergeDuplicatesModal({ onClose, onMerged }) {
         )}
         {err && <div className="error">{err}</div>}
 
-        {!loading && groups && groups.length === 0 && (
+        {!loading && list.length === 0 && tab === "duplicates" && (
           <div className="muted" style={{ padding: 24, textAlign: "center" }}>
-            No likely duplicates found. Looking pretty clean ✓
+            No likely duplicates found. Looking clean ✓
+          </div>
+        )}
+        {!loading && list.length === 0 && tab === "placeholders" && (
+          <div className="muted" style={{ padding: 24, textAlign: "center" }}>
+            No placeholder-name groups.
           </div>
         )}
 
-        {!loading && groups && groups.length > 0 && (
+        {!loading && list.length > 0 && (
           <>
-            <div className="row between" style={{ marginBottom: 10 }}>
-              <small className="muted">
-                {groups.length} group{groups.length === 1 ? "" : "s"} ·
-                {" "}{doneIds.size} merged so far
-              </small>
-              <button className="primary small" onClick={mergeAll} disabled={busy}>
-                {busy ? "Merging…" : "Merge all"}
-              </button>
-            </div>
+            {tab === "duplicates" && (
+              <div className="row between" style={{ marginBottom: 10 }}>
+                <small className="muted">
+                  {list.length} group{list.length === 1 ? "" : "s"}
+                  {" · "}{doneIds.size} merged
+                </small>
+                <button className="primary small" onClick={mergeAll} disabled={busy}>
+                  {busy ? "Merging…" : "Merge all"}
+                </button>
+              </div>
+            )}
+            {tab === "placeholders" && (
+              <div className="card" style={{ marginBottom: 10, padding: "10px 12px", background: "var(--bg-elev-2)" }}>
+                <strong style={{ fontSize: 13 }}>What is this?</strong>
+                <small className="muted" style={{ display: "block", marginTop: 4 }}>
+                  Some imports saved every person under the same name (e.g.
+                  "syndicate"). Click ✎ next to each row to give them their
+                  real name — they'll stop being grouped after that.
+                </small>
+              </div>
+            )}
 
-            <div style={{ overflowY: "auto", flex: 1, paddingRight: 4 }}>
-              {groups.map((g, i) => {
+            <div className="merge-modal-list">
+              {list.map((g, i) => {
                 const isDone = doneIds.has(i);
                 return (
                   <div
                     key={i}
-                    className="card"
+                    className="merge-group"
                     style={{
-                      marginBottom: 10,
                       opacity: isDone ? 0.55 : 1,
                       borderColor: isDone ? "var(--ok)" : undefined,
                     }}
                   >
-                    <div className="row between" style={{ alignItems: "baseline", marginBottom: 6 }}>
-                      <strong>{g.members[0].name}</strong>
+                    <div className="merge-group-head">
+                      <strong>{g.members[0].name || "(no name)"}</strong>
                       <small className="muted">
                         {g.members.length} rows · matched on {g.reasons.join(", ")}
                       </small>
@@ -1349,59 +1474,108 @@ function MergeDuplicatesModal({ onClose, onMerged }) {
                       let notes = {};
                       try { notes = JSON.parse(m.notes || "{}"); } catch {}
                       const isKeeper = keeperByGroup[i] === m.id;
+                      const isRenaming = m.id in renames;
+                      const handles = [
+                        m.github_username && `gh:${m.github_username}`,
+                        m.leetcode_username && `lc:${m.leetcode_username}`,
+                        m.linkedin_url && "linkedin",
+                        notes.registration && `reg:${notes.registration}`,
+                        notes.section && `§ ${notes.section}`,
+                      ].filter(Boolean);
                       return (
-                        <label
+                        <div
                           key={m.id}
-                          className="row"
-                          style={{
-                            gap: 10,
-                            padding: "6px 8px",
-                            marginBottom: 4,
-                            borderRadius: 6,
-                            background: isKeeper ? "var(--accent-soft)" : "var(--bg-elev-2)",
-                            border: "1px solid " + (isKeeper ? "var(--accent)" : "var(--border)"),
-                            cursor: isDone ? "default" : "pointer",
-                            alignItems: "flex-start",
-                          }}
+                          className={"merge-row" + (isKeeper ? " keeper" : "")}
                         >
-                          <input
-                            type="radio"
-                            name={`keeper-${i}`}
-                            checked={isKeeper}
-                            disabled={isDone}
-                            onChange={() => setKeeperByGroup({ ...keeperByGroup, [i]: m.id })}
-                            title="Make this the kept row"
-                            style={{ marginTop: 4 }}
-                          />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div className="row" style={{ gap: 6, alignItems: "baseline", flexWrap: "wrap" }}>
-                              <strong style={{ fontSize: 13 }}>{m.name}</strong>
-                              {isKeeper && <span className="pill teal" style={{ fontSize: 9 }}>keep</span>}
-                              {m.source && <span className="pill gray" style={{ fontSize: 9 }}>{m.source}</span>}
+                          {tab === "duplicates" && (
+                            <input
+                              type="radio"
+                              name={`keeper-${i}`}
+                              checked={isKeeper}
+                              disabled={isDone}
+                              onChange={() =>
+                                setKeeperByGroup({ ...keeperByGroup, [i]: m.id })
+                              }
+                              title="Make this the kept row"
+                              className="merge-row-radio"
+                            />
+                          )}
+                          <div className="merge-row-body">
+                            <div className="merge-row-name">
+                              {isRenaming ? (
+                                <>
+                                  <input
+                                    type="text"
+                                    autoFocus
+                                    value={renames[m.id]}
+                                    onChange={(e) =>
+                                      setRenames((r) => ({ ...r, [m.id]: e.target.value }))
+                                    }
+                                    onBlur={() => saveRename(m)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") saveRename(m);
+                                      else if (e.key === "Escape")
+                                        setRenames((r) => {
+                                          const c = { ...r };
+                                          delete c[m.id];
+                                          return c;
+                                        });
+                                    }}
+                                    className="merge-row-name-input"
+                                  />
+                                </>
+                              ) : (
+                                <>
+                                  <strong className="merge-row-name-text">{m.name}</strong>
+                                  <div className="row" style={{ gap: 4 }}>
+                                    <button
+                                      type="button"
+                                      className="ghost xsmall"
+                                      onClick={() =>
+                                        setRenames((r) => ({ ...r, [m.id]: m.name }))
+                                      }
+                                      title="Rename this person"
+                                    >
+                                      ✎
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="ghost xsmall"
+                                      style={{ color: "#ef6b5a", padding: "0 6px" }}
+                                      onClick={() => deleteMember(m)}
+                                      title="Delete this person"
+                                    >
+                                      🗑
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                              {isKeeper && tab === "duplicates" && (
+                                <span className="pill teal merge-row-pill">keep</span>
+                              )}
+                              {m.source && (
+                                <span className="pill gray merge-row-pill">{m.source}</span>
+                              )}
                             </div>
-                            <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-                              {[
-                                m.github_username && `gh:${m.github_username}`,
-                                m.leetcode_username && `lc:${m.leetcode_username}`,
-                                m.linkedin_url && "linkedin",
-                                notes.registration && `reg:${notes.registration}`,
-                                notes.section && `§ ${notes.section}`,
-                              ].filter(Boolean).join("  ·  ") || "(no handles)"}
+                            <div className="merge-row-handles">
+                              {handles.length ? handles.join("  ·  ") : "(no handles)"}
                             </div>
                           </div>
-                        </label>
+                        </div>
                       );
                     })}
-                    <div className="row" style={{ marginTop: 4, gap: 6 }}>
-                      <button
-                        className="ghost xsmall"
-                        onClick={() => mergeGroup(i)}
-                        disabled={isDone || busy}
-                        title={`Merge ${g.members.length - 1} into the kept row`}
-                      >
-                        {isDone ? "✓ Merged" : "Merge this group"}
-                      </button>
-                    </div>
+                    {tab === "duplicates" && (
+                      <div className="merge-group-actions">
+                        <button
+                          className="ghost xsmall"
+                          onClick={() => mergeGroup(i)}
+                          disabled={isDone || busy}
+                          title={`Merge ${g.members.length - 1} into the kept row`}
+                        >
+                          {isDone ? "✓ Merged" : "Merge this group"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1409,11 +1583,18 @@ function MergeDuplicatesModal({ onClose, onMerged }) {
 
             <div className="row between" style={{ marginTop: 10 }}>
               <small className="muted">
-                Merging combines handles, tags, links, repos, CP stats — keeper wins on conflicts.
+                {tab === "duplicates"
+                  ? "Merging combines handles, tags, links, repos, CP stats — keeper wins on conflicts."
+                  : "Renaming will re-cluster this group on next scan."}
               </small>
-              <button className="ghost" onClick={() => { onMerged?.(); onClose(); }}>
-                Done
-              </button>
+              <div className="row" style={{ gap: 6 }}>
+                <button className="ghost" onClick={load} disabled={busy}>
+                  ↻ Rescan
+                </button>
+                <button className="ghost" onClick={() => { onMerged?.(); onClose(); }}>
+                  Done
+                </button>
+              </div>
             </div>
           </>
         )}
@@ -1677,27 +1858,32 @@ function ImportByLinkModal({ onClose, onImported }) {
         {allRows.length > 0 && (
           <>
             <hr className="soft" />
-            <div className="row between">
+            <div className="row between" style={{ alignItems: "center", margin: "10px 0" }}>
               <small className="muted">{allRows.length} candidates · {picked.size} selected</small>
               <div className="row" style={{ gap: 6 }}>
                 <button className="ghost small" onClick={() => setPicked(new Set(allRows.map((r) => r.key)))}>Select all</button>
                 <button className="ghost small" onClick={() => setPicked(new Set())}>Clear</button>
               </div>
             </div>
-            <div style={{ maxHeight: 360, overflowY: "auto", marginTop: 8 }}>
+            <div style={{ maxHeight: 380, overflowY: "auto", marginTop: 10, paddingRight: 4 }}>
               {allRows.map(({ key, c, source }) => (
-                <label key={key} className="todo-row" style={{ cursor: "pointer" }}>
+                <label key={key} className="todo-row" style={{ cursor: "pointer", alignItems: "center", padding: "12px 8px", borderRadius: "var(--r-md)", transition: "background 100ms" }}>
                   <input type="checkbox" checked={picked.has(key)} onChange={(e) => {
                     const n = new Set(picked);
                     if (e.target.checked) n.add(key); else n.delete(key);
                     setPicked(n);
-                  }} />
-                  <div>
-                    <div className="title">{c.name || c.github_username || c.linkedin_url}</div>
-                    <div className="sub">
-                      {source && <span className="pill gray">{source}</span>}{" "}
-                      {c.github_username && <>@{c.github_username}</>}
-                      {c.linkedin_url && <> · linkedin</>}
+                  }} style={{ marginTop: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div className="title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {c.name || c.github_username || c.linkedin_url}
+                      {c.role && <span className="pill amber" style={{ fontSize: "9px", padding: "1px 6px" }}>{c.role}</span>}
+                    </div>
+                    <div className="sub" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      {source && <span className="pill gray" style={{ fontSize: "9px" }}>{source}</span>}
+                      {c.github_username && <span>@{c.github_username}</span>}
+                      {c.linkedin_url && <span>· linkedin</span>}
+                      {c.reg_number && <span className="mono" style={{ opacity: 0.8 }}>· {c.reg_number}</span>}
+                      {c.lab && <span className="pill teal" style={{ fontSize: "9px" }}>{c.lab}</span>}
                     </div>
                   </div>
                 </label>
@@ -3114,6 +3300,152 @@ function RepoComparePanel({ repo }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function BulkDeleteModal({ people, onClose, onDeleted }) {
+  const [q, setQ] = useState("");
+  const [tag, setTag] = useState("");
+  const [source, setSource] = useState("");
+  const [picked, setPicked] = useState(new Set());
+  const [busy, setBusy] = useState(false);
+
+  // Derived options with cleanup
+  const tagOptions = useMemo(() => {
+    const s = new Set();
+    people.forEach((p) => {
+      if (Array.isArray(p.tags)) {
+        p.tags.forEach((t) => { if (t) s.add(t); });
+      }
+    });
+    return [...s].sort();
+  }, [people]);
+
+  const sourceOptions = useMemo(() => {
+    const s = new Set();
+    people.forEach((p) => { if (p.source) s.add(p.source); });
+    return [...s].sort();
+  }, [people]);
+
+  const filtered = useMemo(() => {
+    const lowQ = q.toLowerCase();
+    return people.filter(p => {
+      if (tag) {
+        const pTags = Array.isArray(p.tags) ? p.tags : [];
+        if (!pTags.includes(tag)) return false;
+      }
+      if (source && p.source !== source) return false;
+      if (q) {
+        const name = (p.name || "").toLowerCase();
+        const gh = (p.github_username || "").toLowerCase();
+        if (!name.includes(lowQ) && !gh.includes(lowQ)) return false;
+      }
+      return true;
+    });
+  }, [people, q, tag, source]);
+
+  const toggleAll = () => {
+    if (picked.size === filtered.length && filtered.length > 0) {
+      setPicked(new Set());
+    } else {
+      setPicked(new Set(filtered.map(p => p.id)));
+    }
+  };
+
+  const toggleOne = (id) => {
+    const next = new Set(picked);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setPicked(next);
+  };
+
+  const doDelete = async () => {
+    const ids = Array.from(picked);
+    if (ids.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${ids.length} people? This cannot be undone.`)) return;
+    setBusy(true);
+    try {
+      await api.people.deleteBulk(ids);
+      onDeleted();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal wide" style={{ width: 640, display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
+        <div className="row between" style={{ marginBottom: 16 }}>
+          <h3 style={{ margin: 0 }}>Bulk delete people</h3>
+          <button className="ghost" onClick={onClose} style={{ fontSize: 20 }}>✕</button>
+        </div>
+        
+        <div className="row" style={{ gap: 8, marginBottom: 16, alignItems: "stretch" }}>
+          <input 
+            placeholder="Search name or handle…" 
+            value={q} 
+            onChange={e => setQ(e.target.value)} 
+            style={{ flex: 1, padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elev-2)", color: "var(--text)" }}
+          />
+          {tagOptions.length > 0 && (
+            <select 
+              value={tag} 
+              onChange={e => setTag(e.target.value)}
+              style={{ padding: "0 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elev-2)", color: "var(--text)", minWidth: 120 }}
+            >
+              <option value="">All tags</option>
+              {tagOptions.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+          {sourceOptions.length > 0 && (
+            <select 
+              value={source} 
+              onChange={e => setSource(e.target.value)}
+              style={{ padding: "0 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elev-2)", color: "var(--text)", minWidth: 120 }}
+            >
+              <option value="">All sources</option>
+              {sourceOptions.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
+        </div>
+
+        <div className="bulk-delete-list" style={{ flex: 1, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg-elev)" }}>
+          {filtered.map(p => (
+            <label key={p.id} className="row" style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", gap: 12, cursor: "pointer", transition: "background 0.2s" }}>
+              <input 
+                type="checkbox" 
+                checked={picked.has(p.id)} 
+                onChange={() => toggleOne(p.id)} 
+                style={{ width: 16, height: 16, cursor: "pointer" }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div>
+                {p.github_username && <div className="muted" style={{ fontSize: 12 }}>@{p.github_username}</div>}
+              </div>
+              {p.source && <span className="pill gray xsmall" style={{ opacity: 0.7 }}>{p.source}</span>}
+            </label>
+          ))}
+          {filtered.length === 0 && <div className="muted" style={{ padding: 40, textAlign: "center" }}>No people match your filters</div>}
+        </div>
+
+        <div className="row between" style={{ marginTop: 20 }}>
+          <div className="row" style={{ gap: 12 }}>
+            <button className="ghost xsmall" onClick={toggleAll} disabled={filtered.length === 0} style={{ padding: "4px 8px" }}>
+              {picked.size === filtered.length && filtered.length > 0 ? "Deselect All" : `Select All ${filtered.length > 0 ? filtered.length : ""}`}
+            </button>
+            <span className="muted" style={{ fontSize: 13 }}>{picked.size} of {people.length} selected</span>
+          </div>
+          <div className="row" style={{ gap: 8 }}>
+            <button className="ghost" onClick={onClose}>Cancel</button>
+            <button className="primary danger" disabled={picked.size === 0 || busy} onClick={doDelete} style={{ padding: "8px 16px" }}>
+              {busy ? "Deleting…" : `Delete ${picked.size} selected`}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
