@@ -40,6 +40,7 @@ export default function People() {
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showMergeDuplicates, setShowMergeDuplicates] = useState(false);
   const [openRepo, setOpenRepo] = useState(null); // repo row to open in detail
 
   const [ghSync, setGhSync] = useState({ active: false, total: 0, done: 0, current: null, rateLimited: false, resetAt: null });
@@ -283,6 +284,7 @@ export default function People() {
           <PeopleAddMenu
             onImport={() => setShowImport(true)}
             onAdd={() => setShowAdd(true)}
+            onMergeDuplicates={() => setShowMergeDuplicates(true)}
           />
           <PeopleSyncMenu
             ghActive={ghSync.active}
@@ -302,69 +304,22 @@ export default function People() {
       )}
       {cpSync.active && <SyncBar label="Competitive programming" {...cpSync} />}
 
-      {/* Search + grouping controls — collapsed into two clean rows.
-          Row 1: search + quick chips. Row 2: tag/source/sort/group +
-          leaderboard. Reduces visual clutter from the old 9-control row. */}
-      <div
-        className="page-people-controls"
-        style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}
-      >
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input
-            placeholder="Search name, GitHub, LeetCode…"
-            value={filter.q}
-            onChange={(e) => setFilter({ ...filter, q: e.target.value })}
-            style={{ flex: 1, minWidth: 220, maxWidth: 380 }}
-          />
-          <div className="chip-row" style={{ flex: 1, justifyContent: "flex-start" }}>
-            <button className={"chip" + (filter.only === "" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "" })}>
-              All · {people.length}
-            </button>
-            <button className={"chip" + (filter.only === "following" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "following" })}>
-              ★ Following · {people.filter((p) => Array.isArray(p.tags) && p.tags.includes("following")).length}
-            </button>
-            <button className={"chip" + (filter.only === "gh" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "gh" })}>
-              GitHub
-            </button>
-            <button className={"chip" + (filter.only === "cp" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "cp" })}>
-              CP
-            </button>
-            <button className={"chip" + (filter.only === "unsynced" ? " active" : "")} onClick={() => setFilter({ ...filter, only: "unsynced" })}>
-              Unsynced
-            </button>
-          </div>
-          <button className="ghost" onClick={() => setShowLeaderboard(true)} title="Open leaderboard">
-            🏆 Leaderboard
-          </button>
-        </div>
-
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <small className="muted" style={{ minWidth: 38 }}>Filter</small>
-          <select value={filter.tag} onChange={(e) => setFilter({ ...filter, tag: e.target.value })} style={{ minWidth: 140 }}>
-            <option value="">All tags</option>
-            {tagOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-          <select value={filter.source} onChange={(e) => setFilter({ ...filter, source: e.target.value })} style={{ minWidth: 140 }}>
-            <option value="">All sources</option>
-            {sourceOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <span className="muted" style={{ width: 1, height: 18, background: "var(--border)" }} />
-          <small className="muted" style={{ minWidth: 30 }}>Sort</small>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ minWidth: 160 }}>
-            <option value="activity">Recent activity</option>
-            <option value="name">Name</option>
-          </select>
-          <small className="muted" style={{ minWidth: 38 }}>Group</small>
-          <select value={groupBy} onChange={(e) => setGroupBy(e.target.value)} style={{ minWidth: 140 }}>
-            <option value="none">None</option>
-            <option value="source">Source</option>
-            <option value="tag">Tag</option>
-            <option value="syncstate">Sync state</option>
-          </select>
-          {status?.msg && <small className="muted" style={{ marginLeft: "auto" }}>{status.msg}</small>}
-          {status?.err && <small className="error" style={{ marginLeft: "auto" }}>{status.err}</small>}
-        </div>
-      </div>
+      {/* Search + chips on the primary row. The advanced selects (tag,
+          source, sort, group) live behind an expandable "Advanced ▾"
+          control so the toolbar reads as a single tidy line by default. */}
+      <PeopleControlsRow
+        filter={filter}
+        setFilter={setFilter}
+        people={people}
+        sortBy={sortBy}
+        setSortBy={setSortBy}
+        groupBy={groupBy}
+        setGroupBy={setGroupBy}
+        tagOptions={tagOptions}
+        sourceOptions={sourceOptions}
+        status={status}
+        onLeaderboard={() => setShowLeaderboard(true)}
+      />
 
       {/* Recent activity feed — its own section */}
       <section className="people-section">
@@ -448,6 +403,13 @@ export default function People() {
       </section>
 
 
+      {showMergeDuplicates && (
+        <MergeDuplicatesModal
+          onClose={() => setShowMergeDuplicates(false)}
+          onMerged={() => { setShowMergeDuplicates(false); reload(); }}
+        />
+      )}
+
       {selected && (
         <PersonModal
           person={selected}
@@ -492,7 +454,147 @@ function SyncBar({ label, total, done, ok, err, current, rateLimited }) {
 
 // Compact "+ Add" split-button — one primary CTA with a chevron menu for
 // the secondary add path. Keeps the People header from sprouting buttons.
-function PeopleAddMenu({ onImport, onAdd }) {
+// Compact, tidy controls bar for the People page. Top row: search +
+// "scope" chips + leaderboard. Below that, a collapsible Advanced panel
+// holding the (rarely-used) tag/source/sort/group selects. Reduces the
+// default visual surface from ~9 controls in one row to 5.
+function PeopleControlsRow({
+  filter, setFilter,
+  people,
+  sortBy, setSortBy,
+  groupBy, setGroupBy,
+  tagOptions, sourceOptions,
+  status,
+  onLeaderboard,
+}) {
+  // Auto-expand if any advanced filter is non-default so the user
+  // doesn't lose state behind a closed drawer.
+  const isAdvancedActive =
+    !!filter.tag || !!filter.source || sortBy !== "activity" || groupBy !== "none";
+  const [open, setOpen] = useState(isAdvancedActive);
+
+  return (
+    <div className="page-people-controls">
+      {/* Primary line — search + scope chips + leaderboard. */}
+      <div className="people-controls-primary">
+        <input
+          className="people-controls-search"
+          placeholder="Search name, GitHub, LeetCode…"
+          value={filter.q}
+          onChange={(e) => setFilter({ ...filter, q: e.target.value })}
+        />
+        <div className="chip-row people-scope-chips">
+          <button
+            className={"chip" + (filter.only === "" ? " active" : "")}
+            onClick={() => setFilter({ ...filter, only: "" })}
+          >
+            All <small className="muted">{people.length}</small>
+          </button>
+          <button
+            className={"chip" + (filter.only === "following" ? " active" : "")}
+            onClick={() => setFilter({ ...filter, only: "following" })}
+          >
+            ★ Following
+          </button>
+          <button
+            className={"chip" + (filter.only === "gh" ? " active" : "")}
+            onClick={() => setFilter({ ...filter, only: "gh" })}
+          >
+            GitHub
+          </button>
+          <button
+            className={"chip" + (filter.only === "cp" ? " active" : "")}
+            onClick={() => setFilter({ ...filter, only: "cp" })}
+          >
+            CP
+          </button>
+          <button
+            className={"chip" + (filter.only === "unsynced" ? " active" : "")}
+            onClick={() => setFilter({ ...filter, only: "unsynced" })}
+          >
+            Unsynced
+          </button>
+        </div>
+        <button
+          type="button"
+          className="ghost xsmall people-controls-advanced-toggle"
+          onClick={() => setOpen((v) => !v)}
+          title="Tag / source / sort / group filters"
+        >
+          {open ? "▴ Less" : "▾ Advanced"}
+        </button>
+        <button className="ghost" onClick={onLeaderboard} title="Open leaderboard">
+          🏆
+        </button>
+      </div>
+
+      {/* Advanced — tucked behind a toggle. */}
+      {open && (
+        <div className="people-controls-advanced">
+          <FilterField label="Tag">
+            <select value={filter.tag} onChange={(e) => setFilter({ ...filter, tag: e.target.value })}>
+              <option value="">All</option>
+              {tagOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </FilterField>
+          <FilterField label="Source">
+            <select value={filter.source} onChange={(e) => setFilter({ ...filter, source: e.target.value })}>
+              <option value="">All</option>
+              {sourceOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </FilterField>
+          <FilterField label="Sort">
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <option value="activity">Recent activity</option>
+              <option value="name">Name</option>
+            </select>
+          </FilterField>
+          <FilterField label="Group">
+            <select value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>
+              <option value="none">None</option>
+              <option value="source">Source</option>
+              <option value="tag">Tag</option>
+              <option value="syncstate">Sync state</option>
+            </select>
+          </FilterField>
+          {(filter.tag || filter.source || sortBy !== "activity" || groupBy !== "none") && (
+            <button
+              type="button"
+              className="ghost xsmall"
+              onClick={() => {
+                setFilter({ ...filter, tag: "", source: "" });
+                setSortBy("activity");
+                setGroupBy("none");
+              }}
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      )}
+
+      {(status?.msg || status?.err) && (
+        <small
+          className={status.err ? "error" : "muted"}
+          style={{ marginTop: 4, display: "block" }}
+        >
+          {status.msg || status.err}
+        </small>
+      )}
+    </div>
+  );
+}
+
+function FilterField({ label, children }) {
+  return (
+    <div className="filter-field">
+      <small className="filter-field-label">{label}</small>
+      {children}
+    </div>
+  );
+}
+
+function PeopleAddMenu({ onImport, onAdd, onMergeDuplicates }) {
   const [open, setOpen] = useState(false);
   const ref = React.useRef(null);
   React.useEffect(() => {
@@ -523,7 +625,7 @@ function PeopleAddMenu({ onImport, onAdd }) {
             border: "1px solid var(--border)",
             borderRadius: 8,
             padding: 4,
-            minWidth: 200,
+            minWidth: 220,
             zIndex: 10,
             boxShadow: "var(--shadow-md)",
           }}
@@ -536,6 +638,20 @@ function PeopleAddMenu({ onImport, onAdd }) {
           >
             + Import from links…
           </button>
+          {onMergeDuplicates && (
+            <>
+              <hr className="soft" style={{ margin: "4px 0" }} />
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => { setOpen(false); onMergeDuplicates(); }}
+                style={{ display: "block", width: "100%", textAlign: "left" }}
+                title="Find people that are likely duplicates and merge them"
+              >
+                ⚙ Merge duplicates…
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1099,6 +1215,213 @@ function HandleEdit({ person, onSaved }) {
   );
 }
 
+// Find-and-merge UI for duplicate people. Lists groups of likely-same
+// people, shows the matching signal (registration / handle / name), and
+// lets you confirm each merge with a single click. The "primary" (most-
+// complete row) becomes the keeper; the rest are merged into it. Repos +
+// CP stats + submissions are reassigned to the keeper inside one DB tx.
+function MergeDuplicatesModal({ onClose, onMerged }) {
+  const [groups, setGroups] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  // Per-group: which member id is the keeper (defaults to the primary).
+  const [keeperByGroup, setKeeperByGroup] = useState({});
+  const [doneIds, setDoneIds] = useState(new Set());
+
+  async function load() {
+    setLoading(true); setErr(null);
+    try {
+      const res = await api.people.findDuplicates();
+      if (Array.isArray(res)) {
+        setGroups(res);
+        const init = {};
+        for (let i = 0; i < res.length; i++) init[i] = res[i].members[0]?.id;
+        setKeeperByGroup(init);
+      } else {
+        setErr("Could not load duplicates.");
+      }
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function mergeGroup(idx) {
+    const g = groups[idx];
+    if (!g) return;
+    const keepId = keeperByGroup[idx] || g.members[0].id;
+    const mergeIds = g.members.map((m) => m.id).filter((id) => id !== keepId);
+    if (!mergeIds.length) return;
+    setBusy(true);
+    try {
+      const r = await api.people.merge({ keepId, mergeIds });
+      if (r?.ok) {
+        setDoneIds((s) => new Set(s).add(idx));
+      } else {
+        setErr(r?.error || "merge failed");
+      }
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function mergeAll() {
+    if (!groups) return;
+    setBusy(true);
+    for (let i = 0; i < groups.length; i++) {
+      if (doneIds.has(i)) continue;
+      const g = groups[i];
+      const keepId = keeperByGroup[i] || g.members[0].id;
+      const mergeIds = g.members.map((m) => m.id).filter((id) => id !== keepId);
+      if (!mergeIds.length) continue;
+      try {
+        const r = await api.people.merge({ keepId, mergeIds });
+        if (r?.ok) setDoneIds((s) => new Set(s).add(i));
+      } catch { /* keep going */ }
+    }
+    setBusy(false);
+    onMerged?.();
+  }
+
+  return (
+    <div className="modal-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal wide" style={{ width: 760, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+        <div className="row between" style={{ marginBottom: 8 }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Merge duplicates</h3>
+            <small className="muted">
+              People that look like the same person across multiple sources (LinkedIn, GitHub, leaderboard imports).
+            </small>
+          </div>
+          <button className="ghost" onClick={onClose}>✕</button>
+        </div>
+
+        {loading && (
+          <div className="spinner-block" style={{ padding: 28 }}>
+            <span className="spinner lg" aria-hidden />
+            <span>Scanning for duplicates…</span>
+          </div>
+        )}
+        {err && <div className="error">{err}</div>}
+
+        {!loading && groups && groups.length === 0 && (
+          <div className="muted" style={{ padding: 24, textAlign: "center" }}>
+            No likely duplicates found. Looking pretty clean ✓
+          </div>
+        )}
+
+        {!loading && groups && groups.length > 0 && (
+          <>
+            <div className="row between" style={{ marginBottom: 10 }}>
+              <small className="muted">
+                {groups.length} group{groups.length === 1 ? "" : "s"} ·
+                {" "}{doneIds.size} merged so far
+              </small>
+              <button className="primary small" onClick={mergeAll} disabled={busy}>
+                {busy ? "Merging…" : "Merge all"}
+              </button>
+            </div>
+
+            <div style={{ overflowY: "auto", flex: 1, paddingRight: 4 }}>
+              {groups.map((g, i) => {
+                const isDone = doneIds.has(i);
+                return (
+                  <div
+                    key={i}
+                    className="card"
+                    style={{
+                      marginBottom: 10,
+                      opacity: isDone ? 0.55 : 1,
+                      borderColor: isDone ? "var(--ok)" : undefined,
+                    }}
+                  >
+                    <div className="row between" style={{ alignItems: "baseline", marginBottom: 6 }}>
+                      <strong>{g.members[0].name}</strong>
+                      <small className="muted">
+                        {g.members.length} rows · matched on {g.reasons.join(", ")}
+                      </small>
+                    </div>
+                    {g.members.map((m) => {
+                      let notes = {};
+                      try { notes = JSON.parse(m.notes || "{}"); } catch {}
+                      const isKeeper = keeperByGroup[i] === m.id;
+                      return (
+                        <label
+                          key={m.id}
+                          className="row"
+                          style={{
+                            gap: 10,
+                            padding: "6px 8px",
+                            marginBottom: 4,
+                            borderRadius: 6,
+                            background: isKeeper ? "var(--accent-soft)" : "var(--bg-elev-2)",
+                            border: "1px solid " + (isKeeper ? "var(--accent)" : "var(--border)"),
+                            cursor: isDone ? "default" : "pointer",
+                            alignItems: "flex-start",
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name={`keeper-${i}`}
+                            checked={isKeeper}
+                            disabled={isDone}
+                            onChange={() => setKeeperByGroup({ ...keeperByGroup, [i]: m.id })}
+                            title="Make this the kept row"
+                            style={{ marginTop: 4 }}
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div className="row" style={{ gap: 6, alignItems: "baseline", flexWrap: "wrap" }}>
+                              <strong style={{ fontSize: 13 }}>{m.name}</strong>
+                              {isKeeper && <span className="pill teal" style={{ fontSize: 9 }}>keep</span>}
+                              {m.source && <span className="pill gray" style={{ fontSize: 9 }}>{m.source}</span>}
+                            </div>
+                            <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                              {[
+                                m.github_username && `gh:${m.github_username}`,
+                                m.leetcode_username && `lc:${m.leetcode_username}`,
+                                m.linkedin_url && "linkedin",
+                                notes.registration && `reg:${notes.registration}`,
+                                notes.section && `§ ${notes.section}`,
+                              ].filter(Boolean).join("  ·  ") || "(no handles)"}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                    <div className="row" style={{ marginTop: 4, gap: 6 }}>
+                      <button
+                        className="ghost xsmall"
+                        onClick={() => mergeGroup(i)}
+                        disabled={isDone || busy}
+                        title={`Merge ${g.members.length - 1} into the kept row`}
+                      >
+                        {isDone ? "✓ Merged" : "Merge this group"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="row between" style={{ marginTop: 10 }}>
+              <small className="muted">
+                Merging combines handles, tags, links, repos, CP stats — keeper wins on conflicts.
+              </small>
+              <button className="ghost" onClick={() => { onMerged?.(); onClose(); }}>
+                Done
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AddPersonModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
     name: "", github_username: "", linkedin_url: "", tags: "",
@@ -1608,7 +1931,10 @@ function RepoDetailModal({ repo, person, onClose }) {
   const [model, setModel] = useState("");
   const [ollamaOk, setOllamaOk] = useState(false);
   const [models, setModels] = useState([]);
-  const [tab, setTab] = useState("overview"); // overview | chat
+  // Tabs: chat (default — overview lives inside as a context card) |
+  // walkthrough | compare. The standalone Overview tab is gone; its
+  // content now sits at the top of Chat so users get one combined view.
+  const [tab, setTab] = useState("chat");
   // Chat: history is { role: "user" | "assistant", content }, plus per-send
   // loading + an error slot. Lives only as long as the modal is open.
   const [chatHistory, setChatHistory] = useState([]);
@@ -1717,18 +2043,11 @@ function RepoDetailModal({ repo, person, onClose }) {
         <div className="repo-modal-tabs" style={{ marginTop: 12 }}>
           <button
             type="button"
-            className={"today-tab" + (tab === "overview" ? " active" : "")}
-            onClick={() => setTab("overview")}
-          >
-            Overview
-          </button>
-          <button
-            type="button"
             className={"today-tab" + (tab === "chat" ? " active" : "")}
             onClick={() => setTab("chat")}
-            title="Ask Ollama questions about this project"
+            title="Project overview + Q&A grounded in the repo"
           >
-            Chat {chatHistory.length > 0 ? `· ${Math.ceil(chatHistory.length / 2)}` : ""}
+            Overview & Chat {chatHistory.length > 0 ? `· ${Math.ceil(chatHistory.length / 2)}` : ""}
           </button>
           <button
             type="button"
@@ -1756,26 +2075,19 @@ function RepoDetailModal({ repo, person, onClose }) {
           />
         ) : tab === "compare" ? (
           <RepoComparePanel repo={repo} />
-        ) : tab === "chat" ? (
-          <RepoChatPanel
-            repo={repo}
-            history={chatHistory}
-            input={chatInput}
-            setInput={setChatInput}
-            onSend={sendChatQuestion}
-            loading={chatLoading}
-            err={chatErr}
-            ollamaOk={ollamaOk}
-            model={model}
-            models={models}
-            onModelChange={setModel}
-            onClear={() => { setChatHistory([]); setChatErr(null); }}
-          />
         ) : (
+          // Overview & Chat — single combined view. Overview content sits
+          // inside a collapsible card so the chat input is always within
+          // reach without losing access to the project facts.
           <>
 
-        {loading && <div className="muted" style={{ marginTop: 14 }}>Loading detail…</div>}
+        {loading && (
+          <div className="spinner-row" style={{ marginTop: 14 }}>
+            <span className="spinner" aria-hidden /><span>Loading project detail…</span>
+          </div>
+        )}
         {detail && (
+          <RepoOverviewCard defaultOpen={!aiSummary && !aiLoading}>
           <>
             {/* Tech stack bar */}
             {tech.length > 0 && (
@@ -1902,10 +2214,66 @@ function RepoDetailModal({ repo, person, onClose }) {
               </>
             )}
           </>
+          </RepoOverviewCard>
         )}
+
+        {/* Chat — always present below the overview so users can ask
+            questions without changing tabs. */}
+        <RepoChatPanel
+          repo={repo}
+          history={chatHistory}
+          input={chatInput}
+          setInput={setChatInput}
+          onSend={sendChatQuestion}
+          loading={chatLoading}
+          err={chatErr}
+          ollamaOk={ollamaOk}
+          model={model}
+          models={models}
+          onModelChange={setModel}
+          onClear={() => { setChatHistory([]); setChatErr(null); }}
+        />
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// Collapsible overview card — sits above Chat in the merged tab. Default
+// collapsed state shows a one-line "summary strip"; expanded shows the
+// full Overview content (tech stack, AI summary, repo links, etc.).
+function RepoOverviewCard({ children, defaultOpen = false }) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div
+      className="card"
+      style={{
+        marginTop: 12,
+        marginBottom: 14,
+        background: "var(--bg-elev)",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          all: "unset",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          width: "100%",
+          padding: "2px 0",
+        }}
+      >
+        <div className="card-title" style={{ margin: 0 }}>Overview</div>
+        <small className="muted">{open ? "▾ hide" : "▸ show details"}</small>
+      </button>
+      {open && (
+        <div style={{ marginTop: 10 }}>{children}</div>
+      )}
     </div>
   );
 }
@@ -2077,79 +2445,87 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [fullscreen]);
 
-  // Compute the "essential files" tour — the ordered backbone of the
-  // project. Entry points first (README, manifests), then the canonical
-  // source roots (src/index.*, app/*, main.*), then any folder roots that
-  // hold actual code (not docs/tests/dist). The < and > buttons cycle
-  // through THIS list; you can still click any file in the tree to jump.
-  const essentialFiles = React.useMemo(() => {
+  // Build the deterministic guided tour. Each step has a `path` AND a
+  // `purpose` label — the model uses the purpose to give a focused
+  // explanation, and the user sees it in the toolbar so they know WHY
+  // we're at this file. Order encodes a logical reading flow:
+  //   1. Orientation (README, manifest)  — "what is this project"
+  //   2. Entry point (src/index.*, main.*)  — "where execution starts"
+  //   3. Core layers (App, router, server) — "the wiring"
+  //   4. Representative source files from the rest  — "the surface area"
+  // Files never repeat in the tour. At the end the user gets a "How it
+  // all fits together?" recap prompt.
+  const tourPlan = React.useMemo(() => {
     const paths = tree.map((p) => p.path);
     if (!paths.length) return [];
     const taken = new Set();
-    const out = [];
-    const add = (p) => { if (p && !taken.has(p)) { taken.add(p); out.push(p); } };
+    const steps = [];
+    const add = (p, purpose) => {
+      if (p && !taken.has(p)) { taken.add(p); steps.push({ path: p, purpose }); }
+    };
 
-    // Tier 1 — orientation files (project's "what is this").
-    const tier1 = [
-      /^README(\.md|\.rst|\.txt)?$/i,
-      /^package\.json$/,
-      /^pyproject\.toml$/,
-      /^requirements\.txt$/,
-      /^Cargo\.toml$/,
-      /^go\.mod$/,
-      /^Gemfile$/,
-      /^pom\.xml$/,
+    // 1) Orientation files.
+    const orient = [
+      [/^README(\.md|\.rst|\.txt)?$/i, "Orientation — README, the project's pitch"],
+      [/^package\.json$/, "Orientation — package manifest"],
+      [/^pyproject\.toml$/, "Orientation — Python project manifest"],
+      [/^requirements\.txt$/, "Orientation — dependency list"],
+      [/^Cargo\.toml$/, "Orientation — Rust manifest"],
+      [/^go\.mod$/, "Orientation — Go modules"],
     ];
-    for (const re of tier1) {
+    for (const [re, why] of orient) {
       const m = paths.find((p) => re.test(p));
-      if (m) add(m);
+      if (m) add(m, why);
     }
 
-    // Tier 2 — canonical entry points (where execution starts).
-    const tier2 = [
-      /^src\/index\.(jsx?|tsx?|mjs|cjs)$/,
-      /^src\/main\.(jsx?|tsx?|py|go|rs|java|kt|c|cpp)$/,
-      /^src\/App\.(jsx?|tsx?)$/,
-      /^index\.(jsx?|tsx?|html|py|js)$/,
-      /^main\.(py|go|rs|java|c|cpp)$/,
-      /^app\.(jsx?|tsx?|py)$/,
-      /^server\.(jsx?|tsx?|py|go)$/,
-      /^app\/page\.(jsx?|tsx?)$/, // Next.js
-      /^app\/layout\.(jsx?|tsx?)$/,
-      /^pages\/_app\.(jsx?|tsx?)$/,
+    // 2) Entry points.
+    const entries = [
+      [/^src\/index\.(jsx?|tsx?|mjs|cjs)$/, "Entry — JS bootstrap"],
+      [/^src\/main\.(jsx?|tsx?|py|go|rs|java|kt|c|cpp)$/, "Entry — main()"],
+      [/^src\/App\.(jsx?|tsx?)$/, "Core — root component"],
+      [/^index\.(jsx?|tsx?|html|py|js)$/, "Entry — root file"],
+      [/^main\.(py|go|rs|java|c|cpp)$/, "Entry — main()"],
+      [/^app\.(jsx?|tsx?|py)$/, "Entry — app boot"],
+      [/^server\.(jsx?|tsx?|py|go)$/, "Core — server"],
+      [/^app\/page\.(jsx?|tsx?)$/, "Core — Next.js root page"],
+      [/^app\/layout\.(jsx?|tsx?)$/, "Core — Next.js root layout"],
+      [/^pages\/_app\.(jsx?|tsx?)$/, "Core — Next.js _app shell"],
     ];
-    for (const re of tier2) {
+    for (const [re, why] of entries) {
       const m = paths.find((p) => re.test(p));
-      if (m) add(m);
+      if (m) add(m, why);
     }
 
-    // Tier 3 — sample one or two from each meaningful source folder.
-    // Skip noise dirs.
+    // 3) Surface area — one or two files per meaningful folder.
     const noise = /(^|\/)(node_modules|dist|build|\.next|\.cache|coverage|vendor|target|venv|__pycache__|tests?|spec|docs?|examples?|fixtures|assets|public|images?)\//i;
     const codeExt = /\.(jsx?|tsx?|py|go|rs|java|kt|c|cpp|h|hpp|rb|php|cs|swift|sh|cjs|mjs|svelte|vue)$/i;
-    const folders = new Map(); // dir -> array of paths
+    const folders = new Map();
     for (const p of paths) {
       if (noise.test(p)) continue;
       if (!codeExt.test(p)) continue;
-      const dir = p.split("/").slice(0, 2).join("/"); // top-2 levels
+      const dir = p.split("/").slice(0, 2).join("/");
       if (!folders.has(dir)) folders.set(dir, []);
       folders.get(dir).push(p);
     }
-    // Prefer files named like "main", "index", "core", "app", "router".
     const prefer = (a, b) => {
       const score = (s) =>
         /\b(main|index|core|app|router|server|cli|entry)\b/i.test(s) ? 1 : 0;
       return score(b) - score(a) || a.localeCompare(b);
     };
-    for (const list of folders.values()) {
+    for (const [dir, list] of folders.entries()) {
       list.sort(prefer);
-      add(list[0]);
-      if (list.length > 4) add(list[1]); // big folders get two
+      add(list[0], `Surface — ${dir}/`);
+      if (list.length > 4) add(list[1], `Surface — ${dir}/ (more)`);
     }
-
-    // Cap so the tour stays digestible.
-    return out.slice(0, 12);
+    return steps.slice(0, 12);
   }, [tree]);
+
+  // Backward-compatible flat list for indexing.
+  const essentialFiles = React.useMemo(
+    () => tourPlan.map((s) => s.path),
+    [tourPlan],
+  );
+  const currentStep = tourPlan.find((s) => s.path === currentPath) || null;
 
   const essentialIdx = essentialFiles.indexOf(currentPath);
   const canPrev = essentialIdx > 0;
@@ -2184,22 +2560,50 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
     setCurrentPath(path);
     setContent(""); setExplanation(null);
     try {
+      const idx = tourPlan.findIndex((s) => s.path === path);
       const r = await api.repo.walkthrough({
         repoId: repo.id,
         fullName: repo.full_name,
         filePath: path,
         visitedPaths: prevVisited,
+        tourPlan: tourPlan.length ? tourPlan : null,
+        stepIndex: idx,
         model,
       });
       if (!r?.ok) {
         setErr(r?.error || "walkthrough failed");
       } else {
         setContent(r.fileContent || "");
-        // chat() returns `content`, not `text`. Earlier code read `r.text`
-        // and silently rendered nothing. Map all the plausible field
-        // names so we render whichever the model service returned.
         setExplanation(r.content || r.text || r.summary || "");
         setVisited((prev) => prev.includes(path) ? prev : [...prev, path]);
+      }
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // End-of-tour synthesis. Triggered by the "How it all fits together"
+  // button when the user has reached the last step.
+  async function askRecap() {
+    setBusy(true); setErr(null);
+    try {
+      const r = await api.repo.walkthroughRecap({
+        repoId: repo.id,
+        fullName: repo.full_name,
+        tourPlan,
+        model,
+      });
+      if (r?.ok) {
+        const text = r.content || r.text || "";
+        setQaHistory((h) => [
+          ...h,
+          { role: "user", content: "How does it all fit together?" },
+          { role: "assistant", content: text },
+        ]);
+      } else {
+        setErr(r?.error || "recap failed");
       }
     } catch (e) {
       setErr(e.message);
@@ -2296,9 +2700,18 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
         <code className="repo-walk-path" title={currentPath || ""}>
           {currentPath || "(no file selected)"}
         </code>
-        {essentialFiles.length > 0 && essentialIdx >= 0 && (
-          <small className="muted" title="Position in the essential-files tour">
-            tour {essentialIdx + 1} / {essentialFiles.length}
+        {currentStep && (
+          <span
+            className="pill"
+            style={{ fontSize: 10, background: "var(--accent-soft)", color: "var(--accent)" }}
+            title="Why this file is in the tour"
+          >
+            {currentStep.purpose}
+          </span>
+        )}
+        {tourPlan.length > 0 && essentialIdx >= 0 && (
+          <small className="muted" title="Position in the planned tour">
+            tour {essentialIdx + 1} / {tourPlan.length}
           </small>
         )}
         <div className="repo-walk-progress">
@@ -2331,7 +2744,12 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
         {/* File tree */}
         <div className="repo-walk-tree">
           <div className="section-label">Files</div>
-          {tree.length === 0 && <small className="muted">Loading tree…</small>}
+          {tree.length === 0 && (
+            <div className="spinner-block" style={{ padding: "16px 8px" }}>
+              <span className="spinner" aria-hidden />
+              <small>Loading tree…</small>
+            </div>
+          )}
           {tree.map((p) => {
             const visited_ = visited.includes(p.path);
             const active = p.path === currentPath;
@@ -2349,17 +2767,30 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
           })}
         </div>
 
-        {/* File viewer */}
-        <pre className="repo-walk-viewer">
-          {busy && !content ? "loading…" : content || "(empty)"}
-        </pre>
+        {/* File viewer — spinner instead of bare "loading…" text. */}
+        {busy && !content ? (
+          <div className="repo-walk-viewer">
+            <div className="spinner-block">
+              <span className="spinner lg" aria-hidden />
+              <span>Fetching {currentPath ? currentPath.split("/").pop() : "file"}…</span>
+              <small>from github.com/{repo.full_name}</small>
+            </div>
+          </div>
+        ) : (
+          <pre className="repo-walk-viewer">{content || "(empty)"}</pre>
+        )}
 
         {/* AI explanation + Q&A */}
         <div className="repo-walk-side">
           <div className="section-label">Apex says</div>
           <div className="repo-walk-side-stream">
             {!ollamaOk && <div className="muted">Ollama is offline — start it from Settings.</div>}
-            {busy && !explanation && <em className="muted">Reading the file…</em>}
+            {busy && !explanation && (
+              <div className="spinner-row" style={{ marginTop: 4 }}>
+                <span className="spinner" aria-hidden />
+                <span>Reading the file &amp; thinking…</span>
+              </div>
+            )}
             {explanation && <MarkdownBlock text={explanation} />}
             {qaHistory.map((m, i) => (
               <div key={i} className={"repo-walk-msg " + m.role}>
@@ -2368,6 +2799,23 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
               </div>
             ))}
           </div>
+          {/* End-of-tour synthesis button — appears once you've reached
+              the last step OR explicitly visited every tour file. The
+              click feeds the planned tour back into Ollama for a recap
+              that connects the dots between everything you saw. */}
+          {tourPlan.length > 0 &&
+            (essentialIdx === tourPlan.length - 1 ||
+              visited.length >= tourPlan.length) && (
+              <button
+                className="primary small"
+                onClick={askRecap}
+                disabled={busy || !ollamaOk}
+                title="Ollama synthesises the whole tour"
+                style={{ marginTop: 4 }}
+              >
+                ⏵ How does it all fit together?
+              </button>
+            )}
           <form
             className="repo-walk-ask"
             onSubmit={(e) => { e.preventDefault(); if (!busy) askQuestion(); }}
@@ -2488,7 +2936,13 @@ function RepoComparePanel({ repo }) {
 
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [repo.id]);
 
-  if (loading) return <div className="muted" style={{ marginTop: 14 }}>Scanning your repos…</div>;
+  if (loading) return (
+    <div className="spinner-block" style={{ marginTop: 14 }}>
+      <span className="spinner lg" aria-hidden />
+      <span>Scanning your repos…</span>
+      <small>Fetching from GitHub if needed</small>
+    </div>
+  );
 
   if (errCode === "no-username") {
     return (
@@ -2597,7 +3051,12 @@ function RepoComparePanel({ repo }) {
                   )}
                 </div>
                 <div className="repo-compare-stream">
-                  {analysisLoading && <em className="muted">Reading both projects + comparing…</em>}
+                  {analysisLoading && (
+                    <div className="spinner-row">
+                      <span className="spinner" aria-hidden />
+                      <span>Reading both projects &amp; comparing…</span>
+                    </div>
+                  )}
                   {analysisErr && <div className="error">{analysisErr}</div>}
                   {analysis && <MarkdownBlock text={analysis} />}
                   {chatHistory.map((m, i) => (
@@ -2609,7 +3068,10 @@ function RepoComparePanel({ repo }) {
                   {chatBusy && (
                     <div className="repo-walk-msg assistant">
                       <strong>APEX</strong>
-                      <em className="muted">Thinking…</em>
+                      <div className="spinner-row" style={{ marginTop: 4 }}>
+                        <span className="spinner" aria-hidden />
+                        <span>Thinking…</span>
+                      </div>
                     </div>
                   )}
                 </div>

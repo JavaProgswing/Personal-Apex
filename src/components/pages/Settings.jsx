@@ -2068,6 +2068,16 @@ function AppearanceTab({ all, setAll, save }) {
     { key: "eclipse", label: "Eclipse", tags: ["Dark", "Neon", "High contrast", "Bold"],
       desc: "Pitch-black void with royal violet glow.",
       swatches: ["#050308", "#a855f7", "#ec4899", "#4ade80"] },
+    // Coolors-inspired drops
+    { key: "aurora", label: "Aurora", tags: ["Dark", "Cool"],
+      desc: "Northern-lights gradient — teal → emerald → magenta.",
+      swatches: ["#0a0e1a", "#7df9d4", "#6dc1ff", "#b685ff"] },
+    { key: "vercel", label: "Vercel", tags: ["Dark", "High contrast"],
+      desc: "Pure black + white. Radically minimal, vercel.com vibes.",
+      swatches: ["#000000", "#ffffff", "#50e3c2", "#a1a1aa"] },
+    { key: "stripe", label: "Stripe", tags: ["Dark", "Cool"],
+      desc: "Calm cool slate + electric purple. Stripe-dashboard pro.",
+      swatches: ["#0a0e1f", "#635bff", "#00d4a4", "#a78bfa"] },
   ];
 
   const ALL_TAGS = [

@@ -1332,40 +1332,108 @@ async function walkthroughFile({
   fileContent,
   visitedPaths = [],
   treeSnapshot = [], // first ~50 paths for context
+  tourPlan = null, // [{path, purpose}] — the planned tour
+  stepIndex = -1, // 0-based position in the plan, -1 if off-tour
   model,
 }) {
-  // Concise but example-driven. The user wants enough depth to actually
-  // understand the workings, not a glorified file summary. Always
-  // reference real symbols and end with a "Look at next:" hint so the
-  // walkthrough has natural forward momentum.
+  // The model gets the FULL tour plan so it can build narrative
+  // continuity ("you saw X earlier, you'll see Y next"). It also gets
+  // the current step's `purpose` label so the explanation focuses on
+  // why this file matters in the reading flow we picked.
+  const onTour = stepIndex >= 0 && Array.isArray(tourPlan) && tourPlan.length > 0;
+  const planPreview = onTour
+    ? tourPlan
+        .map((s, i) => {
+          const marker = i === stepIndex ? ' ←  YOU ARE HERE' : (i < stepIndex ? ' ✓' : '');
+          return `  ${i + 1}. ${s.path}  · ${s.purpose}${marker}`;
+        })
+        .join('\n')
+    : null;
+  const isLast = onTour && stepIndex === tourPlan.length - 1;
+  const isFirst = onTour && stepIndex === 0;
+
   const sys =
     `You are a senior engineer giving a guided code walkthrough to a CS ` +
     `undergrad named Yashasvi who wants to learn how to build something ` +
     `similar to this project.\n\n` +
-    `You are explaining ONE file at a time. Output structure (use markdown):\n` +
-    `**Purpose** — 1-2 sentences: what this file is and where it sits in ` +
-    `the runtime/build flow.\n` +
+    (onTour
+      ? `You are following a PLANNED TOUR. The user is on step ${stepIndex + 1} ` +
+        `of ${tourPlan.length}. The whole tour plan is shown below — you can ` +
+        `reference what you've explained before and tease what's coming. ` +
+        `Stay focused on THIS file's purpose label.\n\n`
+      : `The user clicked into a file outside the planned tour — explain it ` +
+        `on its own merits.\n\n`) +
+    `Output structure (markdown):\n` +
+    `**${onTour ? `Step ${stepIndex + 1}/${tourPlan.length} · ${tourPlan[stepIndex]?.purpose || filePath}` : `Purpose`}** — 1-2 sentences: what this file is and where it sits ` +
+    `in the runtime/build flow.\n` +
     `**Key parts** — 3-5 bullets, each naming a real symbol/section from the ` +
-    `code (e.g. \`function foo()\`, the \`useEffect\` hook, etc.) with a ` +
-    `crisp explanation of what it does and WHY it's written that way.\n` +
-    `**Concrete example** — pick ONE non-trivial bit of logic and show how ` +
-    `it works on an actual input/example. Keep it short (≤6 lines of code).\n` +
-    `**Look at next:** \`<path/from/tree>\` — pick the most logical next ` +
-    `file from the project tree (NOT one already visited).\n\n` +
-    `Be concrete. Reference real names. Don't regurgitate the file. Stay ` +
-    `under 220 words for the whole answer.`;
+    `code (e.g. \`function foo()\`, the \`useEffect\` hook). Crisp what + why.\n` +
+    `**Concrete example** — ONE non-trivial bit shown working on an actual ` +
+    `input/example. Keep code ≤6 lines.\n` +
+    (isLast
+      ? `**End of tour** — 1 sentence acknowledging this is the final step. ` +
+        `Don't include "Look at next".\n`
+      : onTour
+        ? `**Coming up:** \`${tourPlan[stepIndex + 1]?.path}\` — 1 line on why ` +
+          `it's the natural next step (matches the planned tour).\n`
+        : `**Look at next:** \`<path/from/tree>\` — pick the most logical next ` +
+          `file from the tree (not already visited).\n`) +
+    `\nBe concrete. Reference real names. Don't regurgitate the file. ` +
+    `Stay under 240 words.${isFirst ? ' Since this is the first step, briefly say what kind of project this is in 1 sentence at the top before "Step 1/...".' : ''}`;
+
   const treePreview = (treeSnapshot || []).slice(0, 50).join('\n');
   const visitedPreview = (visitedPaths || []).slice(-8).join(', ');
   const user =
     `Repo: ${repo.full_name || repo.name}\n` +
     `Languages: ${(repo.languages || []).join(', ') || 'unknown'}\n` +
-    `Already visited (don't suggest these for "Look at next"): ` +
-    `${visitedPreview || '(none yet — this is the entry file)'}\n\n` +
+    (onTour
+      ? `\n--- Planned tour ---\n${planPreview}\n`
+      : '') +
+    `\nAlready visited: ${visitedPreview || '(none yet)'}\n\n` +
     `--- Project tree (first 50 paths) ---\n${treePreview}\n\n` +
     `--- Current file: ${filePath} ---\n${(fileContent || '').slice(0, 7000)}\n\n` +
     `Now explain ${filePath} following the structure above.`;
   const r = await chat({ model, system: sys, user, temperature: 0.4 });
   return r;
+}
+
+// Tour recap — synthesize how all the visited files fit together. Called
+// at the end of the walkthrough or whenever the user asks "how does it
+// all work together?". Has access to the plan but NOT the file contents
+// (would blow context); references files by path + purpose.
+async function walkthroughRecap({
+  repo,
+  tourPlan = [],
+  treeSnapshot = [],
+  model,
+}) {
+  const sys =
+    `You are a senior engineer giving a final synthesis to a CS undergrad ` +
+    `who just finished a guided tour of an open-source project. Your job: ` +
+    `connect the dots — explain how the files they just saw work together ` +
+    `at runtime / build time.\n\n` +
+    `Output (markdown):\n` +
+    `**The big picture** — 2-3 sentences on the project's overall flow ` +
+    `(boot → render → user action → effect, or equivalent).\n` +
+    `**How the files connect** — 4-6 bullets, each linking 2 files from ` +
+    `the tour with arrow notation: \`A.tsx → B.ts (calls fooBar())\`. ` +
+    `Reference real symbol names where you can.\n` +
+    `**The mental model to take away** — 2-3 lines: the architectural ` +
+    `pattern this project uses (e.g. "single-page React app with file-` +
+    `based routing + a thin Node API layer").\n` +
+    `**To build something similar** — 3 concrete first steps the user ` +
+    `should take in their own project, in order.\n\n` +
+    `Stay under 280 words.`;
+  const planPreview = tourPlan
+    .map((s, i) => `  ${i + 1}. ${s.path}  · ${s.purpose}`)
+    .join('\n');
+  const user =
+    `Repo: ${repo.full_name || repo.name}\n` +
+    `Languages: ${(repo.languages || []).join(', ') || 'unknown'}\n\n` +
+    `--- Tour we just completed ---\n${planPreview}\n\n` +
+    `--- Project tree (first 50) ---\n${(treeSnapshot || []).slice(0, 50).join('\n')}\n\n` +
+    `Now synthesize the tour.`;
+  return await chat({ model, system: sys, user, temperature: 0.4 });
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -1381,6 +1449,16 @@ async function compareRepos({ target, mine, history = [], question, model }) {
     const noise = /(^|\/)(node_modules|dist|build|\.next|\.cache|coverage|vendor|target|venv|__pycache__)\//i;
     return paths.filter((p) => !noise.test(p)).slice(0, 60);
   };
+  // Topics may be an array OR a JSON-encoded string (DB column). Coerce.
+  const asArr = (v) => {
+    if (!v) return [];
+    if (Array.isArray(v)) return v;
+    if (typeof v === 'string') {
+      try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; }
+      catch { return []; }
+    }
+    return [];
+  };
   const sketch = (r) => {
     const t = trimPaths(r.paths || []).join('\n');
     const manifestKeys = Object.keys(r.manifests || {});
@@ -1390,9 +1468,9 @@ async function compareRepos({ target, mine, history = [], question, model }) {
     const readmeFirst = (r.readme || '').slice(0, 1200);
     return (
       `# ${r.full_name || r.name}\n` +
-      `langs: ${(r.languages || []).join(', ') || 'unknown'}\n` +
+      `langs: ${asArr(r.languages).join(', ') || 'unknown'}\n` +
       `desc: ${r.description || '(none)'}\n` +
-      `topics: ${(r.topics || []).join(', ') || '-'}\n` +
+      `topics: ${asArr(r.topics).join(', ') || '-'}\n` +
       manifestPreview +
       `\n--- README (first ~1200) ---\n${readmeFirst}\n` +
       `\n--- tree (first 60 paths) ---\n${t}\n`
@@ -1447,7 +1525,7 @@ async function compareRepos({ target, mine, history = [], question, model }) {
 module.exports = {
   listModels, chat, planDay, burnoutSuggest, eveningReview, burnoutCheck, summarizeRepo,
   summarizeRecentChanges, recommendNow, chatAboutRepo, chatAboutCommit,
-  summarizeCpActivity, extractTasksFromText, walkthroughFile, compareRepos,
+  summarizeCpActivity, extractTasksFromText, walkthroughFile, walkthroughRecap, compareRepos,
   ocrTimetable, autoPickBest, resolveModel, personalContext, buildSystem,
   ping, ensureRunning,
 };

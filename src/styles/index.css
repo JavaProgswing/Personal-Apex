@@ -1,21 +1,26 @@
-/* Apex — warm "study desk" dark theme.
-   Deliberately distinct from generic dev-tool greys: coffee-bg,
-   honey-amber accent, sage / terracotta / dusty-rose category colours.
-   Typography: Space Grotesk (UI) + JetBrains Mono (numbers / code). */
+/* Apex — multi-theme typography stack.
+   Each theme picks its own --font-ui / --font-mono / --font-display below
+   so the typography matches the palette. The @import below pre-loads all
+   the faces we'll need; if it fails (offline, or fonts.googleapis blocked)
+   each font-family chain has system fallbacks so nothing reads as broken.
+   `display=swap` ensures we never block first paint on a font fetch. */
 
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800&family=Crimson+Pro:wght@400;500;600;700&family=Orbitron:wght@500;700;900&family=VT323&family=Rajdhani:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Spectral:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap");
 
-/* :root holds tokens that don't change across themes (radii, fonts) and
-   defaults to the "library" palette so unthemed renders still look right. */
+/* :root holds tokens that don't change across themes (radii, default
+   fonts) and defaults to the "library" palette so unthemed renders still
+   look right. Per-theme blocks override --font-ui / --font-display. */
 :root {
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 16px;
   --r-xl: 20px;
 
+  /* Default — used by Library + any theme that doesn't override. */
   --font-ui:
     "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     Helvetica, Arial, sans-serif;
+  --font-display: var(--font-ui);
   --font-mono:
     "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -1052,6 +1057,136 @@
   color-scheme: dark;
 }
 
+/* Aurora — coolors-inspired arctic palette: deep indigo night base
+   with an accent gradient running teal → emerald → magenta.
+   Coolors-style cohesion via shared cool undertone in every category. */
+[data-theme="aurora"] {
+  --bg: #0a0e1a;
+  --bg-elev: #131932;
+  --bg-elev-2: #1c2349;
+  --border: #2a3260;
+
+  --text: #e6ecff;
+  --text-dim: #9fa9d6;
+  --text-faint: #5d6694;
+
+  --accent: #7df9d4;
+  --accent-soft: rgba(125, 249, 212, 0.18);
+  --accent-strong: #a4ffe0;
+
+  --productive: #7df9d4;
+  --productive-soft: rgba(125, 249, 212, 0.16);
+  --distraction: #ff5e94;
+  --distraction-soft: rgba(255, 94, 148, 0.16);
+  --leisure: #b685ff;
+  --leisure-soft: rgba(182, 133, 255, 0.16);
+  --rest: #6dc1ff;
+  --rest-soft: rgba(109, 193, 255, 0.16);
+  --neutral: #9fa9d6;
+  --neutral-soft: rgba(159, 169, 214, 0.16);
+  --mobile: #b685ff;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: #ffd86b;
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(135deg, #7df9d4 0%, #6dc1ff 35%, #b685ff 70%, #ff5e94 100%);
+  --grad-card: linear-gradient(135deg, rgba(125,249,212,0.06), transparent 60%);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.55);
+  --shadow-md: 0 0 28px rgba(125, 249, 212, 0.10), 0 8px 26px rgba(0, 0, 0, 0.7);
+
+  color-scheme: dark;
+}
+
+/* Vercel — pure-black surface, white-90 text, a single electric accent.
+   Inspired by vercel.com — radically minimal, almost monochromatic. */
+[data-theme="vercel"] {
+  --bg: #000000;
+  --bg-elev: #0a0a0a;
+  --bg-elev-2: #161616;
+  --border: #2a2a2a;
+
+  --text: #fafafa;
+  --text-dim: #a1a1aa;
+  --text-faint: #525252;
+
+  --accent: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.12);
+  --accent-strong: #ffffff;
+
+  --productive: #50e3c2;
+  --productive-soft: rgba(80, 227, 194, 0.14);
+  --distraction: #ff4757;
+  --distraction-soft: rgba(255, 71, 87, 0.14);
+  --leisure: #c084fc;
+  --leisure-soft: rgba(192, 132, 252, 0.14);
+  --rest: #79b8ff;
+  --rest-soft: rgba(121, 184, 255, 0.14);
+  --neutral: #a1a1aa;
+  --neutral-soft: rgba(161, 161, 170, 0.14);
+  --mobile: #c084fc;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: #f5a623;
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(135deg, #ffffff, #a1a1aa);
+  --grad-card: linear-gradient(135deg, rgba(255,255,255,0.04), transparent 60%);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.7);
+  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.8);
+
+  color-scheme: dark;
+}
+
+/* Stripe — clean cool slate with electric purple. Inspired by the
+   Stripe dashboard — calm, professional, very legible. */
+[data-theme="stripe"] {
+  --bg: #0a0e1f;
+  --bg-elev: #14182d;
+  --bg-elev-2: #1d2240;
+  --border: #2c3357;
+
+  --text: #f0f4ff;
+  --text-dim: #a3aac4;
+  --text-faint: #6b7396;
+
+  --accent: #635bff;
+  --accent-soft: rgba(99, 91, 255, 0.18);
+  --accent-strong: #847dff;
+
+  --productive: #00d4a4;
+  --productive-soft: rgba(0, 212, 164, 0.16);
+  --distraction: #ff6b9d;
+  --distraction-soft: rgba(255, 107, 157, 0.16);
+  --leisure: #a78bfa;
+  --leisure-soft: rgba(167, 139, 250, 0.16);
+  --rest: #5dd6ff;
+  --rest-soft: rgba(93, 214, 255, 0.16);
+  --neutral: #a3aac4;
+  --neutral-soft: rgba(163, 170, 196, 0.16);
+  --mobile: #a78bfa;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: #ffd166;
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(135deg, #635bff 0%, #a78bfa 100%);
+  --grad-card: linear-gradient(135deg, rgba(99,91,255,0.05), transparent 60%);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
+}
+
 /* Eclipse — pitch-black with deep violet accent. The mysterious one.
    Almost-black surfaces, royal violet glow, vibrant saturated categoricals
    that all lean cool/violet. */
@@ -1096,6 +1231,144 @@
   color-scheme: dark;
 }
 
+/* ─── Per-theme typography ───────────────────────────────────────────────
+   Each block below picks fonts that match the palette's mood. UI font is
+   used everywhere; display font is used for page titles + brand; mono is
+   for code/numbers. All chains end in system fallbacks so an offline
+   render still looks intentional. */
+
+[data-theme="library"] {
+  /* Warm coffee + serif page titles, clean sans for UI body. */
+  --font-ui: "Outfit", "Space Grotesk", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Crimson Pro", "Iowan Old Style", Georgia, serif;
+}
+[data-theme="paper"] {
+  /* Light parchment — full-on serif for that "book" reading vibe. */
+  --font-ui: "Spectral", "Iowan Old Style", Georgia, serif;
+  --font-display: "Crimson Pro", "Iowan Old Style", Georgia, serif;
+}
+[data-theme="slate"] {
+  /* Cool dev-tool feel — Inter is the canonical modern UI sans. */
+  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Inter", -apple-system, sans-serif;
+}
+[data-theme="mono"] {
+  /* All-mono treatment for the high-contrast greyscale theme. */
+  --font-ui: "IBM Plex Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --font-display: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+[data-theme="dracula"] {
+  --font-ui: "Sora", "Inter", -apple-system, sans-serif;
+  --font-display: "Sora", "Inter", sans-serif;
+}
+[data-theme="nord"] {
+  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Inter", -apple-system, sans-serif;
+}
+[data-theme="solarized-dark"],
+[data-theme="solarized-light"] {
+  /* Solarized was made for Terminal — IBM Plex Sans pairs well. */
+  --font-ui: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "IBM Plex Sans", -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+[data-theme="midnight"] {
+  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Outfit", "Inter", sans-serif;
+}
+[data-theme="forest"] {
+  /* Earthy serif for the calm green palette. */
+  --font-ui: "Outfit", "Space Grotesk", -apple-system, sans-serif;
+  --font-display: "Spectral", Georgia, serif;
+}
+[data-theme="sunset"] {
+  --font-ui: "Outfit", "Inter", -apple-system, sans-serif;
+  --font-display: "Outfit", "Inter", sans-serif;
+}
+[data-theme="synthwave"] {
+  /* Vaporwave demands Orbitron for titles — full sci-fi energy. */
+  --font-ui: "Rajdhani", "Inter", -apple-system, sans-serif;
+  --font-display: "Orbitron", "Rajdhani", sans-serif;
+}
+[data-theme="cyberpunk"] {
+  --font-ui: "Rajdhani", "Inter", -apple-system, sans-serif;
+  --font-display: "Orbitron", "Rajdhani", sans-serif;
+}
+[data-theme="matrix"] {
+  /* Pure terminal energy — VT323 throughout. */
+  --font-ui: "VT323", "JetBrains Mono", "Cascadia Mono", monospace;
+  --font-display: "VT323", "JetBrains Mono", monospace;
+  --font-mono: "VT323", "JetBrains Mono", "Cascadia Mono", monospace;
+}
+[data-theme="tokyo-night"] {
+  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Inter", -apple-system, sans-serif;
+}
+[data-theme="catppuccin"] {
+  /* Pastel palette pairs naturally with rounded modern sans. */
+  --font-ui: "Outfit", "Inter", -apple-system, sans-serif;
+  --font-display: "Outfit", "Inter", sans-serif;
+}
+[data-theme="gruvbox"] {
+  /* Retro warm palette — IBM Plex's slightly-quirky shapes fit. */
+  --font-ui: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "IBM Plex Sans", -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
+}
+[data-theme="rose-pine"] {
+  --font-ui: "Spectral", "Iowan Old Style", Georgia, serif;
+  --font-display: "Spectral", "Crimson Pro", Georgia, serif;
+}
+[data-theme="one-dark"] {
+  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Inter", -apple-system, sans-serif;
+}
+[data-theme="crimson"] {
+  --font-ui: "Spectral", "Iowan Old Style", Georgia, serif;
+  --font-display: "Crimson Pro", "Iowan Old Style", Georgia, serif;
+}
+[data-theme="ocean"] {
+  --font-ui: "Outfit", "Inter", -apple-system, sans-serif;
+  --font-display: "Outfit", "Inter", sans-serif;
+}
+[data-theme="latte"] {
+  --font-ui: "Outfit", "Inter", -apple-system, sans-serif;
+  --font-display: "Outfit", "Inter", sans-serif;
+}
+[data-theme="obsidian"] {
+  /* OLED neon — display in Orbitron, body in clean Inter. */
+  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Orbitron", "Inter", sans-serif;
+}
+[data-theme="carbon"] {
+  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Sora", "Inter", sans-serif;
+}
+[data-theme="eclipse"] {
+  --font-ui: "Sora", "Inter", -apple-system, sans-serif;
+  --font-display: "Orbitron", "Sora", sans-serif;
+}
+[data-theme="aurora"] {
+  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Outfit", "Inter", sans-serif;
+}
+[data-theme="vercel"] {
+  /* Geist-equivalent sans for Vercel-style minimalism. Inter is the
+     closest free analog. */
+  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Inter", -apple-system, sans-serif;
+}
+[data-theme="stripe"] {
+  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Sora", "Inter", sans-serif;
+}
+
+/* Apply --font-display to the page title gradient + sidebar brand. */
+h1.page-title, .sidebar .brand {
+  font-family: var(--font-display);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1118,6 +1391,15 @@ body {
   text-rendering: optimizeLegibility;
   overflow: hidden;
   letter-spacing: -0.005em;
+}
+
+/* Form elements inherit the body font instead of falling back to the
+   browser default sans. This is the difference between a coherent app
+   and one where every <select> looks like it landed from another era. */
+button, input, select, textarea, optgroup {
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
 }
 
 /* Numbers, codes, timestamps, etc. should use the mono pair so columns
@@ -2237,16 +2519,55 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 }
 .repo-walk-ask input:focus { outline: none; border-color: var(--accent); }
 
+/* ─── Spinner — used everywhere we wait on the network or a model.
+   Two sizes: 16px (inline) and 26px (block). Pure CSS, theme-tinted. */
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: apex-spin 720ms linear infinite;
+  vertical-align: middle;
+}
+.spinner.lg {
+  width: 26px;
+  height: 26px;
+  border-width: 3px;
+}
+@keyframes apex-spin {
+  to { transform: rotate(360deg); }
+}
+.spinner-block {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  padding: 26px 16px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.spinner-block small { color: var(--text-faint); }
+.spinner-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
 /* ─── Repo compare panel ─────────────────────────────────────────────── */
 .repo-compare {
-  margin-top: 12px;
+  margin-top: var(--s-3, 10px);
   display: flex;
   flex-direction: column;
 }
 .repo-compare-grid {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 260px minmax(0, 1.618fr);  /* φ-share for the detail */
+  gap: var(--s-3, 10px);
   min-height: 480px;
 }
 @media (max-width: 1100px) {
@@ -2262,13 +2583,14 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 }
 .repo-compare-item {
   text-align: left;
-  padding: 10px 12px;
-  border-radius: 8px;
+  padding: var(--s-3, 10px) var(--s-4, 16px);
+  border-radius: var(--r-md, 10px);
   border: 1px solid var(--border);
   background: var(--bg-elev);
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
 }
+.repo-compare-item:hover { transform: translateY(-1px); }
 .repo-compare-item:hover { border-color: var(--accent); }
 .repo-compare-item.active {
   border-color: var(--accent);
@@ -6805,15 +7127,22 @@ textarea:focus-visible,
 }
 
 /* Search/filter row — even-pixel inputs, clean alignment */
+.page-people-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
 .page-people-controls input,
 .page-people-controls select {
-  height: 34px;            /* even, fits φ-rhythm */
-  padding: 0 var(--s-3);
-  border-radius: var(--r-sm);
+  height: 34px;
+  padding: 0 var(--s-3, 10px);
+  border-radius: var(--r-sm, 6px);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-sm, 12px);
+  font-family: var(--font-ui);
   transition: border-color 120ms ease;
 }
 .page-people-controls input:focus,
@@ -6823,7 +7152,52 @@ textarea:focus-visible,
 }
 .page-people-controls .ghost {
   height: 34px;
-  padding: 0 var(--s-3);
+  padding: 0 var(--s-3, 10px);
+}
+
+.people-controls-primary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.people-controls-search {
+  flex: 1;
+  min-width: 220px;
+  max-width: 380px;
+}
+.people-scope-chips {
+  flex: 1;
+  justify-content: flex-start;
+}
+.people-controls-advanced-toggle {
+  margin-left: auto;
+}
+
+/* Advanced filter drawer — appears below the primary row when expanded.
+   Uses a soft inset card so it reads as a secondary surface. */
+.people-controls-advanced {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+}
+.filter-field-label {
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-faint);
 }
 
 /* Activity feed — give it a subtle frame so it reads as a distinct section */

@@ -844,6 +844,10 @@ ipcMain.handle("github:rateLimit", () => github.rateLimit());
 ipcMain.handle("people:list", (_e, filter) => db.listPeople(filter));
 ipcMain.handle("people:upsert", (_e, person) => db.upsertPerson(person));
 ipcMain.handle("people:delete", (_e, id) => db.deletePerson(id));
+ipcMain.handle("people:findDuplicates", () => db.findDuplicateGroups());
+ipcMain.handle("people:merge", (_e, { keepId, mergeIds } = {}) =>
+  db.mergePeople(keepId, mergeIds || []),
+);
 ipcMain.handle("people:repos", (_e, personId) => db.listRepos(personId));
 ipcMain.handle("people:sync", (_e, personId) => github.syncPerson(personId));
 ipcMain.handle("people:syncAll", () =>
@@ -1181,10 +1185,12 @@ ipcMain.handle(
   },
 );
 // Walkthrough: per-file teacher-style explanation. Renderer holds the
-// visited-paths history and passes it back each call.
+// visited-paths history + the planned tour and passes both back each call.
+// The tour plan lets the model build narrative continuity ("you saw X
+// earlier, this builds on it / you'll see Y next").
 ipcMain.handle(
   "repo:walkthrough",
-  async (_e, { repoId, fullName, filePath, visitedPaths, model } = {}) => {
+  async (_e, { repoId, fullName, filePath, visitedPaths, tourPlan, stepIndex, model } = {}) => {
     try {
       const detail = await github.fetchRepoDetail(repoId);
       const repo = detail?.repo || { full_name: fullName };
@@ -1203,9 +1209,30 @@ ipcMain.handle(
         fileContent: content || "",
         visitedPaths: visitedPaths || [],
         treeSnapshot: tree,
+        tourPlan: tourPlan || null,
+        stepIndex: typeof stepIndex === "number" ? stepIndex : -1,
         model,
       });
       return { ok: !!r?.ok, ...r, fileContent: content || "", treeSnapshot: tree };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  },
+);
+// Recap: end-of-tour synthesis. Tells the user how all the files they've
+// just walked through fit together.
+ipcMain.handle(
+  "repo:walkthroughRecap",
+  async (_e, { repoId, fullName, tourPlan, model } = {}) => {
+    try {
+      const detail = await github.fetchRepoDetail(repoId);
+      const repo = detail?.repo || { full_name: fullName };
+      return await ollama.walkthroughRecap({
+        repo: { ...repo, languages: Object.keys(detail?.languages || {}) },
+        tourPlan: tourPlan || [],
+        treeSnapshot: (detail?.paths || []).slice(0, 60),
+        model,
+      });
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -1220,9 +1247,28 @@ ipcMain.handle(
 // Topics + name keywords are heavier signals than a shared language alone,
 // so a user's React project compared to a target React project beats two
 // random Python repos that just happen to share `python`.
+
+// `topics` may arrive as either an array (live GitHub) or a JSON-encoded
+// TEXT string (from the DB). Coerce to an array of lowercase strings.
+function asTopicsArray(v) {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.filter(Boolean).map((s) => String(s).toLowerCase());
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      return Array.isArray(parsed)
+        ? parsed.filter(Boolean).map((s) => String(s).toLowerCase())
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 function scoreSimilarity(target, mine) {
   const tLangs = new Set((target.languages || []).map((s) => s.toLowerCase()));
-  const tTopics = new Set((target.topics || []).map((s) => s.toLowerCase()));
+  const tTopics = new Set(asTopicsArray(target.topics));
   const tKeywords = new Set(
     (
       (target.name || "") + " " +
@@ -1235,7 +1281,7 @@ function scoreSimilarity(target, mine) {
   );
 
   const mLangs = mine.language ? [mine.language.toLowerCase()] : [];
-  const mTopics = (mine.topics || []).map((s) => s.toLowerCase());
+  const mTopics = asTopicsArray(mine.topics);
   const mKeywords = (
     (mine.name || "") + " " +
     (mine.description || "") + " " +

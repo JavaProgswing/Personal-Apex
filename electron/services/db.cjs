@@ -955,6 +955,266 @@ function deletePerson(id) {
   db.prepare("DELETE FROM people WHERE id = ?").run(id);
   return true;
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Duplicate detection + merging.
+// Two people are "likely the same" if ANY of:
+//   - same registration number (notes.registration), strongest signal
+//   - same github_username (case-insensitive)
+//   - same leetcode_username (case-insensitive)
+//   - same name + overlap on at least one handle/url
+//   - normalized name identical (lowercase, ascii, no punctuation)
+// Returns an array of groups: [{members: [person, ...], reason: "..." }].
+// Members in each group are sorted by completeness so the first is the
+// best "anchor" to merge into.
+// ───────────────────────────────────────────────────────────────────────────
+function _normalizeName(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "") // strip diacritics
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function _completenessScore(p) {
+  // More filled fields → higher score → preferred as merge target.
+  let n = 0;
+  if (p.github_username) n += 3;
+  if (p.linkedin_url) n += 2;
+  if (p.leetcode_username) n += 2;
+  if (p.codeforces_username) n += 1;
+  if (p.codechef_username) n += 1;
+  if (p.avatar_url) n += 1;
+  if (p.bio) n += 1;
+  if (p.last_scraped_at) n += 2;
+  if (p.notes && p.notes.length > 2) n += 1;
+  return n;
+}
+function findDuplicateGroups() {
+  const all = db
+    .prepare(
+      `SELECT id, name, github_username, linkedin_url,
+              leetcode_username, codeforces_username, codechef_username,
+              avatar_url, bio, source, tags, notes, last_scraped_at
+         FROM people`,
+    )
+    .all();
+
+  // Build candidate-key indices.
+  const byReg = new Map(); // regNo -> [person...]
+  const byGh  = new Map(); // gh username -> [person...]
+  const byLc  = new Map(); // lc handle  -> [person...]
+  const byNorm = new Map(); // normalized name -> [person...]
+
+  for (const p of all) {
+    let notes = {};
+    try { notes = JSON.parse(p.notes || "{}") || {}; } catch {}
+    p._notes = notes;
+    if (notes.registration) {
+      const k = String(notes.registration).toUpperCase();
+      if (!byReg.has(k)) byReg.set(k, []);
+      byReg.get(k).push(p);
+    }
+    if (p.github_username) {
+      const k = p.github_username.toLowerCase();
+      if (!byGh.has(k)) byGh.set(k, []);
+      byGh.get(k).push(p);
+    }
+    if (p.leetcode_username) {
+      const k = p.leetcode_username.toLowerCase();
+      if (!byLc.has(k)) byLc.set(k, []);
+      byLc.get(k).push(p);
+    }
+    const norm = _normalizeName(p.name);
+    if (norm) {
+      if (!byNorm.has(norm)) byNorm.set(norm, []);
+      byNorm.get(norm).push(p);
+    }
+  }
+
+  // Build groups using union-find so a 3-way collision (A==B by gh, B==C
+  // by name) ends up as one {A, B, C} group rather than two pairs.
+  const parent = new Map();
+  function find(x) {
+    if (!parent.has(x)) { parent.set(x, x); return x; }
+    while (parent.get(x) !== x) {
+      parent.set(x, parent.get(parent.get(x)));
+      x = parent.get(x);
+    }
+    return x;
+  }
+  function union(a, b) {
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  }
+
+  const groupReason = new Map(); // root id -> reason set
+  function addReason(id, reason) {
+    const root = find(id);
+    if (!groupReason.has(root)) groupReason.set(root, new Set());
+    groupReason.get(root).add(reason);
+  }
+  function unionList(list, reason) {
+    if (list.length < 2) return;
+    const a = list[0].id;
+    for (let i = 1; i < list.length; i++) {
+      union(a, list[i].id);
+      addReason(list[i].id, reason);
+      addReason(a, reason);
+    }
+  }
+
+  for (const list of byReg.values())  unionList(list, "registration");
+  for (const list of byGh.values())   unionList(list, "github handle");
+  for (const list of byLc.values())   unionList(list, "leetcode handle");
+  for (const list of byNorm.values()) unionList(list, "name");
+
+  // Collect groups.
+  const groups = new Map(); // root id -> [persons]
+  for (const p of all) {
+    if (!parent.has(p.id)) continue; // singleton, no duplicates
+    const root = find(p.id);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(p);
+  }
+
+  const out = [];
+  for (const [root, members] of groups.entries()) {
+    if (members.length < 2) continue;
+    // Sort members so the most-complete is first (the "primary").
+    members.sort(
+      (a, b) =>
+        _completenessScore(b) - _completenessScore(a) ||
+        (a.id - b.id), // tie-break: keep oldest id
+    );
+    out.push({
+      members,
+      reasons: [...(groupReason.get(root) || ["match"])],
+    });
+  }
+  // Stable order for the UI: largest groups first, then by primary name.
+  out.sort(
+    (a, b) =>
+      b.members.length - a.members.length ||
+      String(a.members[0].name).localeCompare(String(b.members[0].name)),
+  );
+  return out;
+}
+
+// Merge the listed personIds into `keepId`. Combines all fillable fields
+// (handles, links, tags, notes), reassigns repos + cp_stats + cp_submissions
+// to keepId, then deletes the merged rows. Wrapped in a transaction so a
+// partial failure doesn't leave dangling foreign keys.
+function mergePeople(keepId, mergeIds) {
+  if (!keepId || !Array.isArray(mergeIds) || mergeIds.length === 0) {
+    return { ok: false, error: "nothing to merge" };
+  }
+  const ids = mergeIds.filter((x) => x && x !== keepId);
+  if (!ids.length) return { ok: false, error: "no merge targets" };
+
+  const tx = db.transaction(() => {
+    const keeper = db
+      .prepare("SELECT * FROM people WHERE id = ?")
+      .get(keepId);
+    if (!keeper) throw new Error("Keeper not found: " + keepId);
+
+    const merging = ids
+      .map((id) => db.prepare("SELECT * FROM people WHERE id = ?").get(id))
+      .filter(Boolean);
+    if (!merging.length) throw new Error("No merge candidates exist");
+
+    // Combine simple fields (first non-null wins, keeper takes priority).
+    const filled = (...vals) =>
+      vals.find((v) => v !== null && v !== undefined && v !== "") ?? null;
+
+    const merged = {
+      name: keeper.name || merging.map((m) => m.name).find(Boolean) || keeper.name,
+      github_username: filled(keeper.github_username, ...merging.map((m) => m.github_username)),
+      linkedin_url: filled(keeper.linkedin_url, ...merging.map((m) => m.linkedin_url)),
+      leetcode_username: filled(keeper.leetcode_username, ...merging.map((m) => m.leetcode_username)),
+      codeforces_username: filled(keeper.codeforces_username, ...merging.map((m) => m.codeforces_username)),
+      codechef_username: filled(keeper.codechef_username, ...merging.map((m) => m.codechef_username)),
+      avatar_url: filled(keeper.avatar_url, ...merging.map((m) => m.avatar_url)),
+      bio: filled(keeper.bio, ...merging.map((m) => m.bio)),
+      source: keeper.source || merging.find((m) => m.source)?.source || "merged",
+    };
+
+    // Tags: union as deduped JSON array.
+    const allTags = new Set();
+    const collectTags = (raw) => {
+      try {
+        const arr = JSON.parse(raw || "[]");
+        if (Array.isArray(arr)) arr.forEach((t) => t && allTags.add(t));
+      } catch {}
+    };
+    collectTags(keeper.tags);
+    merging.forEach((m) => collectTags(m.tags));
+    allTags.add("merged");
+    const mergedTags = JSON.stringify([...allTags]);
+
+    // Notes: deep-merge JSON objects (later wins on key conflicts; keeper
+    // wins overall). String notes get concatenated.
+    const mergeNote = (raw) => {
+      try {
+        const v = JSON.parse(raw || "{}");
+        return typeof v === "object" && v ? v : { _text: String(raw || "") };
+      } catch {
+        return raw ? { _text: String(raw) } : {};
+      }
+    };
+    const mergedNotes = Object.assign(
+      {},
+      ...merging.map(mergeNote),
+      mergeNote(keeper.notes),
+    );
+    mergedNotes._mergedFrom = (mergedNotes._mergedFrom || []).concat(
+      merging.map((m) => ({ id: m.id, name: m.name })),
+    );
+
+    db.prepare(
+      `UPDATE people SET
+         name=@name, github_username=@github_username, linkedin_url=@linkedin_url,
+         leetcode_username=@leetcode_username, codeforces_username=@codeforces_username,
+         codechef_username=@codechef_username, avatar_url=@avatar_url, bio=@bio,
+         source=@source, tags=@tags, notes=@notes
+       WHERE id=@id`,
+    ).run({
+      ...merged,
+      tags: mergedTags,
+      notes: JSON.stringify(mergedNotes),
+      id: keepId,
+    });
+
+    // Reassign rows that point at the merging ids — repos, cp_stats,
+    // cp_submissions. Use INSERT OR IGNORE pattern to avoid PK clashes
+    // on (person_id, ...) unique indexes.
+    const reassign = (table) => {
+      try {
+        for (const id of ids) {
+          db.prepare(`UPDATE OR IGNORE ${table} SET person_id = ? WHERE person_id = ?`).run(keepId, id);
+          db.prepare(`DELETE FROM ${table} WHERE person_id = ?`).run(id);
+        }
+      } catch { /* table might not exist; ignore */ }
+    };
+    reassign("repos");
+    reassign("cp_stats");
+    reassign("cp_submissions");
+
+    // Delete the merged rows.
+    for (const id of ids) {
+      db.prepare("DELETE FROM people WHERE id = ?").run(id);
+    }
+
+    return { kept: keepId, mergedCount: ids.length };
+  });
+
+  try {
+    return { ok: true, ...tx() };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
 function touchPersonScraped(id) {
   db.prepare(
     `UPDATE people SET last_scraped_at = datetime('now') WHERE id = ?`,
@@ -1963,6 +2223,8 @@ module.exports = {
   listPeople,
   upsertPerson,
   deletePerson,
+  findDuplicateGroups,
+  mergePeople,
   touchPersonScraped,
   listRepos,
   upsertRepo,
