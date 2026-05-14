@@ -213,14 +213,16 @@ export default function ActivityFeed({ onOpenPerson, onOpenRepo }) {
             ({filtered.length})
           </span>
         </div>
-        <div className="row feed-filters" style={{ flexWrap: "wrap", gap: 6 }}>
+        {/* Compact filter cluster — range chips, then two slim selects,
+            then a single layout toggle. The wide person dropdown was
+            dropped from the inline row to cut clutter; you can filter to
+            one person by clicking their card in the grid below. */}
+        <div className="row feed-filters" style={{ flexWrap: "wrap", gap: 6, alignItems: "center" }}>
           <div className="chip-row">
             {RANGES.map((r) => (
               <button
                 key={r.key}
-                className={
-                  "chip" + (days === r.key ? " active" : "")
-                }
+                className={"chip" + (days === r.key ? " active" : "")}
                 onClick={() => setDays(r.key)}
                 type="button"
               >
@@ -231,34 +233,30 @@ export default function ActivityFeed({ onOpenPerson, onOpenRepo }) {
           <select
             value={tag}
             onChange={(e) => setTag(e.target.value)}
-            style={{ width: 150 }}
+            style={{ minWidth: 120, height: 30, fontSize: 12 }}
           >
-            <option value="">all tags</option>
+            <option value="">All tags</option>
             {tagOptions.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
+              <option key={t} value={t}>{t}</option>
             ))}
           </select>
           <select
             value={personId}
             onChange={(e) => setPersonId(e.target.value)}
-            style={{ width: 170 }}
+            style={{ minWidth: 140, height: 30, fontSize: 12 }}
           >
-            <option value="">all people</option>
+            <option value="">All people</option>
             {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
+              <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
           <button
             type="button"
             className={"chip" + (grouped ? " active" : "")}
             onClick={() => setGrouped((g) => !g)}
-            title={grouped ? "flatten" : "group by day"}
+            title={grouped ? "Flatten" : "Group by day"}
           >
-            {grouped ? "by day" : "flat"}
+            {grouped ? "Grouped" : "Flat"}
           </button>
         </div>
       </div>

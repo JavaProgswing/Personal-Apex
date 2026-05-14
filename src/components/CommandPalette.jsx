@@ -114,17 +114,19 @@ export default function CommandPalette({ open, onClose, onNavigate }) {
       } });
 
     // — Themes — quick switcher (top picks)
+    // Curated list — kept in the same order as the Appearance picker.
+    // Internal CSS may still have variants like Mono/Midnight/Carbon, but
+    // they're not surfaced here to keep the chooser snappy and coherent.
     const themes = [
-      ["library", "Library"], ["slate", "Slate"], ["paper", "Paper"], ["mono", "Mono"],
-      ["dracula", "Dracula"], ["nord", "Nord"], ["solarized-dark", "Solarized Dark"],
-      ["midnight", "Midnight"], ["forest", "Forest"], ["sunset", "Sunset"],
+      ["default-dark", "Default · Dark"], ["default-light", "Default · Light"],
+      ["slate", "Slate"], ["tokyo-night", "Tokyo Night"],
+      ["catppuccin", "Catppuccin"], ["dracula", "Dracula"], ["one-dark", "One Dark"],
+      ["vercel", "Vercel"], ["stripe", "Stripe"],
       ["synthwave", "Synthwave"], ["cyberpunk", "Cyberpunk"], ["matrix", "Matrix"],
-      ["obsidian", "Obsidian"], ["carbon", "Carbon"], ["eclipse", "Eclipse"],
-      ["aurora", "Aurora"], ["vercel", "Vercel"], ["stripe", "Stripe"],
-      ["tokyo-night", "Tokyo Night"], ["catppuccin", "Catppuccin Mocha"],
-      ["gruvbox", "Gruvbox"], ["rose-pine", "Rosé Pine"], ["one-dark", "One Dark"],
-      ["crimson", "Crimson"], ["ocean", "Ocean"],
-      ["solarized-light", "Solarized Light"], ["latte", "Latte"],
+      ["aurora", "Aurora"], ["obsidian", "Obsidian"], ["eclipse", "Eclipse"],
+      ["library", "Library"], ["rose-pine", "Rosé Pine"], ["gruvbox", "Gruvbox"],
+      ["nord", "Nord"], ["solarized-dark", "Solarized Dark"],
+      ["paper", "Paper"], ["solarized-light", "Solarized Light"], ["latte", "Latte"],
     ];
     for (const [key, label] of themes) {
       a.push({

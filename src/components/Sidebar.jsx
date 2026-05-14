@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import api from "../lib/api.js";
 
-// Friendly icons per page key — falls back to a dot if unknown.
+// Typographic glyphs — no emoji, no system-font dependency.
 const ICONS = {
   dashboard:  "▣",
   tasks:      "✓",
@@ -14,17 +15,48 @@ const ICONS = {
   ai:         "✱",
   apex:       "✱",
   brain:      "✎",
-  wellbeing:  "❤",
+  wellbeing:  "♥",
   settings:   "⚙",
   spotify:    "♪",
+  people:     "○",
+  upcoming:   "→",
 };
 
 export default function Sidebar({ current, onChange, pages, onPalette }) {
+  // Collapsed state persists across reboots via settings.ui.sidebar.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    api.settings?.get?.("ui.sidebar")?.then((v) => {
+      if (mounted) setCollapsed(v === "collapsed");
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
+  function toggle() {
+    const next = !collapsed;
+    setCollapsed(next);
+    try { api.settings?.set?.("ui.sidebar", next ? "collapsed" : "expanded"); } catch {}
+    // Re-apply on document so layout CSS can react.
+    document.documentElement.dataset.sidebar = next ? "collapsed" : "expanded";
+  }
+  useEffect(() => {
+    document.documentElement.dataset.sidebar = collapsed ? "collapsed" : "expanded";
+  }, [collapsed]);
+
   return (
-    <aside className="sidebar">
-      <div className="brand">
+    <aside className={"sidebar" + (collapsed ? " collapsed" : "")}>
+      <div className="brand" title={collapsed ? "APEX — click to expand" : ""}>
         <span className="brand-dot" aria-hidden />
-        APEX
+        {!collapsed && <span className="brand-text">APEX</span>}
+        <button
+          type="button"
+          className="sidebar-collapse"
+          onClick={toggle}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand" : "Collapse"}
+        >
+          {collapsed ? "›" : "‹"}
+        </button>
       </div>
       <nav className="nav-list">
         {Object.entries(pages).map(([key, { label }], i) => {
@@ -35,11 +67,10 @@ export default function Sidebar({ current, onChange, pages, onPalette }) {
               key={key}
               className={"nav-item" + (active ? " active" : "")}
               onClick={() => onChange(key)}
-              title={`${label} · Ctrl ${i + 1}`}
+              title={label}
             >
               <span className="nav-icon" aria-hidden>{icon}</span>
-              <span className="nav-label">{label}</span>
-              <span className="nav-shortcut">⌃{i + 1}</span>
+              {!collapsed && <span className="nav-label">{label}</span>}
             </div>
           );
         })}
@@ -48,11 +79,10 @@ export default function Sidebar({ current, onChange, pages, onPalette }) {
         <div
           className="nav-item nav-item-cmd"
           onClick={onPalette}
-          title="Quick actions · Ctrl+K / Cmd+K"
+          title="Quick actions"
         >
-          <span className="nav-icon" aria-hidden>⌘</span>
-          <span className="nav-label">Quick actions</span>
-          <span className="nav-shortcut">⌘K</span>
+          <span className="nav-icon" aria-hidden>+</span>
+          {!collapsed && <span className="nav-label">Quick actions</span>}
         </div>
       </div>
     </aside>

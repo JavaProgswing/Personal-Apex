@@ -8,14 +8,17 @@ import { prettyAppName } from "../../lib/appName.js";
 // labelled sections inside a single scrollable column. This dramatically
 // cuts visual noise vs the old 12-chip strip while keeping every setting
 // reachable.
+// Settings tab order. Icons removed in favour of typographic clarity —
+// the labels alone read cleaner and stay consistent across themes (some
+// fonts render emoji oddly; some don't render them at all).
 const TABS = [
-  { key: "schedule",      label: "Schedule",     icon: "📅" },
-  { key: "activity",      label: "Activity",     icon: "📊" },
-  { key: "goals",         label: "Goals",        icon: "🎯" },
-  { key: "integrations",  label: "Integrations", icon: "🔌" },
-  { key: "appearance",    label: "Appearance",   icon: "🎨" },
-  { key: "notifications", label: "Notifications", icon: "🔔" },
-  { key: "data",          label: "Data",         icon: "💾" },
+  { key: "schedule",      label: "Schedule" },
+  { key: "activity",      label: "Activity" },
+  { key: "goals",         label: "Goals" },
+  { key: "integrations",  label: "Integrations" },
+  { key: "appearance",    label: "Appearance" },
+  { key: "notifications", label: "Notifications" },
+  { key: "data",          label: "Data" },
 ];
 
 // Tiny presentational helper for in-tab section headers, so the merged
@@ -100,7 +103,6 @@ export default function Settings() {
                 transition: "background 120ms",
               }}
             >
-              <span aria-hidden style={{ fontSize: 14 }}>{t.icon}</span>
               {t.label}
             </button>
           );
@@ -1985,99 +1987,93 @@ function AppearanceTab({ all, setAll, save }) {
   const [filter, setFilter] = useState(""); // search box
   const [tag, setTag] = useState("All");    // category filter
 
-  // Big themes catalog. Each carries a `tags` array used by the chip filter.
+  // Curated themes catalog — ordered intentionally:
+  //   1. Foundations (default-dark / light) — clean Inter, neutral.
+  //   2. Dev favourites — Slate, Tokyo Night, Catppuccin, Dracula, One Dark.
+  //   3. Modern minimal — Vercel, Stripe.
+  //   4. Vibrant — Synthwave, Cyberpunk, Matrix, Aurora.
+  //   5. Warm / serif — Library, Paper, Rosé Pine, Gruvbox, Nord, Solarized.
+  //   6. OLED + violet — Obsidian, Eclipse.
+  //   7. Light — Solarized Light, Latte.
+  // Each has its own font assignment in the CSS layer + a unique colour
+  // family so no two themes feel the same when you flip between them.
   const THEMES = [
-    // Originals
-    { key: "library", label: "Library", tags: ["Dark", "Warm", "Default"],
-      desc: "Warm coffee + honey amber. Default.",
-      swatches: ["#14110f", "#e8a23a", "#f5ecdc", "#7fc8a9"] },
+    // Foundations
+    { key: "default-dark", label: "Default · Dark", tags: ["Dark", "Default", "Cool"],
+      desc: "Neutral modern dark · Inter · soft blue accent.",
+      swatches: ["#0e1014", "#6aa7ff", "#5fc89c", "#ef6f6c"] },
+    { key: "default-light", label: "Default · Light", tags: ["Light", "Default", "Cool"],
+      desc: "Warm-tinted off-white · Inter · indigo accent.",
+      swatches: ["#fafbfc", "#2563eb", "#16a34a", "#dc2626"] },
+    // Dev favourites
     { key: "slate", label: "Slate", tags: ["Dark", "Cool"],
-      desc: "Cool blue-grey + electric cyan.",
-      swatches: ["#0e1116", "#56b6c2", "#e6edf3", "#7ee787"] },
-    { key: "paper", label: "Paper", tags: ["Light", "Warm"],
-      desc: "Light cream parchment. Day mode.",
-      swatches: ["#f4ecd8", "#9c5b25", "#3a2f1f", "#5a8761"] },
-    { key: "mono", label: "Mono", tags: ["Dark", "High contrast"],
-      desc: "Greyscale + single accent. High contrast.",
-      swatches: ["#0a0a0a", "#ffffff", "#888888", "#e8a23a"] },
-    // Dark dev classics
-    { key: "dracula", label: "Dracula", tags: ["Dark", "Bold"],
-      desc: "Cult-classic purple-pink night palette.",
-      swatches: ["#282a36", "#bd93f9", "#ff79c6", "#50fa7b"] },
-    { key: "nord", label: "Nord", tags: ["Dark", "Cool"],
-      desc: "Arctic blue, frost teal — calm and matte.",
-      swatches: ["#2e3440", "#88c0d0", "#eceff4", "#a3be8c"] },
-    { key: "solarized-dark", label: "Solarized Dark", tags: ["Dark", "Cool"],
-      desc: "Classic developer palette. Easy on the eyes.",
-      swatches: ["#002b36", "#268bd2", "#fdf6e3", "#b58900"] },
-    { key: "midnight", label: "Midnight", tags: ["Dark", "High contrast"],
-      desc: "Pure black + electric blue. Maximum contrast.",
-      swatches: ["#000000", "#3b82f6", "#e5e5e5", "#22c55e"] },
-    { key: "forest", label: "Forest", tags: ["Dark", "Warm"],
-      desc: "Deep green + moss + amber accents.",
-      swatches: ["#0f1a14", "#5a8761", "#d4c285", "#9c5b25"] },
-    { key: "sunset", label: "Sunset", tags: ["Dark", "Warm"],
-      desc: "Burnt orange and dusk pink over plum.",
-      swatches: ["#1a0e1f", "#f97316", "#ec4899", "#fbbf24"] },
-    // Badass / neon
-    { key: "synthwave", label: "Synthwave", tags: ["Dark", "Neon", "Bold"],
-      desc: "Vaporwave neon pink + cyan over deep purple.",
-      swatches: ["#1a0b2e", "#ff2a6d", "#05d9e8", "#d300c5"] },
-    { key: "cyberpunk", label: "Cyberpunk", tags: ["Dark", "Neon", "High contrast", "Bold"],
-      desc: "Yellow + cyan on near-black. Night City vibes.",
-      swatches: ["#0a0a0a", "#fcee0a", "#00f0ff", "#ff003c"] },
-    { key: "matrix", label: "Matrix", tags: ["Dark", "Neon", "High contrast"],
-      desc: "Pure green-on-black. Hacker movie aesthetic.",
-      swatches: ["#000000", "#00ff41", "#39ff14", "#b3ff66"] },
-    { key: "crimson", label: "Crimson", tags: ["Dark", "Warm", "Bold"],
-      desc: "Deep oxblood + gold. Editorial, intense.",
-      swatches: ["#1a0a0a", "#d4a04a", "#d4453a", "#f5e8d8"] },
-    { key: "ocean", label: "Ocean", tags: ["Dark", "Cool"],
-      desc: "Deep teal + coral. Cool tropical-night blend.",
-      swatches: ["#021825", "#2dd4bf", "#ff7a59", "#67e8f9"] },
-    // Modern dev favorites
-    { key: "tokyo-night", label: "Tokyo Night", tags: ["Dark", "Cool"],
-      desc: "Indigo midnight + soft pastels. Trending dev theme.",
+      desc: "GitHub-Dark style · Inter · sky-blue accent.",
+      swatches: ["#0d1117", "#58a6ff", "#7ee787", "#ff7b72"] },
+    { key: "tokyo-night", label: "Tokyo Night", tags: ["Dark", "Cool", "Pastel"],
+      desc: "Indigo midnight + pastels · Inter · the dev favourite.",
       swatches: ["#1a1b26", "#7aa2f7", "#bb9af7", "#9ece6a"] },
-    { key: "catppuccin", label: "Catppuccin Mocha", tags: ["Dark", "Pastel"],
-      desc: "Internet-darling pastel night palette.",
+    { key: "catppuccin", label: "Catppuccin", tags: ["Dark", "Pastel"],
+      desc: "Mocha pastel night · Outfit · the internet-darling.",
       swatches: ["#1e1e2e", "#cba6f7", "#f5c2e7", "#a6e3a1"] },
-    { key: "gruvbox", label: "Gruvbox", tags: ["Dark", "Warm"],
-      desc: "Retro-grove warm dev theme. Earthy and rich.",
-      swatches: ["#282828", "#fabd2f", "#b8bb26", "#fb4934"] },
-    { key: "rose-pine", label: "Rosé Pine", tags: ["Dark", "Pastel", "Warm"],
-      desc: "Soft burgundy + warm pastels. Cozy night.",
-      swatches: ["#191724", "#eb6f92", "#c4a7e7", "#9ccfd8"] },
+    { key: "dracula", label: "Dracula", tags: ["Dark", "Bold"],
+      desc: "Cult-classic purple-pink · Sora.",
+      swatches: ["#282a36", "#bd93f9", "#ff79c6", "#50fa7b"] },
     { key: "one-dark", label: "One Dark", tags: ["Dark", "Cool"],
-      desc: "Atom's classic. Slate blue + warm coral.",
+      desc: "Atom's classic — slate blue + warm coral · Inter.",
       swatches: ["#282c34", "#61afef", "#c678dd", "#98c379"] },
-    // Light
-    { key: "solarized-light", label: "Solarized Light", tags: ["Light", "Cool"],
-      desc: "Companion light palette to Solarized Dark.",
-      swatches: ["#fdf6e3", "#268bd2", "#586e75", "#b58900"] },
-    { key: "latte", label: "Latte", tags: ["Light", "Pastel"],
-      desc: "Catppuccin Latte. Soft cream + lavender.",
-      swatches: ["#eff1f5", "#8839ef", "#ea76cb", "#40a02b"] },
-    // Ultra-dark / high contrast
-    { key: "obsidian", label: "Obsidian", tags: ["Dark", "Neon", "High contrast", "Bold"],
-      desc: "Pure-void OLED black + electric cyan glow.",
-      swatches: ["#000000", "#00e5ff", "#00ffa3", "#ff3b6b"] },
-    { key: "carbon", label: "Carbon", tags: ["Dark", "High contrast", "Bold"],
-      desc: "Charcoal industrial + neon-lime accent.",
-      swatches: ["#0a0c0e", "#b3ff00", "#4dd0ff", "#ff5c4c"] },
-    { key: "eclipse", label: "Eclipse", tags: ["Dark", "Neon", "High contrast", "Bold"],
-      desc: "Pitch-black void with royal violet glow.",
-      swatches: ["#050308", "#a855f7", "#ec4899", "#4ade80"] },
-    // Coolors-inspired drops
-    { key: "aurora", label: "Aurora", tags: ["Dark", "Cool"],
-      desc: "Northern-lights gradient — teal → emerald → magenta.",
-      swatches: ["#0a0e1a", "#7df9d4", "#6dc1ff", "#b685ff"] },
+    // Modern minimal
     { key: "vercel", label: "Vercel", tags: ["Dark", "High contrast"],
-      desc: "Pure black + white. Radically minimal, vercel.com vibes.",
+      desc: "Pure black + white · Inter · vercel.com radical minimal.",
       swatches: ["#000000", "#ffffff", "#50e3c2", "#a1a1aa"] },
     { key: "stripe", label: "Stripe", tags: ["Dark", "Cool"],
-      desc: "Calm cool slate + electric purple. Stripe-dashboard pro.",
+      desc: "Cool slate + electric purple · Inter.",
       swatches: ["#0a0e1f", "#635bff", "#00d4a4", "#a78bfa"] },
+    // Vibrant / character
+    { key: "synthwave", label: "Synthwave", tags: ["Dark", "Neon", "Bold"],
+      desc: "Vaporwave neon · Orbitron + Rajdhani.",
+      swatches: ["#1a0b2e", "#ff2a6d", "#05d9e8", "#d300c5"] },
+    { key: "cyberpunk", label: "Cyberpunk", tags: ["Dark", "Neon", "High contrast", "Bold"],
+      desc: "Yellow + cyan · Orbitron · Night City vibes.",
+      swatches: ["#0a0a0a", "#fcee0a", "#00f0ff", "#ff003c"] },
+    { key: "matrix", label: "Matrix", tags: ["Dark", "Neon", "High contrast"],
+      desc: "Green-on-black · VT323 · pure hacker movie.",
+      swatches: ["#000000", "#00ff41", "#39ff14", "#b3ff66"] },
+    { key: "aurora", label: "Aurora", tags: ["Dark", "Cool"],
+      desc: "Northern-lights gradient · Outfit · teal → magenta.",
+      swatches: ["#0a0e1a", "#7df9d4", "#6dc1ff", "#b685ff"] },
+    // OLED + violet
+    { key: "obsidian", label: "Obsidian", tags: ["Dark", "Neon", "High contrast", "Bold"],
+      desc: "OLED black + electric cyan glow · Inter.",
+      swatches: ["#000000", "#00e5ff", "#00ffa3", "#ff3b6b"] },
+    { key: "eclipse", label: "Eclipse", tags: ["Dark", "Neon", "High contrast", "Bold"],
+      desc: "Pitch-black void · Sora · royal violet glow.",
+      swatches: ["#050308", "#a855f7", "#ec4899", "#4ade80"] },
+    // Warm / serif
+    { key: "library", label: "Library", tags: ["Dark", "Warm"],
+      desc: "Warm coffee + honey amber · Outfit + Crimson Pro serif.",
+      swatches: ["#14110f", "#e8a23a", "#82caa9", "#e07a5f"] },
+    { key: "rose-pine", label: "Rosé Pine", tags: ["Dark", "Pastel", "Warm"],
+      desc: "Soft burgundy + warm pastels · Spectral serif.",
+      swatches: ["#191724", "#eb6f92", "#c4a7e7", "#9ccfd8"] },
+    { key: "gruvbox", label: "Gruvbox", tags: ["Dark", "Warm"],
+      desc: "Retro-grove warm · IBM Plex.",
+      swatches: ["#282828", "#fabd2f", "#b8bb26", "#fb4934"] },
+    { key: "nord", label: "Nord", tags: ["Dark", "Cool"],
+      desc: "Arctic blue + frost teal · Inter · calm matte.",
+      swatches: ["#2e3440", "#88c0d0", "#eceff4", "#a3be8c"] },
+    { key: "solarized-dark", label: "Solarized Dark", tags: ["Dark", "Cool"],
+      desc: "Classic dev palette · IBM Plex · easy on the eyes.",
+      swatches: ["#002b36", "#268bd2", "#fdf6e3", "#b58900"] },
+    // Light
+    { key: "paper", label: "Paper", tags: ["Light", "Warm"],
+      desc: "Cream parchment · Spectral serif · day-mode book vibe.",
+      swatches: ["#f4ecd8", "#9c5b25", "#3a2f1f", "#5a8761"] },
+    { key: "solarized-light", label: "Solarized Light", tags: ["Light", "Cool"],
+      desc: "Light companion to Solarized Dark · IBM Plex.",
+      swatches: ["#fdf6e3", "#268bd2", "#586e75", "#b58900"] },
+    { key: "latte", label: "Latte", tags: ["Light", "Pastel"],
+      desc: "Catppuccin Latte · Outfit · soft cream + lavender.",
+      swatches: ["#eff1f5", "#8839ef", "#ea76cb", "#40a02b"] },
   ];
 
   const ALL_TAGS = [

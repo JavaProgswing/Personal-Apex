@@ -554,7 +554,10 @@ export default function Dashboard({ go }) {
           <button className="primary small" onClick={() => setShowAskApex(true)}>
             Ask Apex
           </button>
-          <InsightsChip
+          {/* Burnout-tracking surface removed from the dashboard header.
+              The underlying check still runs in the background (used by
+              Apex's recommendations) but no longer takes header space. */}
+          {false && <InsightsChip
             ollamaOk={planCard.ollamaOk}
             model={planCard.model}
             tasks={tasks}
@@ -641,20 +644,12 @@ export default function Dashboard({ go }) {
               });
               setTimeout(() => setToast(null), 3000);
             }}
-          />
+          />}
           <OverflowMenu
             items={[
               cpHasAny && {
                 label: "My CP snapshot",
                 onClick: () => setShowCp(true),
-              },
-              {
-                label: "Copy today's brief",
-                onClick: copyTodayBrief,
-              },
-              {
-                label: "Settings",
-                onClick: () => go("settings"),
               },
             ].filter(Boolean)}
           />
@@ -1434,9 +1429,11 @@ function ActivitySection({
               : `Viewing ${topAppsDate}`}
           </small>
         </div>
+        {/* Compact action cluster — status pill + a single "Sync ▾" menu
+            instead of three separate sync buttons in the header. */}
         <div
           className="row"
-          style={{ gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}
+          style={{ gap: 8, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}
         >
           {trackerStatus?.running ? (
             <span className="pill teal" title="Desktop tracker is running">
@@ -1445,31 +1442,16 @@ function ActivitySection({
             </span>
           ) : (
             <span className="pill gray" title="Desktop tracker is off">
-              ○ idle
+              idle
             </span>
           )}
           <button className="ghost small" onClick={onToggleTracker}>
             {trackerStatus?.running ? "Stop" : "Start"}
           </button>
-          <button
-            className="ghost small"
-            onClick={onSyncMobile}
-            title="Pull today's mobile usage via ADB"
-          >
-            Sync mobile
-          </button>
-          {onSyncBattery && (
-            <button
-              className="ghost small"
-              onClick={onSyncBattery}
-              title="Import last 14 days of desktop usage from Windows battery report"
-            >
-              Sync desktop
-            </button>
-          )}
-          <button className="ghost small" onClick={onOpenSettings}>
-            Settings
-          </button>
+          <ActivitySyncMenu
+            onSyncMobile={onSyncMobile}
+            onSyncBattery={onSyncBattery}
+          />
         </div>
       </div>
 
@@ -1791,6 +1773,69 @@ function ActivitySection({
 // ─── OverflowMenu ────────────────────────────────────────────────────────
 // A 3-dot button that opens a small popover with secondary actions
 // (My CP, Copy brief, Settings). Keeps the header header clean.
+// Tiny menu for the Activity header — replaces 3 inline buttons with one
+// "Sync ▾" trigger. Keeps the activity card header from sprawling.
+function ActivitySyncMenu({ onSyncMobile, onSyncBattery }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-flex" }}>
+      <button
+        className="ghost small"
+        onClick={() => setOpen((v) => !v)}
+        title="Pull fresh activity data"
+      >
+        Sync ▾
+      </button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            right: 0,
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            padding: 4,
+            minWidth: 180,
+            zIndex: 10,
+            boxShadow: "var(--shadow-md)",
+          }}
+        >
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => { setOpen(false); onSyncMobile?.(); }}
+            style={{ display: "block", width: "100%", textAlign: "left" }}
+            title="Pull today's mobile usage via ADB"
+          >
+            Mobile (ADB)
+          </button>
+          {onSyncBattery && (
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => { setOpen(false); onSyncBattery(); }}
+              style={{ display: "block", width: "100%", textAlign: "left" }}
+              title="Import 14 days from Windows battery report"
+            >
+              Desktop (battery report)
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OverflowMenu({ items }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);

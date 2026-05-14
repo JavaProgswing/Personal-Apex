@@ -176,16 +176,13 @@ export default function LiveTimer({ tasks = [], onChanged }) {
             </div>
           </div>
         )}
-        <div className="live-timer idle">
-          <div className="live-timer-idle-left">
-            <div className="live-timer-idle-title">No active timer</div>
-            <small className="muted">
-              Start a timer for whatever you're doing — Apex will log it and
-              plan around it.
-            </small>
-          </div>
-          <button className="primary" onClick={() => setShowStart(true)}>
-            ▶ Start a timer
+        {/* Slim idle strip — the bulky "No active timer" card was visually
+            dominant for a state that's just "nothing happening". Now a
+            single quiet line + small button. Reads as a CTA, not a placeholder. */}
+        <div className="live-timer idle-slim">
+          <span className="muted">Ready to focus?</span>
+          <button className="ghost small" onClick={() => setShowStart(true)}>
+            Start a timer
           </button>
         </div>
         {showStart && (

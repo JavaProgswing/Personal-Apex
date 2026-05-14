@@ -537,7 +537,7 @@ function PeopleControlsRow({
           {open ? "▴ Less" : "▾ Advanced"}
         </button>
         <button className="ghost" onClick={onLeaderboard} title="Open leaderboard">
-          🏆
+          Leaderboard
         </button>
       </div>
 
@@ -661,7 +661,7 @@ function PeopleAddMenu({ onImport, onAdd, onMergeDuplicates, onClearData }) {
                 style={{ display: "block", width: "100%", textAlign: "left" }}
                 title="Find people that are likely duplicates and merge them"
               >
-                ⚙ Merge duplicates…
+                Merge duplicates…
               </button>
             </>
           )}
@@ -688,16 +688,25 @@ function PeopleAddMenu({ onImport, onAdd, onMergeDuplicates, onClearData }) {
 // Single sync button with a dropdown that fans out to GitHub / CP / SRM
 // leaderboard. The visible label reflects whichever sync is currently
 // running. Replaces the three separate sync buttons in the header.
+// Richer sync menu — three sync paths, each with its own "last sync"
+// timestamp and live status row. Replaces the old flat button list with
+// a card-style dropdown that reads like a control panel.
 function PeopleSyncMenu({ ghActive, cpActive, onSyncGh, onSyncCp, onSyncSrm }) {
   const [open, setOpen] = useState(false);
   const [last, setLast] = useState(null);
   const [progress, setProgress] = useState(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [ghLast, setGhLast] = useState(null);
+  const [cpLast, setCpLast] = useState(null);
   const ref = React.useRef(null);
 
+  // Load last-sync timestamps for each path on mount. GitHub + CP keep
+  // theirs on the most-recently-scraped person; SRM has a dedicated key.
   React.useEffect(() => {
     api.cp.srmLeaderboardLastSync?.().then((r) => setLast(r)).catch(() => {});
+    api.settings?.get?.("github.lastSync")?.then((v) => v && setGhLast(v)).catch(() => {});
+    api.settings?.get?.("cp.lastSync")?.then((v) => v && setCpLast(v)).catch(() => {});
     const off = api.cp.onSrmLeaderboardProgress?.((info) => setProgress(info));
     return () => { try { off?.(); } catch {} };
   }, []);
@@ -710,6 +719,26 @@ function PeopleSyncMenu({ ghActive, cpActive, onSyncGh, onSyncCp, onSyncSrm }) {
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
+
+  // Stamp the timestamps locally when the parent's sync flips off.
+  React.useEffect(() => {
+    if (!ghActive && ghLast === null) return;
+    if (!ghActive) {
+      const now = new Date().toISOString();
+      setGhLast(now);
+      api.settings?.set?.("github.lastSync", now);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ghActive]);
+  React.useEffect(() => {
+    if (!cpActive && cpLast === null) return;
+    if (!cpActive) {
+      const now = new Date().toISOString();
+      setCpLast(now);
+      api.settings?.set?.("cp.lastSync", now);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cpActive]);
 
   async function runSrm() {
     setOpen(false); setBusy(true); setProgress(null); setMsg(null);
@@ -729,82 +758,101 @@ function PeopleSyncMenu({ ghActive, cpActive, onSyncGh, onSyncCp, onSyncSrm }) {
     }
   }
 
-  // Live label.
-  let label = "Sync ▾";
+  let label = "Sync";
   if (ghActive) label = "Syncing GitHub…";
   else if (cpActive) label = "Syncing CP…";
   else if (busy) {
-    if (progress?.stage === "paginating" && progress.page) {
-      label = `SRM page ${progress.page}…`;
-    } else label = "Syncing SRM…";
+    if (progress?.stage === "paginating" && progress.page)
+      label = `SRM p.${progress.page}…`;
+    else label = "Syncing…";
   } else if (msg) label = msg;
 
   const anyBusy = ghActive || cpActive || busy;
-
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-flex" }}>
       <button
         className="primary"
         onClick={() => setOpen((v) => !v)}
         disabled={anyBusy}
-        title="Run a sync"
+        title="Sync · GitHub / CP / SRM Leaderboard"
       >
-        {label}
+        {label}{!anyBusy && " ▾"}
       </button>
       {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            right: 0,
-            background: "var(--bg-elev)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            padding: 4,
-            minWidth: 240,
-            zIndex: 10,
-            boxShadow: "var(--shadow-md)",
-          }}
-        >
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => { setOpen(false); onSyncGh(); }}
-            disabled={ghActive}
-            style={{ display: "block", width: "100%", textAlign: "left" }}
-            title="Pull latest repos + activity for everyone"
-          >
-            ⟳ GitHub
-          </button>
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => { setOpen(false); onSyncCp(); }}
-            disabled={cpActive}
-            style={{ display: "block", width: "100%", textAlign: "left" }}
-            title="Refresh LC / CF / CC stats"
-          >
-            ⟳ Competitive programming
-          </button>
-          <hr className="soft" style={{ margin: "4px 0" }} />
-          <button
-            type="button"
-            className="ghost"
-            onClick={runSrm}
-            disabled={busy}
-            style={{ display: "block", width: "100%", textAlign: "left" }}
-            title={
+        <div className="people-sync-menu">
+          <div className="people-sync-menu-head">Sync sources</div>
+          <SyncMenuRow
+            label="GitHub"
+            sub="Repos · activity · commits"
+            lastAt={ghLast}
+            active={ghActive}
+            onRun={() => { setOpen(false); onSyncGh(); }}
+          />
+          <SyncMenuRow
+            label="Competitive programming"
+            sub="LeetCode · Codeforces · CodeChef"
+            lastAt={cpLast}
+            active={cpActive}
+            onRun={() => { setOpen(false); onSyncCp(); }}
+          />
+          <SyncMenuRow
+            label="SRM Leaderboard"
+            sub="Classmates from lead.aakarsh.xyz"
+            lastAt={last?.at}
+            active={busy}
+            extra={
               last
-                ? `Last: ${new Date(last.at).toLocaleString()} · ${last.imported || 0} new, ${last.updated || 0} updated · via ${last.via || "?"}`
-                : "Pull classmates from lead.aakarsh.xyz"
+                ? `${last.imported || 0} new · ${last.updated || 0} updated`
+                : null
             }
-          >
-            ⟳ SRM leaderboard
-          </button>
+            onRun={runSrm}
+          />
         </div>
       )}
     </div>
   );
+}
+
+// One row in the sync menu — title, sub, last-sync, and a Run button.
+function SyncMenuRow({ label, sub, lastAt, active, extra, onRun }) {
+  const ago = lastAt ? humanAgo(new Date(lastAt)) : "never synced";
+  return (
+    <button
+      type="button"
+      className="people-sync-row"
+      onClick={onRun}
+      disabled={active}
+    >
+      <div className="people-sync-row-main">
+        <div className="people-sync-row-label">
+          <strong>{label}</strong>
+          {active && (
+            <span className="spinner-row" style={{ marginLeft: 6 }}>
+              <span className="spinner" aria-hidden />
+            </span>
+          )}
+        </div>
+        <small className="muted">{sub}</small>
+      </div>
+      <div className="people-sync-row-meta">
+        <small className="muted">{ago}</small>
+        {extra && <small className="muted" style={{ fontSize: 10 }}>{extra}</small>}
+      </div>
+    </button>
+  );
+}
+
+function humanAgo(d) {
+  const ms = Date.now() - d.getTime();
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const dd = Math.floor(h / 24);
+  if (dd < 7) return `${dd}d ago`;
+  return d.toLocaleDateString();
 }
 
 // One-click button that scrapes the SRM CP leaderboard
@@ -1816,7 +1864,7 @@ function ImportByLinkModal({ onClose, onImported }) {
               disabled={loading}
               title="Scrape all 5 NextTechLab labs in one shot"
             >
-              ⚡ All NTL labs
+              All NTL labs
             </button>
             <button
               className="chip"
@@ -2037,7 +2085,7 @@ function LeaderboardModal({ onClose }) {
                     ? "…"
                     : summary?.ok
                       ? "↻ Re-summarise"
-                      : "✨ Summarise"}
+                      : "Summarise"}
                 </button>
               </div>
               {summary && summary.ok && (

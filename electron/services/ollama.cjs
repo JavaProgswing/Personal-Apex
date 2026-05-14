@@ -65,23 +65,22 @@ async function ensureRunning({ timeoutMs = 15000 } = {}) {
   let err = null;
 
   if (process.platform === 'win32') {
+    // Prefer the headless `ollama.exe serve` daemon — it does NOT pop up
+    // the tray/launcher UI. The bare ollama.exe (no args) is the GUI
+    // launcher, which steals focus and adds a window the user didn't ask
+    // for. Try `serve` against every known install path FIRST, then fall
+    // back to PATH-resolved `ollama serve`, and only as a last resort
+    // invoke the GUI launcher.
     for (const p of _expandWindowsPaths()) {
-      tried.push(p);
+      tried.push(p + ' serve');
       if (!fs.existsSync(p)) continue;
+      if (p.toLowerCase().endsWith('.lnk')) continue; // .lnk can't take args reliably
       try {
-        if (p.toLowerCase().endsWith('.lnk')) {
-          // Start-Process can follow .lnk shortcuts.
-          spawn('powershell.exe', ['-NoProfile', '-Command', `Start-Process -FilePath "${p}"`], {
-            detached: true, stdio: 'ignore', windowsHide: true,
-          }).unref();
-        } else {
-          spawn(p, [], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
-        }
+        spawn(p, ['serve'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
         launched = true;
         break;
       } catch (e) { err = e; }
     }
-    // Absolute last resort: try `ollama.exe serve` on PATH.
     if (!launched) {
       tried.push('ollama.exe serve (PATH)');
       try {

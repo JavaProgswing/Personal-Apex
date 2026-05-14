@@ -34,7 +34,7 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
-        const t = (await api.settings?.get?.("ui.theme")) || "library";
+        const t = (await api.settings?.get?.("ui.theme")) || "default-dark";
         if (!cancelled) document.documentElement.dataset.theme = t;
 
         const accent = await api.settings?.get?.("ui.customAccent");
@@ -66,7 +66,7 @@ export default function App() {
           } catch { /* invalid json — ignore */ }
         }
       } catch {
-        document.documentElement.dataset.theme = "library";
+        document.documentElement.dataset.theme = "default-dark";
       }
     })();
     return () => { cancelled = true; };
@@ -75,25 +75,14 @@ export default function App() {
   useEffect(() => {
     const onKey = (e) => {
       const mod = e.ctrlKey || e.metaKey;
-      // Cmd/Ctrl+K — command palette
+      // Cmd/Ctrl+K still opens Quick Actions — that's the one shortcut
+      // users actually muscle-memorise. Ctrl+1..5 page jumps and
+      // Cmd+Shift+N quick capture were removed; they cluttered the UI
+      // labels for almost no real-world usage.
       if (mod && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
       }
-      // Cmd/Ctrl+Shift+N (and Cmd/Ctrl+Enter on focus-empty) — quick capture
-      if (mod && e.shiftKey && e.key.toLowerCase() === "n") {
-        e.preventDefault();
-        setQuickOpen(true);
-      }
-      // Direct jumps: Ctrl+1..5
-      if (mod && !e.shiftKey && /^[1-5]$/.test(e.key)) {
-        const key = Object.keys(PAGES)[+e.key - 1];
-        if (key) {
-          e.preventDefault();
-          setPage(key);
-        }
-      }
-      // Esc closes any open overlay
       if (e.key === "Escape") {
         if (quickOpen) setQuickOpen(false);
         else if (paletteOpen) setPaletteOpen(false);

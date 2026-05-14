@@ -54,12 +54,30 @@ async function init() {
 
   runMigrations();
 
-  // Seed classes table from AcademiaScraper JSON (or fallback) on first run.
+  // Seed classes table on FIRST RUN only. Once the user has interacted
+  // with their timetable (even by deleting every row), we record a
+  // `classes.seeded` setting so subsequent boots don't re-add the
+  // defaults. Previously, deleting every class meant the seeder fired
+  // again on next launch — the user complaint "academic year finished
+  // but classes come back when I restart". Fix: gate by the setting,
+  // not by empty-table.
   try {
+    const seededBefore = db.prepare(
+      "SELECT value FROM settings WHERE key = 'classes.seeded'",
+    ).get();
     const cRow = db.prepare("SELECT COUNT(*) AS c FROM classes").get();
-    if (cRow.c === 0) {
+    if (cRow.c === 0 && !seededBefore) {
       require("./timetable.cjs").seedDefaultClasses();
-      console.log("[db] seeded default classes");
+      db.prepare(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('classes.seeded', '1')",
+      ).run();
+      console.log("[db] seeded default classes (first run)");
+    } else if (cRow.c > 0 && !seededBefore) {
+      // Migrate: existing DBs already have classes — record that fact
+      // so we don't ever re-seed if they later delete them.
+      db.prepare(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('classes.seeded', '1')",
+      ).run();
     }
   } catch (e) {
     console.warn("[db] class seed skipped:", e.message);

@@ -1,24 +1,20 @@
-/* Apex — multi-theme typography stack.
-   Each theme picks its own --font-ui / --font-mono / --font-display below
-   so the typography matches the palette. The @import below pre-loads all
-   the faces we'll need; if it fails (offline, or fonts.googleapis blocked)
-   each font-family chain has system fallbacks so nothing reads as broken.
-   `display=swap` ensures we never block first paint on a font fetch. */
+/* Apex typography — unified across all themes.
+   One UI sans + one mono. No per-theme font swaps — they made the app
+   read as inconsistent. Inter is the canonical modern UI sans; JetBrains
+   Mono is the canonical code/numbers face. Both load with display=swap
+   so first paint is never blocked. System fallbacks at the end so
+   offline renders stay clean. */
 
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800&family=Crimson+Pro:wght@400;500;600;700&family=Orbitron:wght@500;700;900&family=VT323&family=Rajdhani:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Spectral:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
-/* :root holds tokens that don't change across themes (radii, default
-   fonts) and defaults to the "library" palette so unthemed renders still
-   look right. Per-theme blocks override --font-ui / --font-display. */
 :root {
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 16px;
   --r-xl: 20px;
 
-  /* Default — used by Library + any theme that doesn't override. */
   --font-ui:
-    "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     Helvetica, Arial, sans-serif;
   --font-display: var(--font-ui);
   --font-mono:
@@ -29,6 +25,97 @@
    Apply via <html data-theme="library|slate|paper|mono">. App.jsx hydrates
    this on mount from settings. All other CSS targets the var() tokens so
    no rules below need to change for new themes. */
+
+/* ─── DEFAULT-DARK — the neutral foundation ─────────────────────────────
+   Used as the fallback for anyone who hasn't picked a theme yet. Modern
+   neutral dark, Inter font, soft blue accent. Coolors-style cohesion:
+   bg ramp on a 12-step neutral scale, single accent hue, categoricals
+   tuned to ~55% saturation so nothing screams.                          */
+[data-theme="default-dark"] {
+  --bg: #0e1014;
+  --bg-elev: #161920;
+  --bg-elev-2: #1f232c;
+  --border: #2b303a;
+
+  --text: #eef0f4;
+  --text-dim: #a4abb6;
+  --text-faint: #6b7280;
+
+  --accent: #6aa7ff;
+  --accent-soft: rgba(106, 167, 255, 0.18);
+  --accent-strong: #8cbcff;
+
+  --productive: #5fc89c;
+  --productive-soft: rgba(95, 200, 156, 0.16);
+  --distraction: #ef6f6c;
+  --distraction-soft: rgba(239, 111, 108, 0.16);
+  --leisure: #f0a85a;
+  --leisure-soft: rgba(240, 168, 90, 0.16);
+  --rest: #7ec0db;
+  --rest-soft: rgba(126, 192, 219, 0.16);
+  --neutral: #a4abb6;
+  --neutral-soft: rgba(164, 171, 182, 0.16);
+  --mobile: #b393e0;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: var(--leisure);
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(135deg, #6aa7ff, #8cbcff);
+  --grad-card: linear-gradient(135deg, rgba(106,167,255,0.04), transparent 60%);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.5);
+
+  color-scheme: dark;
+}
+
+/* ─── DEFAULT-LIGHT — neutral foundation, light ─────────────────────────
+   Clean off-white surface, same accent family as default-dark so users
+   can switch without losing brand. Tinted toward warm-grey for less
+   eye strain than pure white. */
+[data-theme="default-light"] {
+  --bg: #fafbfc;
+  --bg-elev: #f3f5f8;
+  --bg-elev-2: #e7ebef;
+  --border: #d6dce4;
+
+  --text: #1d2330;
+  --text-dim: #4a5365;
+  --text-faint: #7b8493;
+
+  --accent: #2563eb;
+  --accent-soft: rgba(37, 99, 235, 0.10);
+  --accent-strong: #1d4ed8;
+
+  --productive: #16a34a;
+  --productive-soft: rgba(22, 163, 74, 0.10);
+  --distraction: #dc2626;
+  --distraction-soft: rgba(220, 38, 38, 0.10);
+  --leisure: #ea580c;
+  --leisure-soft: rgba(234, 88, 12, 0.10);
+  --rest: #0891b2;
+  --rest-soft: rgba(8, 145, 178, 0.10);
+  --neutral: #4a5365;
+  --neutral-soft: rgba(74, 83, 101, 0.10);
+  --mobile: #7c3aed;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: var(--leisure);
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(135deg, #2563eb, #7c3aed);
+  --grad-card: linear-gradient(135deg, rgba(37,99,235,0.04), transparent 60%);
+
+  --shadow-sm: 0 1px 2px rgba(20, 30, 60, 0.06);
+  --shadow-md: 0 6px 22px rgba(20, 30, 60, 0.08);
+
+  color-scheme: light;
+}
 
 /* Library — warm coffee + honey amber. Default. Ramp tightened, categories
    share a warm undertone so they feel related to the amber accent. */
@@ -74,20 +161,21 @@
   color-scheme: dark;
 }
 
-/* Slate — cool blue-grey + electric cyan. Sharp dev-tool feel. */
+/* Slate — modern cool palette inspired by Linear / Vercel. Softer
+   neutrals, more accessible accent, cohesive cool-blue undertone. */
 [data-theme="slate"] {
-  --bg: #0e1116;
+  --bg: #0d1117;
   --bg-elev: #161b22;
-  --bg-elev-2: #1f2530;
-  --border: #2a3140;
+  --bg-elev-2: #21262d;
+  --border: #30363d;
 
   --text: #e6edf3;
-  --text-dim: #8d96a6;
-  --text-faint: #5a6373;
+  --text-dim: #8b949e;
+  --text-faint: #6e7681;
 
-  --accent: #56b6c2;
-  --accent-soft: rgba(86, 182, 194, 0.12);
-  --accent-strong: #7ecedb;
+  --accent: #58a6ff;
+  --accent-soft: rgba(88, 166, 255, 0.16);
+  --accent-strong: #79b8ff;
 
   --productive: #7ee787;
   --productive-soft: rgba(126, 231, 135, 0.14);
@@ -624,11 +712,12 @@
   color-scheme: dark;
 }
 
-/* Tokyo Night — popular dev theme. Indigo midnight + soft pastels. */
+/* Tokyo Night — canonical values from the upstream theme. Pastels +
+   indigo midnight; one of the cleanest dark themes anywhere. */
 [data-theme="tokyo-night"] {
   --bg: #1a1b26;
-  --bg-elev: #24283b;
-  --bg-elev-2: #2f3549;
+  --bg-elev: #1f2335;
+  --bg-elev-2: #292e42;
   --border: #3b4261;
 
   --text: #c0caf5;
@@ -636,8 +725,8 @@
   --text-faint: #565f89;
 
   --accent: #7aa2f7;
-  --accent-soft: rgba(122, 162, 247, 0.14);
-  --accent-strong: #a5c3ff;
+  --accent-soft: rgba(122, 162, 247, 0.16);
+  --accent-strong: #b4f9f8;
 
   --productive: #9ece6a;
   --productive-soft: rgba(158, 206, 106, 0.14);
@@ -1237,134 +1326,12 @@
    for code/numbers. All chains end in system fallbacks so an offline
    render still looks intentional. */
 
-[data-theme="library"] {
-  /* Warm coffee + serif page titles, clean sans for UI body. */
-  --font-ui: "Outfit", "Space Grotesk", -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Crimson Pro", "Iowan Old Style", Georgia, serif;
-}
-[data-theme="paper"] {
-  /* Light parchment — full-on serif for that "book" reading vibe. */
-  --font-ui: "Spectral", "Iowan Old Style", Georgia, serif;
-  --font-display: "Crimson Pro", "Iowan Old Style", Georgia, serif;
-}
-[data-theme="slate"] {
-  /* Cool dev-tool feel — Inter is the canonical modern UI sans. */
-  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Inter", -apple-system, sans-serif;
-}
-[data-theme="mono"] {
-  /* All-mono treatment for the high-contrast greyscale theme. */
-  --font-ui: "IBM Plex Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
-  --font-display: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
-  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
-}
-[data-theme="dracula"] {
-  --font-ui: "Sora", "Inter", -apple-system, sans-serif;
-  --font-display: "Sora", "Inter", sans-serif;
-}
-[data-theme="nord"] {
-  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Inter", -apple-system, sans-serif;
-}
-[data-theme="solarized-dark"],
-[data-theme="solarized-light"] {
-  /* Solarized was made for Terminal — IBM Plex Sans pairs well. */
-  --font-ui: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
-  --font-display: "IBM Plex Sans", -apple-system, sans-serif;
-  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
-}
-[data-theme="midnight"] {
-  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Outfit", "Inter", sans-serif;
-}
-[data-theme="forest"] {
-  /* Earthy serif for the calm green palette. */
-  --font-ui: "Outfit", "Space Grotesk", -apple-system, sans-serif;
-  --font-display: "Spectral", Georgia, serif;
-}
-[data-theme="sunset"] {
-  --font-ui: "Outfit", "Inter", -apple-system, sans-serif;
-  --font-display: "Outfit", "Inter", sans-serif;
-}
-[data-theme="synthwave"] {
-  /* Vaporwave demands Orbitron for titles — full sci-fi energy. */
-  --font-ui: "Rajdhani", "Inter", -apple-system, sans-serif;
-  --font-display: "Orbitron", "Rajdhani", sans-serif;
-}
-[data-theme="cyberpunk"] {
-  --font-ui: "Rajdhani", "Inter", -apple-system, sans-serif;
-  --font-display: "Orbitron", "Rajdhani", sans-serif;
-}
-[data-theme="matrix"] {
-  /* Pure terminal energy — VT323 throughout. */
-  --font-ui: "VT323", "JetBrains Mono", "Cascadia Mono", monospace;
-  --font-display: "VT323", "JetBrains Mono", monospace;
-  --font-mono: "VT323", "JetBrains Mono", "Cascadia Mono", monospace;
-}
-[data-theme="tokyo-night"] {
-  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Inter", -apple-system, sans-serif;
-}
-[data-theme="catppuccin"] {
-  /* Pastel palette pairs naturally with rounded modern sans. */
-  --font-ui: "Outfit", "Inter", -apple-system, sans-serif;
-  --font-display: "Outfit", "Inter", sans-serif;
-}
-[data-theme="gruvbox"] {
-  /* Retro warm palette — IBM Plex's slightly-quirky shapes fit. */
-  --font-ui: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
-  --font-display: "IBM Plex Sans", -apple-system, sans-serif;
-  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
-}
-[data-theme="rose-pine"] {
-  --font-ui: "Spectral", "Iowan Old Style", Georgia, serif;
-  --font-display: "Spectral", "Crimson Pro", Georgia, serif;
-}
-[data-theme="one-dark"] {
-  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Inter", -apple-system, sans-serif;
-}
-[data-theme="crimson"] {
-  --font-ui: "Spectral", "Iowan Old Style", Georgia, serif;
-  --font-display: "Crimson Pro", "Iowan Old Style", Georgia, serif;
-}
-[data-theme="ocean"] {
-  --font-ui: "Outfit", "Inter", -apple-system, sans-serif;
-  --font-display: "Outfit", "Inter", sans-serif;
-}
-[data-theme="latte"] {
-  --font-ui: "Outfit", "Inter", -apple-system, sans-serif;
-  --font-display: "Outfit", "Inter", sans-serif;
-}
-[data-theme="obsidian"] {
-  /* OLED neon — display in Orbitron, body in clean Inter. */
-  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Orbitron", "Inter", sans-serif;
-}
-[data-theme="carbon"] {
-  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Sora", "Inter", sans-serif;
-}
-[data-theme="eclipse"] {
-  --font-ui: "Sora", "Inter", -apple-system, sans-serif;
-  --font-display: "Orbitron", "Sora", sans-serif;
-}
-[data-theme="aurora"] {
-  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Outfit", "Inter", sans-serif;
-}
-[data-theme="vercel"] {
-  /* Geist-equivalent sans for Vercel-style minimalism. Inter is the
-     closest free analog. */
-  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Inter", -apple-system, sans-serif;
-}
-[data-theme="stripe"] {
-  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Sora", "Inter", sans-serif;
-}
-
-/* Apply --font-display to the page title gradient + sidebar brand. */
+/* Per-theme font overrides removed — fonts were swapping wildly between
+   palettes (serif / mono / Orbitron etc.) and the app read as schizophrenic.
+   Inter is now used app-wide for every theme. The display title uses the
+   same family at heavier weight. JetBrains Mono is used for code/numbers
+   everywhere. The page title still picks up --font-display so future
+   per-theme overrides (if we ever bring them back) only touch headlines. */
 h1.page-title, .sidebar .brand {
   font-family: var(--font-display);
 }
@@ -1381,16 +1348,20 @@ body,
 }
 
 body {
-  /* Flat warm background — gradient backgrounds on body always read as
-     "AI/template default". Keep it solid; let cards do the lifting. */
+  /* Flat background — let cards do the surface lifting. Letter-spacing
+     -0.01em tightens body copy slightly to feel modern; line-height 1.55
+     gives the text breathing room (φ-ish ratio against 14px). */
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
   font-size: 14px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   overflow: hidden;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.01em;
+  font-feature-settings: "ss01", "cv11", "cv09"; /* Inter stylistic sets — harmless on other fonts */
 }
 
 /* Form elements inherit the body font instead of falling back to the
@@ -1468,6 +1439,54 @@ textarea:focus {
   display: grid;
   grid-template-columns: 220px 1fr;
   height: 100vh;
+  transition: grid-template-columns 220ms ease;
+}
+/* When the sidebar collapses (via data-sidebar="collapsed" on <html>),
+   shrink the rail to a 60px icon-only strip. */
+html[data-sidebar="collapsed"] .app {
+  grid-template-columns: 60px 1fr;
+}
+html[data-sidebar="collapsed"] .sidebar {
+  padding: 18px 8px;
+}
+html[data-sidebar="collapsed"] .sidebar .nav-item {
+  justify-content: center;
+  padding: 10px 0;
+}
+.sidebar.collapsed .nav-icon {
+  width: 100%;
+  text-align: center;
+  font-size: 14px;
+}
+.sidebar-collapse {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.sidebar-collapse:hover {
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border-color: var(--accent);
+}
+.sidebar.collapsed .brand {
+  justify-content: center;
+  padding: 0 0 12px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.sidebar.collapsed .sidebar-collapse {
+  margin-left: 0;
 }
 
 .sidebar {
@@ -2630,6 +2649,165 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   overflow-y: auto;
   font-size: 13px;
   line-height: 1.55;
+}
+
+/* ─── Merge duplicates modal ────────────────────────────────────────── */
+.merge-modal {
+  width: 760px;
+  max-width: 92vw;
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+}
+.merge-modal-list {
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 4px;
+}
+.merge-group {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.merge-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.merge-group-head strong {
+  font-size: 14px;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Each candidate row inside a merge group — radio | name+meta | (nothing) */
+.merge-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.merge-row.keeper {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.merge-row-radio {
+  margin-top: 6px;
+  justify-self: center;
+}
+.merge-row-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.merge-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.merge-row-name-text {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.merge-row-name-input {
+  font-size: 13px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+  color: var(--text);
+  flex: 1;
+  min-width: 140px;
+}
+.merge-row-pill { font-size: 9px; padding: 1px 6px; flex-shrink: 0; }
+.merge-row-handles {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.merge-group-actions {
+  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+}
+
+/* ─── Sync menu — control-panel style ──────────────────────────────── */
+.people-sync-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 300px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  z-index: 20;
+  box-shadow: var(--shadow-md);
+}
+.people-sync-menu-head {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 6px 10px 4px;
+}
+.people-sync-row {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
+  transition: background 120ms ease;
+}
+.people-sync-row:hover { background: var(--bg-elev-2); }
+.people-sync-row:disabled { opacity: 0.5; cursor: default; }
+.people-sync-row-main { flex: 1; min-width: 0; }
+.people-sync-row-label {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text);
+}
+.people-sync-row-main small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+}
+.people-sync-row-meta {
+  text-align: right;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
 }
 
 /* === v0.3 addenda: wire new components to the refreshed CSS === */
@@ -5518,6 +5696,21 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
 .live-timer.idle {
   justify-content: space-between;
 }
+/* Slim idle variant — much quieter than the old card. */
+.live-timer.idle-slim {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+.live-timer.idle-slim .muted {
+  font-size: 13px;
+}
 .live-timer-idle-left {
   display: flex;
   flex-direction: column;
@@ -7258,23 +7451,64 @@ textarea:focus-visible,
   padding: 0 var(--s-3, 10px);
 }
 
+/* People controls — one tidy row. Search is the leading element, chip
+   strip sits flush next to it (single row, can scroll-x on small viewports
+   rather than wrap), and the right cluster (Advanced + Leaderboard) is
+   pinned. No tinted card — keep the surface flat so the cards below own
+   the visual weight. */
 .people-controls-primary {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .people-controls-search {
-  flex: 1;
-  min-width: 220px;
-  max-width: 380px;
+  flex: 0 1 280px;
+  min-width: 180px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  font-size: 13px;
+  font-family: var(--font-ui);
+}
+.people-controls-search:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg);
 }
 .people-scope-chips {
-  flex: 1;
-  justify-content: flex-start;
+  flex: 1 1 auto;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+.people-scope-chips::-webkit-scrollbar { display: none; }
+.people-scope-chips .chip {
+  flex-shrink: 0;
+  font-size: 12px;
+  height: 30px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .people-controls-advanced-toggle {
-  margin-left: auto;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+.people-controls-primary > .ghost { flex-shrink: 0; }
+
+/* Stack on small viewports — search on its own row, chips below. */
+@media (max-width: 900px) {
+  .people-controls-primary { flex-wrap: wrap; }
+  .people-controls-search { flex: 1 1 100%; }
+  .people-scope-chips { flex: 1 1 100%; overflow-x: auto; }
 }
 
 /* Advanced filter drawer — appears below the primary row when expanded.
