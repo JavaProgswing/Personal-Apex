@@ -201,6 +201,22 @@ export default function Settings() {
   );
 }
 
+// Tiny collapsible — uses <details> so screen readers handle it natively.
+// Wrap rarely-touched sections so the primary content (auth + editor) is
+// the visual headline.
+function Collapse({ title, hint, children, defaultOpen = false }) {
+  return (
+    <details className="settings-collapse" open={defaultOpen}>
+      <summary>
+        <span className="settings-collapse-title">{title}</span>
+        {hint && <small className="muted">{hint}</small>}
+        <span className="settings-collapse-chevron" aria-hidden>▸</span>
+      </summary>
+      <div className="settings-collapse-body">{children}</div>
+    </details>
+  );
+}
+
 function ScheduleTab({ all, setAll, save, setMsg }) {
   // SRM session state — primary path is browser-login (cookies live in a
   // persistent Electron partition so a one-time sign-in is enough).
@@ -469,24 +485,6 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
           </div>
         )}
 
-        <hr className="soft" />
-
-        <div style={{ marginBottom: 6, fontWeight: 600 }}>Other import paths</div>
-        <small className="hint" style={{ display: "block", marginBottom: 8 }}>
-          Use these when SRM Academia is unreachable (downtime).
-        </small>
-        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-          <button onClick={pickJson} title="Pick any timetable.json file">
-            Import timetable.json…
-          </button>
-          <button
-            onClick={scrollToEditor}
-            title="Use Ollama vision to OCR a photo or screenshot of your timetable"
-          >
-            Import from image…
-          </button>
-        </div>
-
         <hr className="soft" style={{ margin: "12px 0 10px" }} />
         <label className="row" style={{ gap: 10, alignItems: "center", cursor: "pointer" }}>
           <input
@@ -508,11 +506,29 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
         </label>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-title">Day-order anchor (fallback)</div>
-        <p className="muted" style={{ margin: "4px 0 10px" }}>
-          Used only if the academic calendar hasn't been synced. The calendar overrides are always authoritative when present.
-        </p>
+      {/* Rarely-touched fallback paths — tucked away. Most users only need
+          the SRM auth + the editor, which are above. */}
+      <Collapse
+        title="Other import paths"
+        hint="Use when SRM Academia is unreachable"
+      >
+        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+          <button onClick={pickJson} title="Pick any timetable.json file">
+            Import timetable.json…
+          </button>
+          <button
+            onClick={scrollToEditor}
+            title="Use Ollama vision to OCR a photo or screenshot of your timetable"
+          >
+            Import from image…
+          </button>
+        </div>
+      </Collapse>
+
+      <Collapse
+        title="Day-order anchor (fallback)"
+        hint="Only used if the academic calendar isn't synced"
+      >
         <div className="grid-2">
           <div className="form-row">
             <label>Anchor date</label>
@@ -533,13 +549,18 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
             </select>
           </div>
         </div>
-      </div>
+      </Collapse>
 
       <div id="schedule-editor">
         <ScheduleEditor />
       </div>
 
-      <CourseMaterialsCard />
+      <Collapse
+        title="Course materials"
+        hint="Syllabus context fed into AI prompts"
+      >
+        <CourseMaterialsCard />
+      </Collapse>
     </>
   );
 }

@@ -1632,25 +1632,16 @@ function ActivitySection({
             </div>
           )}
 
-          {/* Source toggle */}
-          <div className="source-toggle chip-row" style={{ marginBottom: 8 }}>
+          {/* Source toggle — trimmed to 3 chips. "Battery" is a subset of
+              Desktop, "All" is the default, "Mobile" only makes sense if
+              ADB sync is on. The pre-existing category-composition strip
+              ("82% / 18%") is gone — it added a third progress bar to a
+              card that already has bars on every row. */}
+          <div className="source-toggle chip-row" style={{ marginBottom: 10 }}>
             {[
               { key: "all", label: "All", title: "Every source combined" },
-              {
-                key: "desktop",
-                label: "Desktop",
-                title: "Foreground-window tracker + Windows battery report",
-              },
-              {
-                key: "mobile",
-                label: "Mobile",
-                title: "ADB digital-wellbeing",
-              },
-              {
-                key: "battery",
-                label: "Battery",
-                title: "Only rows from powercfg /batteryreport",
-              },
+              { key: "desktop", label: "Desktop", title: "Foreground-window tracker + Windows battery report" },
+              { key: "mobile", label: "Mobile", title: "ADB digital-wellbeing" },
             ].map((o) => (
               <button
                 key={o.key}
@@ -1674,32 +1665,6 @@ function ActivitySection({
               </button>
             )}
           </div>
-
-          {/* Category composition strip — productive / distraction / leisure /
-              other at a glance. Hidden when there's nothing to show. */}
-          {catBreakdown.length > 0 && appTotal > 0 && (
-            <>
-              <div className="cat-strip" title="App-time composition by category">
-                {catBreakdown.map((c) => (
-                  <div
-                    key={c.cat}
-                    className={`cat-strip-seg cat-${c.cat}`}
-                    style={{ width: c.pct + "%" }}
-                    title={`${c.cat} · ${fmtMinutes(c.minutes)} (${c.pct}%)`}
-                  />
-                ))}
-              </div>
-              <div className="cat-strip-legend">
-                {catBreakdown.slice(0, 4).map((c) => (
-                  <span key={c.cat} className="cat-strip-legend-item">
-                    <i className={`cat-dot cat-${c.cat}`} />
-                    <span className="muted">{c.cat}</span>
-                    <strong>{c.pct}%</strong>
-                  </span>
-                ))}
-              </div>
-            </>
-          )}
 
           {filteredApps.length === 0 ? (
             <div className="muted" style={{ padding: "10px 0" }}>
