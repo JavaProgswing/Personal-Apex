@@ -177,6 +177,52 @@ function runMigrations() {
   if (!has("cp_stats", "error"))
     tryExec(`ALTER TABLE cp_stats ADD COLUMN error TEXT`);
 
+  // One-shot cleanup: remove rows for Windows system processes that
+   // earlier builds were recording (LockApp, ApplicationFrameHost, etc).
+  // Gated on a setting so it only runs once per machine.
+  try {
+    const cleaned = db.prepare(
+      "SELECT value FROM settings WHERE key = 'cleanup.systemProcs.v1'",
+    ).get();
+    if (!cleaned) {
+      const pattern = "%LockApp%";
+      const patterns = [
+        "%LockApp%", "%lock_app%", "%ApplicationFrameHost%",
+        "%SearchHost%", "%SearchUI%", "%ShellExperienceHost%",
+        "%StartMenuExperienceHost%", "%TextInputHost%", "%SystemSettings%",
+      ];
+      const tx = db.transaction(() => {
+        for (const p of patterns) {
+          try { db.prepare("DELETE FROM activity_buckets WHERE app_name LIKE ?").run(p); } catch {}
+          try { db.prepare("DELETE FROM activity_sessions WHERE app LIKE ?").run(p); } catch {}
+          try { db.prepare("DELETE FROM time_entries WHERE app_name LIKE ?").run(p); } catch {}
+        }
+        db.prepare(
+          "INSERT OR REPLACE INTO settings (key, value) VALUES ('cleanup.systemProcs.v1', '1')",
+        ).run();
+      });
+      tx();
+    }
+  } catch (e) {
+    console.warn("[db] system-process cleanup skipped:", e.message);
+  }
+
+  // activity_buckets: 10-minute-window storage. One row per (date,
+  // bucket_start_min, app_name). bucket_start_min is the start of the
+  // 10-min window in minutes-since-midnight (0, 10, 20, …, 1430).
+  // The tracker writes once per bucket close; the dashboard renders a
+  // timeline of buckets, each showing which apps ran in which slice.
+  tryExec(`CREATE TABLE IF NOT EXISTS activity_buckets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    bucket_start_min INTEGER NOT NULL,
+    app_name TEXT NOT NULL,
+    category TEXT,
+    minutes INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(date, bucket_start_min, app_name)
+  )`);
+  tryExec(`CREATE INDEX IF NOT EXISTS idx_buckets_date ON activity_buckets(date)`);
+
   // Post-migration indexes: these reference columns that may have just been
   // added by the ALTERs above, so they can't live in schema.sql (which runs
   // before migrations). IF NOT EXISTS makes them idempotent.
@@ -1313,6 +1359,146 @@ function listRepos(personId) {
     topics: safeJson(r.topics, []),
   }));
 }
+
+// Search across every repo we've cached for every person — keyword
+// match against name, description, topics, language. Returns rows
+// flattened with the owner's name + handle so the UI can render a
+// "browse by topic" view without N+1 lookups.
+// ───────────────────────────────────────────────────────────────────────────
+// Activity buckets — 10-min foreground-app timeline.
+// Stores at most one row per (date, 10-min window, app). The total minutes
+// per bucket is capped at 10; per 60-min hour at 60 (the underlying
+// addBucketMinutes() clamps so a noisy tracker can't blow past clock time).
+// ───────────────────────────────────────────────────────────────────────────
+function addBucketMinutes({ date, bucketStartMin, app, category, minutes }) {
+  if (!date || bucketStartMin == null || !app) return false;
+  const mins = Math.max(0, Math.min(10, +minutes || 0));
+  if (mins === 0) return false;
+  // Sum of existing minutes in this bucket — clamp the new addition so
+  // total never exceeds 10.
+  const cur = db.prepare(
+    `SELECT COALESCE(SUM(minutes), 0) AS total
+       FROM activity_buckets WHERE date = ? AND bucket_start_min = ?`,
+  ).get(date, bucketStartMin);
+  const room = Math.max(0, 10 - (cur?.total || 0));
+  const toAdd = Math.min(mins, room);
+  if (toAdd === 0) return false;
+  db.prepare(
+    `INSERT INTO activity_buckets (date, bucket_start_min, app_name, category, minutes)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(date, bucket_start_min, app_name) DO UPDATE SET
+       minutes = MIN(10, minutes + excluded.minutes),
+       category = COALESCE(excluded.category, category)`,
+  ).run(date, bucketStartMin, app, category || null, toAdd);
+  return true;
+}
+
+function listBuckets(date, { limit = 200 } = {}) {
+  const d = date || isoDate(new Date());
+  const rows = db
+    .prepare(
+      `SELECT bucket_start_min, app_name, category, minutes
+         FROM activity_buckets
+        WHERE date = ?
+        ORDER BY bucket_start_min ASC, minutes DESC
+        LIMIT ?`,
+    )
+    .all(d, +limit || 200);
+  // Group by bucket window.
+  const map = new Map();
+  for (const r of rows) {
+    if (!map.has(r.bucket_start_min)) map.set(r.bucket_start_min, []);
+    map.get(r.bucket_start_min).push({
+      app: r.app_name, category: r.category, minutes: r.minutes,
+    });
+  }
+  return [...map.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([startMin, apps]) => ({
+      startMin,
+      endMin: startMin + 10,
+      apps,
+      totalMinutes: apps.reduce((s, a) => s + a.minutes, 0),
+    }));
+}
+
+function clearAllActivity() {
+  // Nuke every activity surface — buckets, sessions, time entries, last-
+  // scraped timestamps. Used by Settings → Data → "Clear activity history".
+  const tx = db.transaction(() => {
+    db.exec("DELETE FROM activity_buckets");
+    try { db.exec("DELETE FROM activity_sessions"); } catch {}
+    try { db.exec("DELETE FROM time_entries"); } catch {}
+  });
+  try { tx(); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; }
+}
+
+// Wipe every class + schedule override + course material. After this the
+// timetable is fully empty; the `classes.seeded` flag stays set so they
+// don't auto-recreate on next launch.
+function clearAllSchedule() {
+  const tx = db.transaction(() => {
+    try { db.exec("DELETE FROM classes"); } catch {}
+    try { db.exec("DELETE FROM class_overrides"); } catch {}
+    try { db.exec("DELETE FROM academic_calendar"); } catch {}
+    try { db.exec("DELETE FROM course_materials"); } catch {}
+    // Keep `classes.seeded` so we never re-seed defaults.
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value) VALUES ('classes.seeded', '1')",
+    ).run();
+  });
+  try { tx(); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; }
+}
+
+function searchAllRepos(query, limit = 80) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return [];
+  // Pull everything (cheap — repos table is small) then filter in JS so
+  // we can match the topics JSON properly. SQLite LIKE on JSON columns
+  // would match `"react"` but also `"react-router"`, etc., which is fine.
+  const rows = db
+    .prepare(
+      `SELECT r.*, p.name AS person_name, p.github_username AS person_handle,
+              p.avatar_url AS person_avatar
+         FROM repos r JOIN people p ON p.id = r.person_id
+        ORDER BY r.stars DESC NULLS LAST, r.pushed_at DESC NULLS LAST`,
+    )
+    .all();
+  const out = [];
+  for (const r of rows) {
+    const topics = safeJson(r.topics, []);
+    const langs = safeJson(r.languages, {});
+    const langKeys = Object.keys(langs).map((k) => k.toLowerCase());
+    const hay = [
+      String(r.name || ""),
+      String(r.description || ""),
+      String(r.language || ""),
+      topics.join(" "),
+      langKeys.join(" "),
+    ].join(" ").toLowerCase();
+    if (hay.includes(q)) {
+      out.push({
+        id: r.id,
+        person_id: r.person_id,
+        person_name: r.person_name,
+        person_handle: r.person_handle,
+        person_avatar: r.person_avatar,
+        name: r.name,
+        full_name: r.full_name,
+        description: r.description,
+        url: r.url,
+        language: r.language,
+        languages: langs,
+        topics,
+        stars: r.stars ?? 0,
+        forks: r.forks ?? 0,
+        pushed_at: r.pushed_at,
+      });
+      if (out.length >= limit) break;
+    }
+  }
+  return out;
+}
 function upsertRepo(r) {
   db.prepare(
     `INSERT INTO repos (person_id, github_id, name, full_name, description, url,
@@ -2312,6 +2498,11 @@ module.exports = {
   mergePeople,
   touchPersonScraped,
   listRepos,
+  searchAllRepos,
+  addBucketMinutes,
+  listBuckets,
+  clearAllActivity,
+  clearAllSchedule,
   upsertRepo,
   importPeople,
   getCpStats,

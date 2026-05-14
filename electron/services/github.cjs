@@ -453,8 +453,45 @@ async function fetchCommitDetail(fullName, sha) {
   }
 }
 
+// Public GitHub search — used by the "Browse by topic" view to surface
+// what the wider community has built on a given keyword/framework.
+// Accepts an optional `mode` of "topic" (matches GitHub topic exactly) or
+// "free" (full-text). Returns simplified repo rows.
+async function searchPublicRepos(query, { mode = "free", limit = 12 } = {}) {
+  const q = String(query || "").trim();
+  if (!q) return { ok: true, items: [] };
+  const apiQ = mode === "topic" ? `topic:${q}` : q;
+  const path =
+    `/search/repositories?q=${encodeURIComponent(apiQ)}` +
+    `&sort=stars&order=desc&per_page=${Math.min(50, +limit || 12)}`;
+  try {
+    const data = await gh(path);
+    if (!data || !Array.isArray(data.items)) return { ok: true, items: [] };
+    return {
+      ok: true,
+      total: data.total_count || 0,
+      items: data.items.slice(0, +limit || 12).map((r) => ({
+        id: r.id,
+        name: r.name,
+        full_name: r.full_name,
+        owner: r.owner?.login,
+        ownerAvatar: r.owner?.avatar_url,
+        description: r.description,
+        url: r.html_url,
+        language: r.language,
+        stars: r.stargazers_count,
+        forks: r.forks_count,
+        topics: r.topics || [],
+        pushed_at: r.pushed_at,
+      })),
+    };
+  } catch (err) {
+    return { ok: false, error: err.message, code: err.code };
+  }
+}
+
 module.exports = {
   fetchUser, fetchRepos, fetchLanguages, fetchReadme, fetchRecentActivity,
   fetchRepoDetail, fetchTree, fetchFileContent, fetchCommits, fetchCommitDetail,
-  syncPerson, syncAll, rateLimit,
+  syncPerson, syncAll, rateLimit, searchPublicRepos,
 };

@@ -61,53 +61,57 @@ export default function Settings() {
     reload();
   }
 
-  return (
-    <>
-      <h1 className="page-title">Settings</h1>
-      <p className="page-sub">Local-only. All keys stored in SQLite at Documents/Apex.</p>
+  // Section descriptions — shown beneath the nav rail label on hover and
+  // as a sublabel under the active section's title.
+  const SECTION_BLURB = {
+    schedule: "Timetable, classes, course materials",
+    activity: "Tracking, mobile wellbeing, idle thresholds",
+    goals: "Weekly goals, competitive-programming cadence",
+    integrations: "Ollama · Spotify · GitHub",
+    appearance: "Theme, accent, contrast, fonts",
+    notifications: "Class alerts, deadlines, streak nudges",
+    data: "Backup, restore, clear, seed",
+  };
+  const activeTab = TABS.find((t) => t.key === tab) || TABS[0];
 
-      <div
-        className="settings-tabs"
-        style={{
-          display: "flex",
-          gap: 4,
-          padding: 4,
-          marginBottom: 18,
-          background: "var(--bg-elev)",
-          border: "1px solid var(--border)",
-          borderRadius: 10,
-          overflowX: "auto",
-        }}
-      >
-        {TABS.map((t) => {
-          const active = tab === t.key;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 14px",
-                borderRadius: 8,
-                border: "none",
-                background: active ? "var(--bg)" : "transparent",
-                color: active ? "var(--text)" : "var(--text-dim)",
-                fontWeight: active ? 600 : 500,
-                fontSize: 13,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-                boxShadow: active ? "0 1px 2px rgba(0,0,0,0.15)" : "none",
-                transition: "background 120ms",
-              }}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+  return (
+    <div className="settings-layout">
+      {/* Left rail — vertical section nav. Title + each section as a row
+          with active-state tint. Stays pinned while the right pane
+          scrolls. Replaces the cramped horizontal pill bar. */}
+      <aside className="settings-rail">
+        <div className="settings-rail-head">
+          <h1 className="settings-rail-title">Settings</h1>
+          <small className="muted">Local-only · SQLite</small>
+        </div>
+        <nav className="settings-rail-nav">
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={"settings-rail-item" + (active ? " active" : "")}
+                title={SECTION_BLURB[t.key]}
+              >
+                <span className="settings-rail-label">{t.label}</span>
+                <small className="settings-rail-sub muted">
+                  {SECTION_BLURB[t.key]}
+                </small>
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
+
+      {/* Right pane — single-column content, capped at a comfortable
+          reading width (740px ≈ Fibonacci-friendly). */}
+      <main className="settings-content">
+        <div className="settings-content-head">
+          <h2 className="settings-content-title">{activeTab.label}</h2>
+          <small className="muted">{SECTION_BLURB[tab]}</small>
+        </div>
 
       {tab === "schedule" && (
         <ScheduleTab all={all} setAll={setAll} save={save} setMsg={setMsg} />
@@ -176,6 +180,13 @@ export default function Settings() {
             hint="Export and restore the SQLite database. Local-only, no cloud."
           />
           <BackupTab setMsg={setMsg} />
+
+          <SectionHeader
+            title="Danger zone"
+            hint="Bulk-clear specific data domains. Activity is the safe one to clear regularly. Schedule wipes every class — only if you want to start clean. None of these touch your tasks, goals, or notes."
+          />
+          <DangerZone setMsg={setMsg} />
+
           <SectionHeader
             title="Seed content"
             hint="Populate the app with sample tasks, classes, and habits."
@@ -183,9 +194,10 @@ export default function Settings() {
           <SeedTab setMsg={setMsg} />
         </>
       )}
+      </main>
 
       {msg && <div style={{ position: "fixed", bottom: 20, right: 20 }} className="pill teal">{msg}</div>}
-    </>
+    </div>
   );
 }
 
@@ -1633,6 +1645,115 @@ const STARTERS = {
     { kind: "interest", title: "Paper-a-week reading club",            category: "Personal", status: "idea",     progress: 0,  tags: ["learning"] },
   ],
 };
+
+// Danger zone — bulk-clear actions. Each row is a small card with an
+// explanation + a button that opens an inline confirm before firing the
+// IPC. Confirm uses a "type DELETE" pattern for the "everything" path so
+// nobody nukes their DB by misclick.
+function DangerZone({ setMsg }) {
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <DangerRow
+        label="Clear activity history"
+        sub="Wipes the 10-min buckets, recorded sessions, and time entries. Your tracker keeps running afterwards. Tasks, schedule, and goals are untouched."
+        confirmWord="clear"
+        buttonLabel="Clear activity"
+        onConfirm={async () => {
+          const r = await api.activity?.clearAll?.();
+          if (r?.ok) setMsg("Activity history cleared.");
+          else setMsg("Failed: " + (r?.error || "unknown"));
+        }}
+      />
+      <hr className="soft" />
+      <DangerRow
+        label="Clear schedule (all classes)"
+        sub="Removes every class, override, academic-calendar entry, and course material. Re-import from SRM or timetable.json afterwards. Defaults will NOT auto-seed back."
+        confirmWord="clear schedule"
+        buttonLabel="Clear schedule"
+        onConfirm={async () => {
+          const r = await api.schedule?.clearAll?.();
+          if (r?.ok) setMsg("Schedule cleared. Re-sync or import to repopulate.");
+          else setMsg("Failed: " + (r?.error || "unknown"));
+        }}
+      />
+      <hr className="soft" />
+      <DangerRow
+        label="Clear everything (activity + schedule)"
+        sub="Both of the above in one shot. Tasks, notes, goals, people, repos, CP stats, integrations are kept."
+        confirmWord="DELETE EVERYTHING"
+        buttonLabel="Clear everything"
+        destructive
+        onConfirm={async () => {
+          const a = await api.activity?.clearAll?.();
+          const b = await api.schedule?.clearAll?.();
+          if (a?.ok && b?.ok) setMsg("Activity + schedule cleared.");
+          else setMsg("Partial clear: activity=" + (a?.ok ? "ok" : "fail") + ", schedule=" + (b?.ok ? "ok" : "fail"));
+        }}
+      />
+    </div>
+  );
+}
+
+function DangerRow({ label, sub, confirmWord, buttonLabel, onConfirm, destructive }) {
+  const [stage, setStage] = useState("idle"); // idle | confirming | running
+  const [input, setInput] = useState("");
+  const matches = input.trim().toLowerCase() === confirmWord.toLowerCase();
+  return (
+    <div className="row between" style={{ gap: 12, alignItems: "flex-start", padding: "10px 0" }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <strong>{label}</strong>
+        <small className="muted" style={{ display: "block", marginTop: 4 }}>
+          {sub}
+        </small>
+        {stage === "confirming" && (
+          <div className="row" style={{ gap: 6, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <small className="muted">
+              Type <code>{confirmWord}</code> to confirm:
+            </small>
+            <input
+              autoFocus
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              style={{ flex: 1, minWidth: 160, maxWidth: 320, height: 30 }}
+              placeholder={confirmWord}
+            />
+            <button
+              type="button"
+              className={destructive ? "primary" : "primary"}
+              disabled={!matches || stage === "running"}
+              onClick={async () => {
+                setStage("running");
+                try { await onConfirm(); } finally {
+                  setStage("idle"); setInput("");
+                }
+              }}
+              style={destructive ? { background: "var(--distraction)", color: "#fff" } : undefined}
+            >
+              {stage === "running" ? "Clearing…" : "Confirm"}
+            </button>
+            <button
+              type="button"
+              className="ghost xsmall"
+              onClick={() => { setStage("idle"); setInput(""); }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
+      {stage === "idle" && (
+        <button
+          type="button"
+          className={destructive ? "ghost" : "ghost"}
+          onClick={() => setStage("confirming")}
+          style={destructive ? { borderColor: "var(--distraction)", color: "var(--distraction)" } : undefined}
+        >
+          {buttonLabel}
+        </button>
+      )}
+    </div>
+  );
+}
 
 function BackupTab({ setMsg }) {
   const [dbInfo, setDbInfo] = useState(null);

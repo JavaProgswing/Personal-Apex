@@ -75,10 +75,9 @@ export default function NowPlayingChip() {
 
   if (!status?.connected) return null;
   if (!now?.item) {
-    // Connected but nothing playing — render a small idle chip.
     return (
       <div className="now-playing-chip idle" title="Spotify connected — nothing playing">
-        <span aria-hidden>♪</span>
+        <span className="np-vinyl idle" aria-hidden />
         <span className="muted">silence</span>
       </div>
     );
@@ -109,11 +108,20 @@ export default function NowPlayingChip() {
         onClick={() => setOpen((v) => !v)}
         title={`${it.name} · ${it.artists}`}
       >
-        {it.albumArt ? (
-          <img className="np-art" src={it.albumArt} alt="" />
-        ) : (
-          <span className="np-icon" aria-hidden>♪</span>
-        )}
+        {/* Album art rotates while playing — a vinyl-record nod that
+            makes the chip feel alive instead of static. CSS handles the
+            spin via `data-playing` so we don't reapply animation classes
+            and reset the transform on every poll. */}
+        <span
+          className="np-vinyl-wrap"
+          data-playing={now.playing ? "1" : "0"}
+        >
+          {it.albumArt ? (
+            <img className="np-art np-vinyl" src={it.albumArt} alt="" />
+          ) : (
+            <span className="np-vinyl np-vinyl-fallback" aria-hidden>♪</span>
+          )}
+        </span>
         <div className="np-meta">
           <span className="np-track">{it.name}</span>
           <span className="np-artist muted">{it.artists}</span>

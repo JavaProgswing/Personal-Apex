@@ -326,6 +326,18 @@ export default function People() {
         onLeaderboard={() => setShowLeaderboard(true)}
       />
 
+      {/* Browse repos by topic — sits at the top because it's the most
+          actionable section for "what should I build next / who's working
+          on what". Pulls from local cache + falls back to a GitHub public
+          search for community guidance. */}
+      <section className="people-section">
+        <div className="people-section-head">
+          <h3>Browse repos</h3>
+          <span className="count-pill" title="Search across cached repos + public GitHub">by topic / framework</span>
+        </div>
+        <RepoTopicSearch onOpenRepo={(r, person) => setOpenRepo({ repo: r, person })} />
+      </section>
+
       {/* Recent activity feed — its own section */}
       <section className="people-section">
         <div className="people-section-head">
@@ -1305,6 +1317,189 @@ function HandleEdit({ person, onSaved }) {
 // lets you confirm each merge with a single click. The "primary" (most-
 // complete row) becomes the keeper; the rest are merged into it. Repos +
 // CP stats + submissions are reassigned to the keeper inside one DB tx.
+// Topic-driven repo browser. Two parallel result rails:
+//   1. From your people — repos cached locally for anyone you've added.
+//   2. From the wider community — top stars on github.com for the same query.
+// Quick chips below the search seed common topics. Click any card → opens
+// the existing RepoDetailModal (Overview & Chat / Walkthrough / Compare).
+const REPO_TOPIC_QUICK = [
+  "react", "next.js", "tauri", "electron", "rust",
+  "blockchain", "linear regression", "transformer",
+  "computer vision", "rag", "fastapi", "redis", "graph",
+];
+function RepoTopicSearch({ onOpenRepo }) {
+  const [q, setQ] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [localRows, setLocalRows] = useState([]);
+  const [publicRows, setPublicRows] = useState([]);
+  const [loadingLocal, setLoadingLocal] = useState(false);
+  const [loadingPublic, setLoadingPublic] = useState(false);
+  const [err, setErr] = useState(null);
+
+  // Debounce typing → search.
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  useEffect(() => {
+    if (!debounced) {
+      setLocalRows([]); setPublicRows([]); return;
+    }
+    let cancelled = false;
+    setLoadingLocal(true); setLoadingPublic(true); setErr(null);
+    api.repo.searchLocal(debounced, 60).then((r) => {
+      if (!cancelled) setLocalRows(Array.isArray(r) ? r : []);
+    }).finally(() => !cancelled && setLoadingLocal(false));
+    api.repo.searchPublic(debounced, { mode: "free", limit: 12 })
+      .then((r) => {
+        if (cancelled) return;
+        if (r?.ok) setPublicRows(r.items || []);
+        else setErr(r?.error || "GitHub search failed");
+      })
+      .finally(() => !cancelled && setLoadingPublic(false));
+    return () => { cancelled = true; };
+  }, [debounced]);
+
+  function openLocal(r) {
+    onOpenRepo?.(
+      {
+        id: r.id, name: r.name, full_name: r.full_name,
+        description: r.description, url: r.url,
+        language: r.language, languages: r.languages, topics: r.topics,
+        stars: r.stars, forks: r.forks, pushed_at: r.pushed_at,
+        person_id: r.person_id,
+      },
+      {
+        id: r.person_id, name: r.person_name,
+        github_username: r.person_handle, avatar_url: r.person_avatar,
+      },
+    );
+  }
+
+  return (
+    <div className="repo-topic-search">
+      <div className="repo-topic-search-bar">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search a topic, framework, idea… (e.g. linear regression, blockchain, rag)"
+          className="repo-topic-search-input"
+        />
+        {q && (
+          <button className="ghost xsmall" onClick={() => setQ("")} title="Clear">✕</button>
+        )}
+      </div>
+
+      {!debounced && (
+        <div className="repo-topic-quick">
+          <small className="muted">Try:</small>
+          {REPO_TOPIC_QUICK.map((t) => (
+            <button
+              key={t}
+              type="button"
+              className="chip"
+              onClick={() => setQ(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {debounced && (
+        <div className="repo-topic-results">
+          {/* From your people */}
+          <div className="repo-topic-col">
+            <div className="repo-topic-col-head">
+              <strong>From your people</strong>
+              <small className="muted">
+                {loadingLocal ? "…" : `${localRows.length} match${localRows.length === 1 ? "" : "es"}`}
+              </small>
+            </div>
+            {loadingLocal && (
+              <div className="spinner-row"><span className="spinner" aria-hidden /><span>Searching cache…</span></div>
+            )}
+            {!loadingLocal && localRows.length === 0 && (
+              <div className="muted" style={{ padding: 12, fontSize: 12 }}>
+                Nobody in your list has a repo matching this yet.
+              </div>
+            )}
+            {localRows.slice(0, 12).map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                className="repo-topic-card"
+                onClick={() => openLocal(r)}
+                title={r.full_name}
+              >
+                <div className="row between">
+                  <strong>{r.name}</strong>
+                  <small className="muted">★ {r.stars || 0}</small>
+                </div>
+                <small className="muted repo-topic-card-desc">
+                  {r.description || "(no description)"}
+                </small>
+                <div className="row" style={{ gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+                  <span className="pill teal">@{r.person_handle || r.person_name}</span>
+                  {r.language && <span className="pill gray">{r.language}</span>}
+                  {(r.topics || []).slice(0, 3).map((t) => (
+                    <span key={t} className="pill" style={{ fontSize: 10 }}>{t}</span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* From the wider community */}
+          <div className="repo-topic-col">
+            <div className="repo-topic-col-head">
+              <strong>From GitHub · public</strong>
+              <small className="muted">
+                {loadingPublic ? "…" : `top ${publicRows.length}`}
+              </small>
+            </div>
+            {loadingPublic && (
+              <div className="spinner-row"><span className="spinner" aria-hidden /><span>Searching GitHub…</span></div>
+            )}
+            {err && <div className="error" style={{ fontSize: 12 }}>{err}</div>}
+            {!loadingPublic && publicRows.length === 0 && !err && (
+              <div className="muted" style={{ padding: 12, fontSize: 12 }}>
+                No public results.
+              </div>
+            )}
+            {publicRows.map((r) => (
+              <a
+                key={r.id}
+                href={r.url}
+                target="_blank"
+                rel="noreferrer"
+                className="repo-topic-card"
+                title={r.full_name}
+              >
+                <div className="row between">
+                  <strong>{r.name}</strong>
+                  <small className="muted">★ {r.stars || 0}</small>
+                </div>
+                <small className="muted repo-topic-card-desc">
+                  {r.description || "(no description)"}
+                </small>
+                <div className="row" style={{ gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+                  <span className="pill gray">{r.owner}</span>
+                  {r.language && <span className="pill" style={{ fontSize: 10 }}>{r.language}</span>}
+                  {(r.topics || []).slice(0, 3).map((t) => (
+                    <span key={t} className="pill" style={{ fontSize: 10 }}>{t}</span>
+                  ))}
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MergeDuplicatesModal({ onClose, onMerged }) {
   const [data, setData] = useState({ groups: [], placeholders: [] });
   const [loading, setLoading] = useState(true);

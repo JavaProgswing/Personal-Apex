@@ -289,6 +289,18 @@ function finalisePresenceSession(s, now) {
   } catch { /* non-fatal */ }
 }
 
+// Windows system processes that take foreground when the user isn't
+// actually using their computer. We skip these entirely so the timeline
+// doesn't fill with cryptic "LockApp" / "ApplicationFrameHost" rows when
+// the screen is locked or transitioning. Match is case-insensitive on
+// either the full exe or just the basename (no extension).
+const SYSTEM_PROCESS_RX = /^(lockapp|lock\s?app|applicationframehost|searchhost|searchui|shellexperiencehost|startmenuexperiencehost|wfsforeground|csrss|smss|wininit|winlogon|dwm|fontdrvhost|systemsettings|textinputhost|taskmgr-bridge)\.?(exe)?$/i;
+function isSystemProcess(exe) {
+  if (!exe) return true;
+  const base = String(exe).split(/[\\/]/).pop().toLowerCase();
+  return SYSTEM_PROCESS_RX.test(base);
+}
+
 async function tick() {
   const now = Date.now();
   // Run the presence tracker in parallel — it manages its own state and
@@ -297,6 +309,11 @@ async function tick() {
   tickPresence().catch(() => {});
   const fg = await getForegroundWindow();
   if (!fg || !fg.exe) return rollover(now); // no foreground window → rollover current session
+
+  // Skip Windows system processes — LockApp (lock screen), Shell
+  // experience hosts, search bars taking focus, etc. These were
+  // appearing as mysterious "lock app" rows in the activity log.
+  if (isSystemProcess(fg.exe)) return rollover(now);
 
   const app = fg.exe;
   const title = fg.title || '';
@@ -329,6 +346,27 @@ async function tick() {
           ended_at: new Date(now).toISOString(),
           minutes: mins,
         });
+      } catch { /* non-fatal */ }
+    }
+
+    // 10-minute bucket write — adds the elapsed minutes since the last
+    // tick to whichever 10-min window we're currently in. addBucketMinutes
+    // clamps the total per bucket at 10, so noisy ticks can't blow past
+    // wall-clock time. This drives the new dashboard timeline.
+    const lastTick = currentSession._lastBucketWriteAt || currentSession.startedAt;
+    const deltaMin = Math.max(0, Math.round((now - lastTick) / 60000));
+    if (deltaMin >= 1) {
+      try {
+        const d = new Date(now);
+        const bucketStartMin = Math.floor((d.getHours() * 60 + d.getMinutes()) / 10) * 10;
+        db.addBucketMinutes({
+          date: toIsoDate(d),
+          bucketStartMin,
+          app: currentSession.app,
+          category: currentSession.category,
+          minutes: deltaMin,
+        });
+        currentSession._lastBucketWriteAt = now;
       } catch { /* non-fatal */ }
     }
 

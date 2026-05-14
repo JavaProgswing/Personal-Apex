@@ -2754,6 +2754,291 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   gap: 6px;
 }
 
+/* ─── Settings — vertical rail + single-column content ───────────── */
+.settings-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 28px;
+  align-items: flex-start;
+  min-height: calc(100vh - 100px);
+}
+@media (max-width: 900px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.settings-rail {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-top: 4px;
+}
+.settings-rail-head .settings-rail-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 4px 0;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  /* Disable the global page-title gradient — this is a sub-title now. */
+  background: none;
+  -webkit-text-fill-color: var(--text);
+  color: var(--text);
+}
+.settings-rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-rail-item {
+  all: unset;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.settings-rail-item:hover { background: var(--bg-elev); }
+.settings-rail-item.active {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+.settings-rail-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.settings-rail-item.active .settings-rail-label { color: var(--accent); }
+.settings-rail-sub {
+  font-size: 11px;
+  line-height: 1.35;
+  display: block;
+}
+
+.settings-content {
+  max-width: 740px;
+}
+.settings-content-head {
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-content-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px 0;
+  color: var(--text);
+}
+
+/* ─── Activity hero — big-number headline + actions ─────────────── */
+.activity-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 4px 0;
+}
+.activity-hero-num {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.activity-hero-value {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.activity-hero-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* ─── Bucket timeline (10-min app slices on the dashboard) ────────── */
+.bucket-timeline {
+  margin: 14px 0;
+}
+.bucket-timeline-empty {
+  margin: 14px 0;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  background: var(--bg-elev);
+  font-size: 13px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.bucket-timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.bucket-row {
+  display: grid;
+  grid-template-columns: 76px 1fr 40px;
+  gap: 10px;
+  align-items: center;
+  padding: 3px 0;
+}
+.bucket-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.bucket-time code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  background: transparent;
+  padding: 0;
+}
+.bucket-time small { color: var(--text-faint); }
+.bucket-bar {
+  display: flex;
+  height: 18px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--bg-elev-2);
+}
+.bucket-seg {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  font-size: 10px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  border-right: 1px solid var(--bg);
+  transition: filter 120ms ease;
+}
+.bucket-seg:hover { filter: brightness(1.15); }
+.bucket-seg:last-child { border-right: none; }
+.bucket-seg-empty {
+  background: transparent;
+}
+.bucket-seg-label {
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+/* Theme-tokenised category fills — bucket bars match every other
+   activity surface (trail, top apps, stat pills). */
+.bucket-seg.cat-productive  { background: var(--productive); color: var(--bg); font-weight: 600; }
+.bucket-seg.cat-distraction { background: var(--distraction); color: var(--bg); font-weight: 600; }
+.bucket-seg.cat-leisure     { background: var(--leisure); color: var(--bg); font-weight: 600; }
+.bucket-seg.cat-rest        { background: var(--rest); color: var(--bg); font-weight: 600; }
+.bucket-seg.cat-neutral     { background: var(--neutral); color: var(--bg); }
+.bucket-seg.cat-mobile      { background: var(--mobile); color: var(--bg); font-weight: 600; }
+.bucket-seg.cat-other       { background: var(--text-faint); color: var(--bg); }
+.bucket-total {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* ─── Repo topic search ────────────────────────────────────────────── */
+.repo-topic-search {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.repo-topic-search-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.repo-topic-search-input {
+  flex: 1;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 14px;
+  font-family: var(--font-ui);
+}
+.repo-topic-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg);
+}
+.repo-topic-quick {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 4px 0 0;
+}
+.repo-topic-results {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 900px) {
+  .repo-topic-results { grid-template-columns: 1fr; }
+}
+.repo-topic-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.repo-topic-col-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  padding: 0 4px;
+}
+.repo-topic-card {
+  all: unset;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 140ms ease, transform 140ms ease;
+  text-decoration: none;
+  color: inherit;
+}
+.repo-topic-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.repo-topic-card-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 /* ─── Sync menu — control-panel style ──────────────────────────────── */
 .people-sync-menu {
   position: absolute;
@@ -6538,6 +6823,57 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
   object-fit: cover;
 }
 .np-icon { font-size: 14px; line-height: 1; }
+
+/* Vinyl-style rotation for the album art when a song is playing. The
+   wrap holds the rotation transform so the underlying <img> stays
+   normalised — we don't restart the animation on every poll. The pause
+   state keeps the angle frozen (animation-play-state) for that real
+   "vinyl on the platter" feel. */
+.np-vinyl-wrap {
+  display: inline-flex;
+  position: relative;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+/* Spin only when playing. Paused state is fully static — no animation
+   running in the background, no transform pinned, just a still disc. */
+.np-vinyl-wrap[data-playing="1"] .np-vinyl {
+  animation: np-spin 4.4s linear infinite;
+}
+.np-vinyl {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  /* Subtle vinyl groove via dual radial gradients on the centre, plus a
+     1px ring so the disc reads as a record, not just a circle. */
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 4px rgba(255, 255, 255, 0.04),
+    inset 0 0 0 5px rgba(0, 0, 0, 0.35);
+}
+.np-vinyl-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 50%, var(--bg-elev-2) 22%, var(--bg) 24%, var(--bg-elev-2) 26%, var(--bg) 100%);
+  color: var(--accent);
+  font-size: 12px;
+}
+.np-vinyl.idle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 50%, var(--bg-elev-2) 30%, var(--bg) 32%, var(--bg-elev-2) 34%, var(--bg) 100%);
+  color: var(--text-faint);
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+}
+@keyframes np-spin {
+  to { transform: rotate(360deg); }
+}
 .np-meta {
   display: flex;
   flex-direction: column;

@@ -1410,31 +1410,17 @@ function ActivitySection({
 
   return (
     <div className="card activity-section" style={{ marginBottom: 16 }}>
-      {/* Header */}
-      <div className="row between" style={{ alignItems: "flex-start" }}>
-        <div>
-          <div className="card-title" style={{ margin: 0 }}>
-            Activity{" "}
-            <small className="muted" style={{ fontWeight: 400 }}>
-              · desktop + mobile
-            </small>
-          </div>
+      {/* Hero — today's total as the headline number, status + sync menu
+          pinned right. Drops the redundant "Activity · desktop + mobile ·
+          Today, Thu May 14" line clutter. */}
+      <div className="activity-hero">
+        <div className="activity-hero-num">
+          <div className="activity-hero-value">{fmtMinutes(todayTotalMin) || "0m"}</div>
           <small className="muted">
-            {isToday
-              ? `Today · ${new Date().toLocaleDateString(undefined, {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                })}`
-              : `Viewing ${topAppsDate}`}
+            tracked today · {isToday ? "live" : `viewing ${topAppsDate}`}
           </small>
         </div>
-        {/* Compact action cluster — status pill + a single "Sync ▾" menu
-            instead of three separate sync buttons in the header. */}
-        <div
-          className="row"
-          style={{ gap: 8, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}
-        >
+        <div className="activity-hero-actions">
           {trackerStatus?.running ? (
             <span className="pill teal" title="Desktop tracker is running">
               <span className="pulse" style={{ marginRight: 6 }} />
@@ -1500,6 +1486,11 @@ function ActivitySection({
             : "recently"}
         </div>
       )}
+
+      {/* 10-minute bucket timeline — fine-grained "where did time go" for
+          today. Each row is one 10-min window with the apps that ran in
+          it, coloured by category from the active theme. */}
+      <BucketTimeline date={topAppsDate || new Date().toISOString().slice(0, 10)} />
 
       {/* Main two-pane: trail (left) + top apps (right) */}
       <div className="activity-panes">
@@ -1775,6 +1766,114 @@ function ActivitySection({
 // (My CP, Copy brief, Settings). Keeps the header header clean.
 // Tiny menu for the Activity header — replaces 3 inline buttons with one
 // "Sync ▾" trigger. Keeps the activity card header from sprawling.
+// 10-minute bucket timeline. Each row is one 10-min slice; the bar
+// shows the apps that ran during that window, sized by minutes-in-bucket
+// and coloured by category token from the active theme. Refreshes every
+// 30s while mounted so it animates as you work.
+function BucketTimeline({ date }) {
+  const [buckets, setBuckets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+
+  async function load() {
+    try {
+      const r = await api.activity?.buckets?.(date);
+      setBuckets(Array.isArray(r) ? r : []);
+    } catch { /* ignore */ } finally { setLoading(false); }
+  }
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 30_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date]);
+
+  function fmtTime(min) {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+
+  if (loading) {
+    return (
+      <div className="bucket-timeline-empty muted">
+        <span className="spinner" aria-hidden /> Loading timeline…
+      </div>
+    );
+  }
+  if (!buckets.length) {
+    return null; // hide entirely when nothing tracked — was dead space
+  }
+
+  // Default: show only the most-recent 14 buckets (~2.3 hours). Expand
+  // for the full day. Keeps the dashboard from sprawling.
+  const visible = expanded ? buckets : buckets.slice(-14);
+  const hiddenCount = buckets.length - visible.length;
+
+  return (
+    <div className="bucket-timeline">
+      <div className="row between" style={{ marginBottom: 8, alignItems: "baseline" }}>
+        <div className="section-label" style={{ marginTop: 0 }}>
+          Minute-by-minute
+        </div>
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            className="ghost xsmall"
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? "Show recent only" : `Show all (${buckets.length})`}
+          </button>
+        )}
+      </div>
+      <div className="bucket-timeline-list">
+        {visible.map((b) => {
+          // Sort apps by minutes desc within each bucket for visual weight.
+          const sorted = [...b.apps].sort((a, z) => z.minutes - a.minutes);
+          return (
+            <div key={b.startMin} className="bucket-row">
+              <div className="bucket-time">
+                <code>{fmtTime(b.startMin)}</code>
+                <small className="muted">{fmtTime(b.endMin)}</small>
+              </div>
+              <div className="bucket-bar">
+                {sorted.map((a, i) => {
+                  const cat = (a.category || "other").toLowerCase();
+                  // A 1-min slice is too small to render any label — just
+                  // show the colour band so the eye picks up the pattern.
+                  const showLabel = a.minutes >= 2;
+                  return (
+                    <span
+                      key={i}
+                      className={`bucket-seg cat-${cat}`}
+                      style={{ flex: a.minutes }}
+                      title={`${prettyAppName(a.app)} · ${a.minutes} min · ${cat}`}
+                    >
+                      {showLabel && (
+                        <span className="bucket-seg-label">
+                          {prettyAppName(a.app)}
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
+                {b.totalMinutes < 10 && (
+                  <span
+                    className="bucket-seg bucket-seg-empty"
+                    style={{ flex: 10 - b.totalMinutes }}
+                    title={`${10 - b.totalMinutes} min untracked`}
+                  />
+                )}
+              </div>
+              <small className="muted bucket-total">{b.totalMinutes}m</small>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ActivitySyncMenu({ onSyncMobile, onSyncBattery }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);

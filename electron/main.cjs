@@ -958,6 +958,9 @@ ipcMain.handle("activity:addManual", (_e, p = {}) => {
 ipcMain.handle("activity:list", (_e, opts) => activity.listEntries(opts));
 ipcMain.handle("activity:delete", (_e, id) => activity.deleteEntry(id));
 ipcMain.handle("activity:todayTotals", () => activity.todayTotals());
+ipcMain.handle("activity:buckets", (_e, date) => db.listBuckets(date));
+ipcMain.handle("activity:clearAll", () => db.clearAllActivity());
+ipcMain.handle("schedule:clearAll", () => db.clearAllSchedule());
 ipcMain.handle("activity:weekTotals", () => activity.weekTotals());
 ipcMain.handle("activity:recentPushes", (_e, opts) =>
   activity.recentPushes(opts),
@@ -1159,6 +1162,14 @@ ipcMain.handle("repo:summarize", async (_e, { repoId, ownRepos, model }) => {
   }
 });
 ipcMain.handle("repo:listByPerson", (_e, personId) => db.listRepos(personId));
+// Topic search across cached repos (local + person-attributed).
+ipcMain.handle("repo:searchLocal", (_e, q, limit) =>
+  db.searchAllRepos(q, limit || 80),
+);
+// Public GitHub search — "what has the community built for this topic".
+ipcMain.handle("repo:searchPublic", (_e, q, opts) =>
+  github.searchPublicRepos(q, opts || {}),
+);
 
 // File tree + content for the interactive walkthrough panel. Cheap calls
 // — github.fetchTree caches via the underlying ETag, so repeat hits are
