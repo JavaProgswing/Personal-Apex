@@ -65,16 +65,32 @@ async function ensureRunning({ timeoutMs = 15000 } = {}) {
   let err = null;
 
   if (process.platform === 'win32') {
-    // Prefer the headless `ollama.exe serve` daemon — it does NOT pop up
-    // the tray/launcher UI. The bare ollama.exe (no args) is the GUI
-    // launcher, which steals focus and adds a window the user didn't ask
-    // for. Try `serve` against every known install path FIRST, then fall
-    // back to PATH-resolved `ollama serve`, and only as a last resort
-    // invoke the GUI launcher.
-    for (const p of _expandWindowsPaths()) {
+    // The Windows install ships TWO executables in the same folder:
+    //   - `ollama app.exe` / `Ollama.exe`  → the GUI launcher / tray app
+    //   - `ollama.exe`                      → the actual CLI daemon
+    // Only the second one understands `serve`. Earlier code looped
+    // through _expandWindowsPaths in declaration order and broke on the
+    // first existing path, which happened to be the GUI launcher — so
+    // `spawn(launcher, ['serve'])` either opened the tray UI or did
+    // nothing, and the daemon never came up.
+    //
+    // Fix: split the paths into "cli-like" (basename === ollama.exe)
+    // and "gui-like", try the CLI ones first with `serve`, then PATH-
+    // resolved `ollama.exe serve`, and finally fall back to launching
+    // the GUI app *without* args (which starts its own embedded daemon).
+    const all = _expandWindowsPaths();
+    const cliPaths = all.filter((p) => {
+      const base = p.split(/[\\/]/).pop().toLowerCase();
+      return base === 'ollama.exe';
+    });
+    const guiPaths = all.filter((p) => {
+      const base = p.split(/[\\/]/).pop().toLowerCase();
+      return base !== 'ollama.exe' && !p.toLowerCase().endsWith('.lnk');
+    });
+
+    for (const p of cliPaths) {
       tried.push(p + ' serve');
       if (!fs.existsSync(p)) continue;
-      if (p.toLowerCase().endsWith('.lnk')) continue; // .lnk can't take args reliably
       try {
         spawn(p, ['serve'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
         launched = true;
@@ -87,6 +103,20 @@ async function ensureRunning({ timeoutMs = 15000 } = {}) {
         spawn('ollama.exe', ['serve'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
         launched = true;
       } catch (e) { err = e; }
+    }
+    // Last resort: the GUI launcher. It starts its own daemon as a side
+    // effect of opening. Yes, the tray UI may briefly appear — that's
+    // the price of having Ollama working at all on this machine.
+    if (!launched) {
+      for (const p of guiPaths) {
+        tried.push(p + ' (gui fallback)');
+        if (!fs.existsSync(p)) continue;
+        try {
+          spawn(p, [], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+          launched = true;
+          break;
+        } catch (e) { err = e; }
+      }
     }
   } else {
     tried.push('ollama serve (PATH)');

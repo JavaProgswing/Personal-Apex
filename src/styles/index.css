@@ -1407,11 +1407,14 @@ button:active {
 button.primary {
   background: var(--accent);
   border-color: transparent;
-  color: #0a0a0b;
+  /* Use a derived "ink" colour so the text contrasts the accent regardless
+     of palette. color-mix lets dark accents get white ink + light accents
+     (Vercel's #fff) get dark ink automatically. */
+  color: var(--bg);
   font-weight: 600;
 }
 button.primary:hover {
-  background: #9a9aff;
+  background: var(--accent-strong);
 }
 button.ghost {
   border-color: transparent;
@@ -1647,21 +1650,24 @@ h1.page-title {
   background: var(--bg-elev-2);
   color: var(--text);
 }
+/* Week chips now resolve to theme tokens so they harmonise with the
+   active palette. LC/CP → leisure (warm-ish). Social → rest (cool). Rest
+   → neutral. Project → accent. Today gets an accent outline. */
 .week-chip.LC {
-  background: #1b1b3a;
-  color: #c5c5ff;
+  background: var(--leisure-soft);
+  color: var(--leisure);
 }
 .week-chip.Social {
-  background: #143a36;
-  color: #9fe9e1;
+  background: var(--rest-soft);
+  color: var(--rest);
 }
 .week-chip.Rest {
-  background: #1d1d1d;
-  color: #8a8a90;
+  background: var(--neutral-soft);
+  color: var(--neutral);
 }
 .week-chip.Project {
-  background: #3a2b14;
-  color: #ffcc96;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .week-chip.today {
   outline: 1px solid var(--accent);
@@ -1681,7 +1687,7 @@ h1.page-title {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #2a2a2f;
+  background: var(--bg-elev-2);
 }
 .streak .dot.on {
   background: var(--accent);
@@ -1695,7 +1701,10 @@ h1.page-title {
   font-size: 12px;
 }
 
-/* Pills */
+/* Pills — all variants resolve through theme tokens so they recolour
+   correctly across every palette. The fixed hex pairs (#3a2e14 / #ffc48a)
+   etc. were the single biggest source of "themes look off across the
+   app" since pills are sprinkled everywhere. */
 .pill {
   display: inline-flex;
   align-items: center;
@@ -1704,23 +1713,24 @@ h1.page-title {
   border-radius: 999px;
   font-size: 11px;
   background: var(--accent-soft);
-  color: #c5c5ff;
+  color: var(--accent);
+  font-weight: 600;
 }
 .pill.teal {
   background: var(--ok-soft);
-  color: #9fe9e1;
+  color: var(--ok);
 }
 .pill.amber {
-  background: #3a2e14;
-  color: #ffc48a;
+  background: var(--leisure-soft);
+  color: var(--leisure);
 }
 .pill.rose {
-  background: #3a1a1a;
-  color: #ff9c9c;
+  background: var(--distraction-soft);
+  color: var(--distraction);
 }
 .pill.gray {
-  background: #22222a;
-  color: #a0a0ac;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
 }
 
 /* Checkbox list */
@@ -2172,28 +2182,30 @@ hr.soft {
 }
 
 button.primary {
-  /* Solid amber — no gradient. Cleaner, more "designed" feel. */
+  /* Solid accent — no gradient. Cleaner, more "designed" feel.
+     Ink colour resolves to --bg so it stays readable on any theme. */
   background: var(--accent);
-  color: #14110f;
+  color: var(--bg);
   border: none;
   font-weight: 600;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
 }
 button.primary:hover { filter: brightness(1.08); }
 button.primary:disabled {
-  background: #2a2a33;
-  color: #5c5c66;
+  background: var(--bg-elev-2);
+  color: var(--text-faint);
   box-shadow: none;
   cursor: not-allowed;
   filter: none;
 }
 button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 
-/* Pills — risk-score indicators for compact burnout card */
-.pill.risk-low    { background: rgba(78, 205, 196, 0.14); color: #79e2da; border-color: transparent; }
-.pill.risk-mid    { background: rgba(255, 166, 87, 0.14); color: #ffc087; border-color: transparent; }
-.pill.risk-high   { background: rgba(239, 107, 90, 0.15); color: #ff8e82; border-color: transparent; }
-.pill.gradient    { background: var(--grad-accent); color: #0a0a0b; border-color: transparent; font-weight: 600; }
+/* Pills — risk-score indicators. All resolve through theme tokens so
+   they pick up the active palette's productive/leisure/distraction hues. */
+.pill.risk-low    { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.pill.risk-mid    { background: var(--leisure-soft); color: var(--leisure); border-color: transparent; }
+.pill.risk-high   { background: var(--distraction-soft); color: var(--distraction); border-color: transparent; }
+.pill.gradient    { background: var(--grad-accent); color: var(--bg); border-color: transparent; font-weight: 600; }
 
 /* Grid helpers */
 .grid-3 { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -2213,7 +2225,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   cursor: pointer;
   transition: border-color 120ms, transform 120ms;
 }
-.repo-card:hover { border-color: #3a3a45; transform: translateY(-1px); }
+.repo-card:hover { border-color: var(--accent-soft); transform: translateY(-1px); }
 .repo-card .name { font-weight: 600; }
 .repo-card .desc { color: var(--text-dim); font-size: 12.5px; margin-top: 2px; line-height: 1.35; }
 .repo-card .meta { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
@@ -2231,7 +2243,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   cursor: pointer;
   transition: border-color 120ms;
 }
-.burnout-chip:hover { border-color: #3a3a45; }
+.burnout-chip:hover { border-color: var(--accent-soft); }
 .burnout-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
 .burnout-chip .dot.low { background: var(--ok); }
 .burnout-chip .dot.mid { background: var(--warn); }
@@ -2300,8 +2312,8 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   cursor: pointer;
   transition: all 120ms;
 }
-.chip:hover { border-color: #3a3a45; }
-.chip.active { background: var(--grad-accent); color: #0a0a0b; border-color: transparent; font-weight: 600; }
+.chip:hover { border-color: var(--accent-soft); }
+.chip.active { background: var(--grad-accent); color: var(--bg); border-color: transparent; font-weight: 600; }
 
 /* Language bar (repo detail tech stack) */
 .lang-bar { display: flex; height: 6px; border-radius: 999px; overflow: hidden; margin: 6px 0; }
@@ -2836,6 +2848,271 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   color: var(--text);
 }
 
+/* ─── Settings scope — soften every card chrome inside a tab so they
+   read as grouped form-rows rather than 8 standalone "cards" stacked
+   on top of each other. Each sub-tab keeps using <div className="card">
+   in JSX, but the visual weight is dialled way down here.
+   Border-top only appears between adjacent cards (not after a section
+   header), so the visual rhythm reads as a single column with thin
+   separators between groups. ───────────────────────────────────────── */
+.settings-content .card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 18px 0;
+  margin: 0;
+}
+.settings-content .card + .card {
+  border-top: 1px solid var(--border);
+  padding-top: 22px;
+}
+.settings-content .card::before { display: none; }
+.settings-content .card .card-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  color: var(--text-faint);
+  margin: 0 0 12px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-content .card .card-title::before {
+  /* Drop the accent leading bar inside settings — it made every section
+     look like a major heading. The uppercase tracker is the visual cue. */
+  display: none;
+}
+/* Section headers (SectionHeader component) — match the same style */
+.settings-content > div > .section-label,
+.settings-content > div > div[style*="letterSpacing: 1.4"] {
+  margin-top: 22px;
+}
+/* Form rows get more breathing room in the scoped layout */
+.settings-content .form-row {
+  margin-bottom: 12px;
+}
+.settings-content .form-row label {
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  margin-bottom: 6px;
+  color: var(--text-dim);
+}
+.settings-content input,
+.settings-content select,
+.settings-content textarea {
+  background: var(--bg-elev);
+}
+.settings-content input:focus,
+.settings-content select:focus,
+.settings-content textarea:focus {
+  background: var(--bg);
+}
+/* The collapsibles still get their own surface — they're not "cards"
+   in the same sense. Restore the bg-elev background, no border-top
+   from above. */
+.settings-content details.settings-collapse {
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  border-radius: 10px;
+  margin-bottom: 16px;
+  padding: 0;
+}
+.settings-content details.settings-collapse + details.settings-collapse {
+  /* No accumulating top border between back-to-back collapses */
+}
+.settings-content .danger-zone { border-top: 1px solid var(--border); padding-top: 18px; }
+
+/* SectionHeader — sits between merged sub-tabs (Activity tracking +
+   Mobile wellbeing, Backup + Danger zone + Seed, etc.). Quiet uppercase
+   tracker so it reads as a section divider, not a card heading. */
+.settings-section-header {
+  margin: 28px 0 12px;
+}
+/* When it's the very first child of the content pane, drop the top
+   margin — the page title already provides breathing space above. */
+.settings-content > .settings-section-header:first-child {
+  margin-top: 0;
+}
+/* And tighten when it directly follows another section header (rare). */
+.settings-section-header + .settings-section-header {
+  margin-top: 12px;
+}
+.settings-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.settings-section-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  max-width: 60ch;
+}
+
+/* Quiet hairline divider — replaces inline <hr class="soft"> usages
+   inside settings cards. Tighter spacing, theme-aware. */
+.settings-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 14px 0;
+  opacity: 0.6;
+}
+
+/* ─── ToggleRow — uniform switch pattern for boolean settings.
+   Label / sublabel on the left, custom switch on the right. Used for
+   "Auto-sync on startup", contrast, etc. Replaces ad-hoc <label> blocks
+   that wrapped a default browser checkbox + free-text. */
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.settings-toggle-row.disabled { cursor: not-allowed; opacity: 0.55; }
+.settings-toggle-text { flex: 1; min-width: 0; }
+.settings-toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.settings-toggle-sub {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+  max-width: 50ch;
+}
+
+/* Custom switch — pure-CSS macOS-style toggle. The native <input> is
+   visually hidden but keyboard-focusable; the track + thumb spans
+   render the look. Track is 36×20, thumb 16×16 with a 2px inset. */
+.settings-switch {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.settings-switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: inherit;
+  z-index: 2;
+}
+.settings-switch-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.settings-switch-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 160ms ease, background 160ms ease;
+}
+.settings-switch.on .settings-switch-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.settings-switch.on .settings-switch-thumb {
+  background: var(--bg);
+  transform: translateX(16px);
+}
+.settings-switch input:focus-visible + .settings-switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ─── Categorization overrides — clean rows + tinted category pills */
+.cat-overrides-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.cat-overrides-form input {
+  flex: 1;
+  min-width: 200px;
+  height: 34px;
+}
+.cat-overrides-form select {
+  height: 34px;
+  min-width: 130px;
+}
+.cat-overrides-form .primary {
+  flex-shrink: 0;
+  height: 34px;
+}
+.cat-overrides-empty {
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  text-align: center;
+  font-size: 13px;
+}
+.cat-overrides-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cat-overrides-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+}
+.cat-overrides-app {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.cat-overrides-app code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  background: transparent;
+  padding: 0;
+}
+.cat-overrides-app small { font-size: 11px; }
+.cat-overrides-pill {
+  text-transform: capitalize;
+}
+/* Pill colour per category — uses theme tokens already, but make sure
+   they read correctly here too. */
+.cat-overrides-pill.cat-productive  { background: var(--productive-soft); color: var(--productive); }
+.cat-overrides-pill.cat-neutral     { background: var(--neutral-soft); color: var(--neutral); }
+.cat-overrides-pill.cat-distraction { background: var(--distraction-soft); color: var(--distraction); }
+.cat-overrides-pill.cat-leisure     { background: var(--leisure-soft); color: var(--leisure); }
+.cat-overrides-pill.cat-rest        { background: var(--rest-soft); color: var(--rest); }
+.cat-overrides-pill.cat-other       { background: var(--bg-elev-2); color: var(--text-dim); }
+
 /* Collapsible section using native <details>. The summary row reads as
    a clickable header; clicking flips the chevron + expands the body. */
 .settings-collapse {
@@ -2938,55 +3215,67 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 }
 .bucket-row {
   display: grid;
-  grid-template-columns: 76px 1fr 40px;
-  gap: 10px;
+  grid-template-columns: 64px 1fr 42px;
+  gap: 12px;
   align-items: center;
-  padding: 3px 0;
+  padding: 4px 0;
 }
 .bucket-time {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
   font-size: 11px;
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  line-height: 1.15;
 }
 .bucket-time code {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text);
   background: transparent;
   padding: 0;
+  font-weight: 600;
 }
-.bucket-time small { color: var(--text-faint); }
+.bucket-time small {
+  color: var(--text-faint);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
 .bucket-bar {
   display: flex;
-  height: 18px;
-  border-radius: 5px;
+  height: 22px;
+  border-radius: 6px;
   overflow: hidden;
   background: var(--bg-elev-2);
+  border: 1px solid var(--border);
 }
 .bucket-seg {
   position: relative;
   display: flex;
   align-items: center;
-  padding: 0 6px;
-  font-size: 10px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   border-right: 1px solid var(--bg);
   transition: filter 120ms ease;
+  letter-spacing: -0.005em;
 }
-.bucket-seg:hover { filter: brightness(1.15); }
+.bucket-seg:hover { filter: brightness(1.12); }
 .bucket-seg:last-child { border-right: none; }
 .bucket-seg-empty {
   background: transparent;
+  border-right: 0;
 }
 .bucket-seg-label {
   text-overflow: ellipsis;
   overflow: hidden;
+  font-size: 10.5px;
 }
 /* Theme-tokenised category fills — bucket bars match every other
    activity surface (trail, top apps, stat pills). */
@@ -3001,6 +3290,61 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   text-align: right;
   font-family: var(--font-mono);
   font-size: 11px;
+}
+
+/* ─── People page collapsibles — Browse repos / Recent activity ──── */
+.people-collapsible {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.people-collapsible > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.people-collapsible > summary::-webkit-details-marker { display: none; }
+.people-collapsible > summary h3 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.people-collapsible > summary h3::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  background: var(--accent);
+  margin-right: 8px;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-top: -2px;
+}
+.people-collapsible > summary .count-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 100px;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+}
+.people-collapsible-chevron {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 11px;
+  transition: transform 160ms ease;
+}
+.people-collapsible[open] > summary .people-collapsible-chevron {
+  transform: rotate(90deg);
+}
+.people-collapsible-body {
+  padding: 0 16px 16px 16px;
 }
 
 /* ─── Repo topic search ────────────────────────────────────────────── */
@@ -3221,7 +3565,7 @@ button.xsmall, .ghost.xsmall {
   background: transparent; border: 1px solid var(--border); border-radius: 6px;
   color: var(--text-dim); cursor: pointer;
 }
-button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
+button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 
 /* Language segment color variants (repo detail tech stack) */
 .lang-seg.seg-0 { background: var(--accent); }
@@ -3321,7 +3665,7 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
   border-radius: 8px;
   transition: border-color 120ms ease, background 120ms ease;
 }
-.suggestion-row:hover { border-color: #3a3a45; }
+.suggestion-row:hover { border-color: var(--accent-soft); }
 .suggestion-row .sg-text { flex: 1 1 auto; font-size: 13px; color: var(--text); }
 .suggestion-row .sg-pill {
   font-size: 10px; padding: 2px 6px; border-radius: 999px;
@@ -3449,7 +3793,7 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
   overflow: hidden;
   transition: border-color 120ms ease, background 120ms ease;
 }
-.push-card:hover  { border-color: #3a3a45; }
+.push-card:hover  { border-color: var(--accent-soft); }
 .push-card.expanded {
   border-color: rgba(232, 162, 58, 0.4);
   background: var(--bg-elev-2);
@@ -4304,7 +4648,7 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
   border-radius: 10px;
   transition: border-color 120ms ease, opacity 120ms ease;
 }
-.wg-row:hover { border-color: #3a3a45; }
+.wg-row:hover { border-color: var(--accent-soft); }
 .wg-row.wg-done { border-color: rgba(78, 205, 196, 0.5); }
 .wg-row.wg-done .wg-title { color: #4ecdc4; }
 .wg-row.wg-done .bar-fill { background: #4ecdc4; }
@@ -5385,7 +5729,7 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
   cursor: pointer;
   transition: all 120ms ease;
 }
-.evening-chip:hover { border-color: #3a3a45; }
+.evening-chip:hover { border-color: var(--accent-soft); }
 .evening-chip.late {
   border-color: rgba(255,166,87,0.45);
   background: rgba(255,166,87,0.08);
@@ -5591,6 +5935,90 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
 /* ═══════════════════════════════════════════════════════════════════════
    v0.9 — Upcoming: "Due this day" section
    ═══════════════════════════════════════════════════════════════════════ */
+/* Upcoming — per-day cards. Today gets prominent accent treatment; other
+   days use a quiet baseline. Replaces the inline-styled day headers. */
+.upcoming-day {
+  margin-bottom: 12px;
+  transition: border-color 160ms ease;
+}
+.upcoming-day.is-today {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, var(--accent-soft), transparent 30%), var(--bg-elev);
+}
+.upcoming-day.is-weekend { opacity: 0.85; }
+.upcoming-day-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.upcoming-day-date {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.upcoming-day-rel {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 100px;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.upcoming-day.is-today .upcoming-day-rel {
+  background: var(--accent);
+  color: var(--bg);
+}
+.upcoming-day-meta {
+  color: var(--text-faint);
+  font-size: 11px;
+  margin-left: auto;
+}
+
+/* Compact class rows inside an Upcoming day card. The "now" row gets a
+   subtle accent fill; "past" dims; "next" gets the amber accent pill */
+.upcoming-class-row {
+  display: grid;
+  grid-template-columns: 100px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 8px;
+  margin: 4px -8px;
+  border-radius: 8px;
+  transition: background 120ms ease;
+}
+.upcoming-class-row.now {
+  background: var(--accent-soft);
+}
+.upcoming-class-row.past { opacity: 0.5; }
+.upcoming-class-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: center;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-variant-numeric: tabular-nums;
+}
+.upcoming-class-row.now .upcoming-class-time {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+.upcoming-class-body { min-width: 0; }
+.upcoming-class-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.upcoming-class-sub {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
 .due-section {
   margin-top: 14px;
   padding-top: 12px;
@@ -5752,7 +6180,7 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
   cursor: pointer;
   transition: all 120ms ease;
 }
-.burnout-chip.clickable:hover { border-color: #3a3a45; }
+.burnout-chip.clickable:hover { border-color: var(--accent-soft); }
 .burnout-chip.clickable.open { background: var(--bg-elev-2); border-color: var(--accent); }
 .burnout-chip.clickable .dot {
   width: 8px; height: 8px; border-radius: 50%;
@@ -5918,7 +6346,7 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
   gap: 6px;
   transition: border-color 120ms ease, background 120ms ease;
 }
-.goal-row:hover { border-color: #3a3a45; }
+.goal-row:hover { border-color: var(--accent-soft); }
 .goal-row.hit {
   border-color: rgba(78,205,196,0.45);
   background: linear-gradient(135deg, rgba(78,205,196,0.06), transparent 60%), var(--bg-elev);
@@ -6261,7 +6689,7 @@ button.xsmall:hover { border-color: #3a3a45; color: var(--text); }
 }
 .kind-btn:hover {
   color: var(--text);
-  border-color: #3a3a45;
+  border-color: var(--accent-soft);
 }
 .kind-btn.active {
   border-color: var(--accent);

@@ -279,6 +279,7 @@ function emit(channel, payload) {
 // --- settings ---
 ipcMain.handle("settings:get", (_e, key) => db.getSetting(key));
 ipcMain.handle("settings:set", (_e, key, value) => db.setSetting(key, value));
+ipcMain.handle("settings:delete", (_e, key) => db.deleteSetting(key));
 ipcMain.handle("settings:all", () => db.allSettings());
 
 ipcMain.handle("dialog:pickDirectory", async () => {

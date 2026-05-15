@@ -357,6 +357,13 @@ function setSetting(key, value) {
   ).run(key, value == null ? null : String(value));
   return true;
 }
+// Hard-remove a setting row. Used by Categorization Overrides to actually
+// delete an entry rather than leaving an empty-string ghost behind that
+// the rebuild query then renders as "(empty)" on next page load.
+function deleteSetting(key) {
+  db.prepare("DELETE FROM settings WHERE key = ?").run(key);
+  return true;
+}
 function allSettings() {
   return Object.fromEntries(
     db
@@ -2459,6 +2466,7 @@ module.exports = {
   dbPath,
   getSetting,
   setSetting,
+  deleteSetting,
   allSettings,
   listTasks,
   createTask,

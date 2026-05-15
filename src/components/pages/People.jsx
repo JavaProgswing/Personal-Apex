@@ -326,55 +326,58 @@ export default function People() {
         onLeaderboard={() => setShowLeaderboard(true)}
       />
 
-      {/* Browse repos by topic — sits at the top because it's the most
-          actionable section for "what should I build next / who's working
-          on what". Pulls from local cache + falls back to a GitHub public
-          search for community guidance. */}
-      <section className="people-section">
-        <div className="people-section-head">
+      {/* Browse repos and Recent activity are collapsible so the default
+          view is the people grid (the actual content). Click to expand. */}
+      <details className="people-collapsible">
+        <summary>
           <h3>Browse repos</h3>
           <span className="count-pill" title="Search across cached repos + public GitHub">by topic / framework</span>
+          <span className="people-collapsible-chevron" aria-hidden>▸</span>
+        </summary>
+        <div className="people-collapsible-body">
+          <RepoTopicSearch onOpenRepo={(r, person) => setOpenRepo({ repo: r, person })} />
         </div>
-        <RepoTopicSearch onOpenRepo={(r, person) => setOpenRepo({ repo: r, person })} />
-      </section>
+      </details>
 
-      {/* Recent activity feed — its own section */}
-      <section className="people-section">
-        <div className="people-section-head">
+      <details className="people-collapsible">
+        <summary>
           <h3>Recent activity</h3>
           <span className="count-pill" title="Across everyone you follow">live feed</span>
+          <span className="people-collapsible-chevron" aria-hidden>▸</span>
+        </summary>
+        <div className="people-collapsible-body">
+          <ActivityFeed
+            onOpenPerson={openPerson}
+            onOpenRepo={(r) =>
+              setOpenRepo({
+                repo: {
+                  id: r.id,
+                  name: r.name,
+                  full_name: r.full_name,
+                  description: r.description,
+                  url: r.url,
+                  language: r.language,
+                  languages: r.languages,
+                  topics: r.topics,
+                  stars: r.stars,
+                  forks: r.forks,
+                  pushed_at: r.pushed_at,
+                  person_id: r.person_id,
+                },
+                person: {
+                  id: r.person_id,
+                  name: r.person_name,
+                  github_username: r.github_username,
+                  avatar_url: r.avatar_url,
+                  tags: r.person_tags,
+                },
+              })
+            }
+          />
         </div>
-        <ActivityFeed
-          onOpenPerson={openPerson}
-          onOpenRepo={(r) =>
-            setOpenRepo({
-              repo: {
-                id: r.id,
-                name: r.name,
-                full_name: r.full_name,
-                description: r.description,
-                url: r.url,
-                language: r.language,
-                languages: r.languages,
-                topics: r.topics,
-                stars: r.stars,
-                forks: r.forks,
-                pushed_at: r.pushed_at,
-                person_id: r.person_id,
-              },
-              person: {
-                id: r.person_id,
-                name: r.person_name,
-                github_username: r.github_username,
-                avatar_url: r.avatar_url,
-                tags: r.person_tags,
-              },
-            })
-          }
-        />
-      </section>
+      </details>
 
-      {/* Everyone — grouped grid */}
+      {/* Everyone — grouped grid. This is the primary view and stays open. */}
       <section className="people-section">
         <div className="people-section-head">
           <h3>Everyone</h3>

@@ -21,27 +21,15 @@ const TABS = [
   { key: "data",          label: "Data" },
 ];
 
-// Tiny presentational helper for in-tab section headers, so the merged
-// content doesn't read as one big wall.
+// Tiny presentational helper for in-tab section headers. Used between
+// merged sub-tabs (e.g. Activity contains "Activity tracking" +
+// "Mobile wellbeing"). Inline styles dropped in favour of a class so
+// the CSS layer can tune spacing globally.
 function SectionHeader({ title, hint }) {
   return (
-    <div style={{ marginTop: 18, marginBottom: 8 }}>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: 1.4,
-          color: "var(--text-faint)",
-          textTransform: "uppercase",
-        }}
-      >
-        {title}
-      </div>
-      {hint && (
-        <small className="muted" style={{ display: "block", marginTop: 2 }}>
-          {hint}
-        </small>
-      )}
+    <div className="settings-section-header">
+      <div className="settings-section-label">{title}</div>
+      {hint && <small className="muted settings-section-hint">{hint}</small>}
     </div>
   );
 }
@@ -119,51 +107,37 @@ export default function Settings() {
 
       {tab === "activity" && (
         <>
-          <SectionHeader
-            title="Activity tracking"
-            hint="What counts as productive vs distraction, idle thresholds, manual entries."
-          />
           <ActivityTab all={all} setAll={setAll} save={save} setMsg={setMsg} />
-          <SectionHeader
+          <Collapse
             title="Mobile wellbeing"
-            hint="Phone usage caps and mobile-app overrides imported from Digital Wellbeing."
-          />
-          <WellbeingTab all={all} setAll={setAll} save={save} setMsg={setMsg} />
+            hint="Phone usage caps + mobile-app overrides"
+          >
+            <WellbeingTab all={all} setAll={setAll} save={save} setMsg={setMsg} />
+          </Collapse>
         </>
       )}
 
       {tab === "goals" && (
         <>
-          <SectionHeader
-            title="Weekly goals"
-            hint="Targets that show up on the dashboard and feed the AI."
-          />
           <WeeklyGoalsEditor />
-          <SectionHeader
+          <Collapse
             title="Competitive programming"
-            hint="LeetCode / Codeforces handles + the daily problem cadence."
-          />
-          <CpTab all={all} setAll={setAll} save={save} />
+            hint="LeetCode / Codeforces / CodeChef handles + cadence"
+          >
+            <CpTab all={all} setAll={setAll} save={save} />
+          </Collapse>
         </>
       )}
 
       {tab === "integrations" && (
         <>
-          <SectionHeader
-            title="Local AI · Ollama"
-            hint="The local model used for plan-day, recommendations, and the evening review."
-          />
           <OllamaTab all={all} setAll={setAll} save={save} />
-          <SectionHeader
-            title="Spotify"
-            hint="Connect Spotify, pick a focus playlist, control playback from the dashboard."
-          />
-          <SpotifyTab setMsg={setMsg} />
-          <SectionHeader
-            title="GitHub"
-            hint="Username / token used for contribution counts and recent activity."
-          />
-          <GithubTab all={all} setAll={setAll} save={save} />
+          <Collapse title="Spotify" hint="Connect, focus playlist, playback controls">
+            <SpotifyTab setMsg={setMsg} />
+          </Collapse>
+          <Collapse title="GitHub" hint="Username + personal-access token">
+            <GithubTab all={all} setAll={setAll} save={save} />
+          </Collapse>
         </>
       )}
 
@@ -175,29 +149,52 @@ export default function Settings() {
 
       {tab === "data" && (
         <>
-          <SectionHeader
-            title="Backup"
-            hint="Export and restore the SQLite database. Local-only, no cloud."
-          />
           <BackupTab setMsg={setMsg} />
-
-          <SectionHeader
+          <Collapse
             title="Danger zone"
-            hint="Bulk-clear specific data domains. Activity is the safe one to clear regularly. Schedule wipes every class — only if you want to start clean. None of these touch your tasks, goals, or notes."
-          />
-          <DangerZone setMsg={setMsg} />
-
-          <SectionHeader
+            hint="Bulk-clear activity / schedule / everything"
+          >
+            <DangerZone setMsg={setMsg} />
+          </Collapse>
+          <Collapse
             title="Seed content"
-            hint="Populate the app with sample tasks, classes, and habits."
-          />
-          <SeedTab setMsg={setMsg} />
+            hint="Populate with sample tasks, classes, habits"
+          >
+            <SeedTab setMsg={setMsg} />
+          </Collapse>
         </>
       )}
       </main>
 
       {msg && <div style={{ position: "fixed", bottom: 20, right: 20 }} className="pill teal">{msg}</div>}
     </div>
+  );
+}
+
+// Reusable toggle row — label + optional sublabel on the left, a proper
+// macOS-style switch on the right. Use this for any boolean setting so
+// they all read the same.
+function ToggleRow({ label, sub, checked, onChange, disabled }) {
+  return (
+    <label
+      className={"settings-toggle-row" + (disabled ? " disabled" : "")}
+    >
+      <div className="settings-toggle-text">
+        <div className="settings-toggle-label">{label}</div>
+        {sub && <small className="muted settings-toggle-sub">{sub}</small>}
+      </div>
+      <span className={"settings-switch" + (checked ? " on" : "")}>
+        <input
+          type="checkbox"
+          checked={!!checked}
+          disabled={disabled}
+          onChange={(e) => onChange?.(e.target.checked)}
+        />
+        <span className="settings-switch-track" aria-hidden>
+          <span className="settings-switch-thumb" />
+        </span>
+      </span>
+    </label>
   );
 }
 
@@ -419,7 +416,7 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
             disabled={diagnosing}
             title="Probe every URL/prefix combo and show what SRM is returning"
           >
-            {diagnosing ? "Diagnosing…" : "🔬 Diagnose"}
+            {diagnosing ? "Diagnosing…" : "Diagnose"}
           </button>
         </div>
 
@@ -485,25 +482,16 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
           </div>
         )}
 
-        <hr className="soft" style={{ margin: "12px 0 10px" }} />
-        <label className="row" style={{ gap: 10, alignItems: "center", cursor: "pointer" }}>
-          <input
-            id="srm-autosync-toggle"
-            type="checkbox"
-            checked={(all["srm.autoSync"] ?? "1") !== "0"}
-            onChange={(e) => {
-              const v = e.target.checked ? "1" : "0";
-              setAll({ ...all, "srm.autoSync": v });
-              save("srm.autoSync", v);
-            }}
-          />
-          <span style={{ fontSize: 13 }}>
-            Auto-sync on startup
-            <span className="muted" style={{ marginLeft: 6 }}>
-              (pulls timetable silently ~4 s after launch)
-            </span>
-          </span>
-        </label>
+        <div className="settings-divider" />
+        <ToggleRow
+          label="Auto-sync on startup"
+          sub="Pulls your timetable silently ~4 seconds after Apex launches."
+          checked={(all["srm.autoSync"] ?? "1") !== "0"}
+          onChange={(v) => {
+            setAll({ ...all, "srm.autoSync": v ? "1" : "0" });
+            save("srm.autoSync", v ? "1" : "0");
+          }}
+        />
       </div>
 
       {/* Rarely-touched fallback paths — tucked away. Most users only need
@@ -1031,49 +1019,105 @@ function fmtHM(mins) {
 function CategorizationOverrides() {
   const [list, setList] = useState([]);
   const [form, setForm] = useState({ app: "", category: "productive" });
+  const [err, setErr] = useState(null);
 
-  useEffect(() => { (async () => {
+  // Rebuild the list from settings + opportunistically GC any ghost
+  // entries that earlier builds left behind (empty-string values that
+  // showed up as "→ <empty pill>" rows).
+  async function refresh() {
     const all = await api.settings.all();
-    setList(Object.entries(all)
+    const entries = Object.entries(all)
       .filter(([k]) => k.startsWith("activity.overrides."))
-      .map(([k, v]) => ({ app: k.replace("activity.overrides.", ""), category: v }))
-      .sort((a, b) => a.app.localeCompare(b.app)));
-  })(); }, []);
+      .map(([k, v]) => ({
+        app: k.replace("activity.overrides.", ""),
+        category: v,
+      }));
+    // Drop empty values AND empty keys (the "" remnants from the old bug).
+    const ghosts = entries.filter((x) => !x.app.trim() || !x.category);
+    for (const g of ghosts) {
+      try { await api.settings.delete("activity.overrides." + g.app); } catch {}
+    }
+    const live = entries
+      .filter((x) => x.app.trim() && x.category)
+      .sort((a, b) => a.app.localeCompare(b.app));
+    setList(live);
+  }
+  useEffect(() => { refresh(); }, []);
 
   async function add() {
-    if (!form.app.trim()) return;
-    await api.settings.set("activity.overrides." + form.app.trim(), form.category);
-    const all = await api.settings.all();
-    setList(Object.entries(all)
-      .filter(([k]) => k.startsWith("activity.overrides."))
-      .map(([k, v]) => ({ app: k.replace("activity.overrides.", ""), category: v })));
+    const app = form.app.trim();
+    if (!app) {
+      setErr("Type the .exe name first.");
+      return;
+    }
+    setErr(null);
+    await api.settings.set("activity.overrides." + app, form.category);
+    await refresh();
     setForm({ app: "", category: "productive" });
   }
   async function remove(app) {
-    await api.settings.set("activity.overrides." + app, "");
-    setList(list.filter((x) => x.app !== app));
+    // Use the real delete IPC so the row doesn't linger as an empty-string
+    // value (the old bug: `set(..., "")` left the key around with a blank
+    // value, which then rendered as a ghost on next page load).
+    await api.settings.delete("activity.overrides." + app);
+    setList((l) => l.filter((x) => x.app !== app));
   }
 
   return (
-    <>
-      <div className="row" style={{ gap: 6, marginBottom: 10 }}>
-        <input placeholder="exe name (e.g. Code.exe, chrome.exe)" value={form.app} onChange={(e) => setForm({ ...form, app: e.target.value })} />
-        <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-          <option value="productive">productive</option>
-          <option value="distraction">distraction</option>
-          <option value="leisure">leisure</option>
-          <option value="other">other</option>
+    <div className="cat-overrides">
+      <form
+        className="cat-overrides-form"
+        onSubmit={(e) => { e.preventDefault(); add(); }}
+      >
+        <input
+          placeholder="App name — e.g. Code.exe, chrome.exe, Discord"
+          value={form.app}
+          onChange={(e) => setForm({ ...form, app: e.target.value })}
+        />
+        <select
+          value={form.category}
+          onChange={(e) => setForm({ ...form, category: e.target.value })}
+        >
+          <option value="productive">Productive</option>
+          <option value="neutral">Neutral</option>
+          <option value="distraction">Distraction</option>
+          <option value="leisure">Leisure</option>
+          <option value="rest">Rest</option>
+          <option value="other">Other</option>
         </select>
-        <button className="primary" onClick={add}>Add</button>
-      </div>
-      {list.length === 0 && <div className="muted">No overrides yet.</div>}
-      {list.map((x) => (
-        <div key={x.app} className="row between" style={{ margin: "6px 0" }}>
-          <span><code>{x.app}</code> <small className="muted">({prettyAppName(x.app)})</small> → <span className="pill">{x.category}</span></span>
-          <button className="ghost small" onClick={() => remove(x.app)}>✕ remove</button>
+        <button className="primary" type="submit">Add</button>
+      </form>
+      {err && <small className="error" style={{ display: "block", marginBottom: 8 }}>{err}</small>}
+
+      {list.length === 0 ? (
+        <div className="cat-overrides-empty muted">
+          No overrides yet. Add a row above to reclassify an app.
         </div>
-      ))}
-    </>
+      ) : (
+        <ul className="cat-overrides-list">
+          {list.map((x) => (
+            <li key={x.app} className="cat-overrides-row">
+              <div className="cat-overrides-app">
+                <code>{x.app}</code>
+                <small className="muted">{prettyAppName(x.app)}</small>
+              </div>
+              <span className={`pill cat-overrides-pill cat-${x.category}`}>
+                {x.category}
+              </span>
+              <button
+                type="button"
+                className="ghost xsmall"
+                onClick={() => remove(x.app)}
+                title="Remove override"
+                aria-label={`Remove override for ${x.app}`}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

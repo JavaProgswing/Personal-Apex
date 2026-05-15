@@ -219,52 +219,29 @@ export default function Upcoming({ go }) {
                 (isToday ? " is-today" : "") +
                 (isWeekend ? " is-weekend" : "")
               }
-              style={{
-                marginBottom: 12,
-                borderLeft: isToday
-                  ? "3px solid var(--accent)"
-                  : undefined,
-              }}
             >
-              <div
-                className="row between"
-                style={{ alignItems: "center", flexWrap: "wrap", gap: 8 }}
-              >
-                <div>
-                  <strong style={{ fontSize: 15 }}>{dateLabel}</strong>
-                  {relLabel && (
-                    <span
-                      className={"pill " + (isToday ? "teal" : "gray")}
-                      style={{ marginLeft: 8 }}
-                    >
-                      {relLabel}
-                    </span>
-                  )}
-                  <small className="muted" style={{ marginLeft: 8 }}>
-                    {isWeekend ? "weekend" : `Day order ${d.dayOrder}`}
-                  </small>
-                </div>
-                <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+              {/* Single-line header — date + relative pill + a compact
+                  meta line (day-order / class count / due count) all
+                  flush left, no more double-pill row. */}
+              <div className="upcoming-day-head">
+                <span className="upcoming-day-date">{dateLabel}</span>
+                {relLabel && (
+                  <span className="upcoming-day-rel">{relLabel}</span>
+                )}
+                <small className="upcoming-day-meta">
+                  {isWeekend ? "weekend" : `Day order ${d.dayOrder}`}
+                  {(d.classes.length > 0 || allDueToday.length > 0) && " · "}
                   {d.classes.length > 0 && (
-                    <span className="pill">
-                      {d.classes.length}{" "}
-                      {d.classes.length === 1 ? "class" : "classes"}
-                    </span>
+                    <>{d.classes.length} class{d.classes.length === 1 ? "" : "es"}</>
                   )}
+                  {d.classes.length > 0 && allDueToday.length > 0 && " · "}
                   {allDueToday.length > 0 && (
-                    <span
-                      className={
-                        "pill " +
-                        (allDueToday.some((t) => t.priority <= 2)
-                          ? "rose"
-                          : "amber")
-                      }
-                    >
-                      {allDueToday.length}{" "}
-                      {allDueToday.length === 1 ? "due" : "due"}
-                    </span>
+                    <>
+                      {allDueToday.length} due
+                      {allDueToday.some((t) => t.priority <= 2) && " (urgent)"}
+                    </>
                   )}
-                </div>
+                </small>
               </div>
 
               {d.classes.length === 0 && isWeekend && (
@@ -284,37 +261,17 @@ export default function Upcoming({ go }) {
                   <div
                     key={"c" + c.id}
                     className={
-                      "class-row" +
+                      "upcoming-class-row class-row" +
                       (isCurrent ? " now" : "") +
                       (isPast ? " past" : "") +
                       (isNext ? " next" : "")
                     }
-                    style={{
-                      display: "flex",
-                      gap: 10,
-                      margin: "8px 0",
-                      alignItems: "center",
-                      opacity: isPast ? 0.55 : 1,
-                      padding: isCurrent ? "6px 8px" : "0",
-                      borderRadius: isCurrent ? 8 : 0,
-                      background: isCurrent
-                        ? "color-mix(in srgb, var(--accent) 12%, transparent)"
-                        : undefined,
-                    }}
                   >
-                    <span className="pill mono" style={{ minWidth: 98, textAlign: "center" }}>
+                    <span className="upcoming-class-time">
                       {c.start_time}–{c.end_time}
                     </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        className="title"
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          flexWrap: "wrap",
-                        }}
-                      >
+                    <div className="upcoming-class-body">
+                      <div className="upcoming-class-title">
                         <span className={"pill " + subjectHue(c.subject)}>
                           {c.subject}
                         </span>
@@ -330,7 +287,7 @@ export default function Upcoming({ go }) {
                         )}
                         {isPast && <small className="muted">done</small>}
                       </div>
-                      <div className="sub muted" style={{ marginTop: 2 }}>
+                      <div className="upcoming-class-sub muted">
                         {c.code || ""}
                         {c.room ? ` · ${c.room}` : ""}
                         {c.faculty ? ` · ${c.faculty}` : ""}
