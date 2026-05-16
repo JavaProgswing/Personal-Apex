@@ -1038,8 +1038,35 @@ function ClassEditModal({ classRow, dateIso, onClose, onSaved }) {
     note: classRow?.note || "",
   });
 
+  // Validate start_time / end_time pair. Returns an error string or null.
+  function validateTimes(start, end, required) {
+    const re = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+    const startOk = start && re.test(start);
+    const endOk = end && re.test(end);
+    if (required && (!startOk || !endOk)) {
+      return "Enter both start and end times in HH:MM (24-hour) format.";
+    }
+    // If only one is provided in patch-mode (moved/replaced), allow it.
+    if (!startOk && !endOk) return null;
+    if (!startOk || !endOk) return null;
+    const toMin = (s) => {
+      const [h, m] = s.split(":").map(Number);
+      return h * 60 + m;
+    };
+    if (toMin(end) <= toMin(start)) {
+      return "End time must be after start time.";
+    }
+    return null;
+  }
+
   async function save() {
     if (isExtra) {
+      if (!form.subject || !form.subject.trim()) {
+        alert("Subject is required for a one-off class.");
+        return;
+      }
+      const timeErr = validateTimes(form.start_time, form.end_time, true);
+      if (timeErr) { alert(timeErr); return; }
       await api.schedule.addExtraClass(dateIso, form);
       onSaved();
       return;
@@ -1063,6 +1090,15 @@ function ClassEditModal({ classRow, dateIso, onClose, onSaved }) {
     }
     // moved or replaced — push the patch through. We only send fields the
     // user changed so blanks are interpreted as "keep original".
+    // Validate any time changes the user did make.
+    const newStart = form.start_time && form.start_time !== classRow.start_time
+      ? form.start_time
+      : classRow.start_time;
+    const newEnd = form.end_time && form.end_time !== classRow.end_time
+      ? form.end_time
+      : classRow.end_time;
+    const timeErr = validateTimes(newStart, newEnd, false);
+    if (timeErr) { alert(timeErr); return; }
     const patch = { status: mode === "replaced" ? "replaced" : "moved" };
     if (form.subject && form.subject !== classRow.subject) patch.subject = form.subject;
     if (form.code && form.code !== classRow.code) patch.code = form.code;

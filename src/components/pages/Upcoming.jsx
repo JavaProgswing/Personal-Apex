@@ -59,11 +59,28 @@ export default function Upcoming({ go }) {
   }, []);
 
   async function addQuickTask() {
-    if (!quickTitle.trim()) return;
+    const title = quickTitle.trim();
+    if (!title) return;
+    // Validate deadline: must parse, and must not be in the past (we
+    // give a 5-minute grace so "type now-ish" still works). Empty is OK
+    // — no deadline.
+    let deadlineIso = null;
+    if (quickDue) {
+      const d = new Date(quickDue);
+      if (Number.isNaN(d.getTime())) {
+        alert("That deadline doesn't look like a valid date/time.");
+        return;
+      }
+      if (d.getTime() < Date.now() - 5 * 60 * 1000) {
+        const ok = confirm("That deadline is in the past. Save anyway?");
+        if (!ok) return;
+      }
+      deadlineIso = d.toISOString();
+    }
     await api.tasks.create({
-      title: quickTitle.trim(),
+      title,
       category: "Academics",
-      deadline: quickDue ? new Date(quickDue).toISOString() : null,
+      deadline: deadlineIso,
       kind: "task",
       priority: 3,
     });

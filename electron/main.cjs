@@ -804,11 +804,17 @@ ipcMain.handle("apex:extractFromFile", async (_e, { path: filePath, model } = {}
     if (!stat || !stat.isFile()) return { ok: false, error: "not a file" };
     const ext = (filePath.split(".").pop() || "").toLowerCase();
 
-    // PDFs: try `pdftotext -layout`. If the binary's missing or fails,
-    // surface a clear error so the user can install poppler or send an
-    // image instead.
+    // PDFs: try `pdftotext -layout` first. If the binary's missing OR
+    // the PDF is image-only (scanned hall ticket, syllabus screenshot
+    // saved as PDF), the output will be empty / a couple of whitespace
+    // characters. In that case fall back to rasterising each page with
+    // `pdftoppm` and running the images through Ollama vision. That
+    // covers the "image-only PDF" case which was the actual bug behind
+    // "Apex says it can't see the curriculum in my Hall Ticket".
     if (ext === "pdf") {
       const { spawn } = require("node:child_process");
+      const os = require("node:os");
+      const path = require("node:path");
       const result = await new Promise((resolve) => {
         const chunks = [];
         const errs = [];
@@ -824,11 +830,82 @@ ipcMain.handle("apex:extractFromFile", async (_e, { path: filePath, model } = {}
           resolve({ ok: true, text: Buffer.concat(chunks).toString("utf8") });
         });
       });
-      if (result.ok) return { ok: true, text: result.text, kind: "pdf" };
-      // Fallback hint when pdftotext isn't on PATH.
+
+      const extractedText = result.ok ? String(result.text || "") : "";
+      // Heuristic: anything under ~30 chars after stripping whitespace is
+      // effectively "nothing" — almost certainly an image-only PDF.
+      const cleaned = extractedText.replace(/\s+/g, "").trim();
+      if (result.ok && cleaned.length >= 30) {
+        return { ok: true, text: extractedText, kind: "pdf" };
+      }
+
+      // FALLBACK: PDF → PNG pages → vision. Uses pdftoppm (also poppler).
+      // Cap at 5 pages so we don't blow the model's context on a 50-page
+      // doc. Each page is sent as its own vision message; we concatenate
+      // results into one text block.
+      const tmpDir = await fsMod.mkdtemp(path.join(os.tmpdir(), "apex-pdf-"));
+      const prefix = path.join(tmpDir, "page");
+      const rasterised = await new Promise((resolve) => {
+        const errs = [];
+        // -r 150 = 150dpi, enough resolution for OCR without huge images.
+        // -f 1 -l 5 = pages 1 through 5 (cap so we don't blow context).
+        const p = spawn("pdftoppm", ["-r", "150", "-f", "1", "-l", "5", "-png", filePath, prefix], { windowsHide: true });
+        p.stderr.on("data", (d) => errs.push(d));
+        p.on("error", (err) => resolve({ ok: false, error: err.message }));
+        p.on("close", (code) => {
+          if (code !== 0) resolve({ ok: false, error: errs.join("") || `pdftoppm exited ${code}` });
+          else resolve({ ok: true });
+        });
+      });
+
+      if (!rasterised.ok) {
+        // Cleanup attempt + clear error.
+        try { await fsMod.rm(tmpDir, { recursive: true, force: true }); } catch {}
+        return {
+          ok: false,
+          error: result.ok && cleaned.length === 0
+            ? "This PDF has no embedded text (likely scanned). Install poppler's pdftoppm for the image-OCR fallback, or send the page as a PNG/JPG directly."
+            : "Couldn't run pdftotext or pdftoppm. Install poppler (Windows: `winget install poppler-utils`, macOS: `brew install poppler`) — or send the page as a PNG/JPG directly.",
+        };
+      }
+
+      // Read every generated page file (pdftoppm names them
+      // <prefix>-1.png, <prefix>-2.png …) and feed each to vision.
+      const files = (await fsMod.readdir(tmpDir))
+        .filter((f) => f.endsWith(".png"))
+        .sort();
+      const visionParts = [];
+      for (const f of files) {
+        const full = path.join(tmpDir, f);
+        const buf = await fsMod.readFile(full);
+        const b64 = buf.toString("base64");
+        const r = await ollama.chat({
+          model,
+          system:
+            "You are an OCR engine. Extract every piece of textual content " +
+            "you see in the image — names, registration numbers, dates, " +
+            "subject codes, subject names, times, room/venue, instructions. " +
+            "Preserve the original tabular layout for tables. Do NOT " +
+            "summarise. Output the extracted text verbatim and nothing else.",
+          user: `Extract the text from this image (PDF page).`,
+          images: [b64],
+          temperature: 0.1,
+        });
+        if (r?.ok && r.content) visionParts.push(`--- Page ${f} ---\n` + r.content);
+      }
+      // Cleanup.
+      try { await fsMod.rm(tmpDir, { recursive: true, force: true }); } catch {}
+
+      if (visionParts.length === 0) {
+        return {
+          ok: false,
+          error: "Couldn't read this PDF — pdftotext returned nothing and the vision fallback produced no output. Try a clearer scan or a different model (e.g. `ollama pull llama3.2-vision`).",
+        };
+      }
       return {
-        ok: false,
-        error: "Couldn't run pdftotext. Install poppler (Windows: `winget install poppler-utils` or chocolatey `choco install poppler`) and try again — or convert the PDF page to an image and re-upload.",
+        ok: true,
+        text: visionParts.join("\n\n"),
+        kind: "pdf-vision",
       };
     }
 
