@@ -259,13 +259,28 @@ const CP_CONCURRENCY = 2;
 
 // Loop over people who have any CP handle using a small worker pool.
 // `onProgress` is optional and called after every person completes.
-async function fetchAllPeople(onProgress) {
-  const people = db._db().prepare(
-    `SELECT id, name FROM people WHERE
-       leetcode_username IS NOT NULL
-       OR codeforces_username IS NOT NULL
-       OR codechef_username IS NOT NULL`
+async function fetchAllPeople(onProgress, opts = {}) {
+  // Incremental sync — skip people whose cp_stats were refreshed within
+  // the freshness window (default 6 hours). force=true bypasses.
+  // Cuts a typical re-sync from "hit every CP API for 50 people every
+  // time" to "only what's stale", which matters because LeetCode + CC
+  // rate-limit aggressively.
+  const force = !!opts.force;
+  const staleAfterHours = +opts.staleAfterHours || 6;
+  const cutoff = new Date(Date.now() - staleAfterHours * 3600 * 1000).toISOString();
+  const allPeople = db._db().prepare(
+    `SELECT p.id, p.name,
+            MAX(cp.fetched_at) AS last_cp_at
+       FROM people p
+       LEFT JOIN cp_stats cp ON cp.person_id = p.id
+      WHERE p.leetcode_username IS NOT NULL
+         OR p.codeforces_username IS NOT NULL
+         OR p.codechef_username IS NOT NULL
+      GROUP BY p.id`,
   ).all();
+  const people = force
+    ? allPeople
+    : allPeople.filter((p) => !p.last_cp_at || p.last_cp_at < cutoff);
   const total = people.length;
   let cursor = 0, done = 0, ok = 0, err = 0;
   const inFlight = new Set();

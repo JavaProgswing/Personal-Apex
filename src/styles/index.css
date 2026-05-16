@@ -3374,6 +3374,17 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   border-color: var(--accent);
   background: var(--bg);
 }
+.repo-topic-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  font-size: 11px;
+}
 .repo-topic-quick {
   display: flex;
   gap: 6px;
@@ -4381,6 +4392,53 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 /* ═══════════════════════════════════════════════════════════════════
    Ask Apex — drawer + rendered markdown styles.
    ═══════════════════════════════════════════════════════════════════ */
+/* Attached file preview inside the Ask Apex drawer. */
+.ask-apex-attach {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+}
+.ask-apex-attach-preview {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  max-height: 120px;
+  overflow: auto;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+}
+.ask-apex-extracted {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.ask-apex-extracted-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-top: 4px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.ask-apex-saved-toast {
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: var(--ok-soft);
+  color: var(--ok);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
 .ask-apex-response {
   margin-top: 14px;
   padding: 14px 16px;
@@ -6469,6 +6527,46 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 .live-timer.idle-slim .muted {
   font-size: 13px;
+}
+
+/* Leisure-mode strip — tinted with the leisure category token so it
+   reads as "you are not working right now". */
+.live-timer.leisure-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--leisure-soft);
+  border: 1px solid color-mix(in srgb, var(--leisure) 35%, var(--border));
+  margin-bottom: 12px;
+}
+.live-timer.leisure-strip.overdue {
+  background: var(--distraction-soft);
+  border-color: color-mix(in srgb, var(--distraction) 40%, var(--border));
+}
+.leisure-strip-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.leisure-strip-title {
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--leisure);
+}
+.live-timer.leisure-strip.overdue .leisure-strip-title { color: var(--distraction); }
+.leisure-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 0 currentColor;
+  animation: leisure-pulse 1.6s ease-out infinite;
+}
+@keyframes leisure-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--leisure) 60%, transparent); }
+  100% { box-shadow: 0 0 0 8px transparent; }
 }
 .live-timer-idle-left {
   display: flex;

@@ -791,6 +791,83 @@ ipcMain.handle("ollama:burnoutCheck", (_e, ctx) => ollama.burnoutCheck(ctx));
 ipcMain.handle("ollama:extractTasks", (_e, opts = {}) =>
   ollama.extractTasksFromText(opts || {}),
 );
+
+// File → text. Handles PDFs via `pdftotext` (poppler) when available;
+// falls back to base64 + Ollama vision for images. Returns the raw
+// extracted text so the renderer can hand it back to extractTasks for
+// structured-task synthesis.
+ipcMain.handle("apex:extractFromFile", async (_e, { path: filePath, model } = {}) => {
+  if (!filePath) return { ok: false, error: "no path" };
+  try {
+    const fsMod = require("node:fs/promises");
+    const stat = await fsMod.stat(filePath);
+    if (!stat || !stat.isFile()) return { ok: false, error: "not a file" };
+    const ext = (filePath.split(".").pop() || "").toLowerCase();
+
+    // PDFs: try `pdftotext -layout`. If the binary's missing or fails,
+    // surface a clear error so the user can install poppler or send an
+    // image instead.
+    if (ext === "pdf") {
+      const { spawn } = require("node:child_process");
+      const result = await new Promise((resolve) => {
+        const chunks = [];
+        const errs = [];
+        const p = spawn("pdftotext", ["-layout", filePath, "-"], { windowsHide: true });
+        p.stdout.on("data", (d) => chunks.push(d));
+        p.stderr.on("data", (d) => errs.push(d));
+        p.on("error", (err) => resolve({ ok: false, error: err.message }));
+        p.on("close", (code) => {
+          if (code !== 0 && chunks.length === 0) {
+            resolve({ ok: false, error: errs.join("") || `pdftotext exited ${code}` });
+            return;
+          }
+          resolve({ ok: true, text: Buffer.concat(chunks).toString("utf8") });
+        });
+      });
+      if (result.ok) return { ok: true, text: result.text, kind: "pdf" };
+      // Fallback hint when pdftotext isn't on PATH.
+      return {
+        ok: false,
+        error: "Couldn't run pdftotext. Install poppler (Windows: `winget install poppler-utils` or chocolatey `choco install poppler`) and try again — or convert the PDF page to an image and re-upload.",
+      };
+    }
+
+    // Images: feed straight to Ollama vision. The model returns the text
+    // it sees in the image. Works on screenshots of timetables, calendar
+    // photos, syllabus pages, etc.
+    if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) {
+      const buf = await fsMod.readFile(filePath);
+      const b64 = buf.toString("base64");
+      const r = await ollama.chat({
+        model,
+        system:
+          "You are an OCR engine. Extract every piece of textual content you " +
+          "see in the image — dates, times, subject names, deadlines, " +
+          "instructions. Preserve the original layout where useful (tables, " +
+          "lists). Do NOT summarise or rephrase. Output the extracted text " +
+          "and nothing else.",
+        user: "Extract the text from this image.",
+        images: [b64],
+        temperature: 0.1,
+      });
+      if (r?.ok) return { ok: true, text: r.content || "", kind: "image" };
+      return { ok: false, error: r?.error || "vision extract failed" };
+    }
+
+    // Plain text — read it back verbatim.
+    if (["txt", "md", "csv", "log", "json"].includes(ext)) {
+      const txt = await fsMod.readFile(filePath, "utf8");
+      return { ok: true, text: txt, kind: "text" };
+    }
+
+    return {
+      ok: false,
+      error: `Unsupported file type: ${ext}. Supported: pdf, png, jpg, txt, md, csv, json.`,
+    };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 ipcMain.handle("ollama:eveningReview", async (_e, opts = {}) => {
   // Assemble the full end-of-day context server-side so the renderer just
   // says "give me the review" — no need to gather completed tasks, time
@@ -853,15 +930,65 @@ ipcMain.handle("people:merge", (_e, { keepId, mergeIds } = {}) =>
 );
 ipcMain.handle("people:repos", (_e, personId) => db.listRepos(personId));
 ipcMain.handle("people:sync", (_e, personId) => github.syncPerson(personId));
-ipcMain.handle("people:syncAll", () =>
-  github.syncAll((p) => emit("people:syncProgress", p)),
-);
+
+// Sync state cache — lives in the main process so it survives page
+// switches in the renderer. Each sync function is wrapped in a guard
+// that (a) refuses to start a second concurrent run and (b) keeps the
+// latest progress snapshot so a returning UI can re-paint itself
+// without waiting for the next event tick.
+const _syncState = {
+  gh:  { active: false, total: 0, done: 0, ok: 0, err: 0, current: null, rateLimited: false, resetAt: null, finishedAt: null, lastResult: null },
+  cp:  { active: false, total: 0, done: 0, ok: 0, err: 0, current: null, finishedAt: null, lastResult: null },
+  srm: { active: false, stage: null, page: null, totalSoFar: 0, finishedAt: null, lastResult: null },
+};
+function setSync(kind, patch) {
+  _syncState[kind] = { ..._syncState[kind], ...patch };
+}
+ipcMain.handle("sync:status", () => _syncState);
+
+ipcMain.handle("people:syncAll", async (_e, opts) => {
+  if (_syncState.gh.active) {
+    return { ok: false, error: "already-running", status: _syncState.gh };
+  }
+  setSync("gh", { active: true, total: 0, done: 0, ok: 0, err: 0, current: null, rateLimited: false, resetAt: null });
+  emit("people:syncProgress", _syncState.gh);
+  try {
+    const res = await github.syncAll((p) => {
+      setSync("gh", p);
+      emit("people:syncProgress", _syncState.gh);
+    }, opts || {});
+    setSync("gh", { active: false, finishedAt: new Date().toISOString(), lastResult: res });
+    emit("people:syncProgress", _syncState.gh);
+    return res;
+  } catch (err) {
+    setSync("gh", { active: false, finishedAt: new Date().toISOString(), lastResult: { ok: false, error: err.message } });
+    emit("people:syncProgress", _syncState.gh);
+    return { ok: false, error: err.message };
+  }
+});
 
 // --- CP (competitive programming) ---
 ipcMain.handle("cp:fetchPerson", (_e, personId) => cp.fetchAllForPerson(personId));
-ipcMain.handle("cp:fetchAll", () =>
-  cp.fetchAllPeople((p) => emit("cp:progress", p)),
-);
+ipcMain.handle("cp:fetchAll", async (_e, opts) => {
+  if (_syncState.cp.active) {
+    return { ok: false, error: "already-running", status: _syncState.cp };
+  }
+  setSync("cp", { active: true, total: 0, done: 0, ok: 0, err: 0, current: null });
+  emit("cp:progress", _syncState.cp);
+  try {
+    const res = await cp.fetchAllPeople((p) => {
+      setSync("cp", p);
+      emit("cp:progress", _syncState.cp);
+    }, opts || {});
+    setSync("cp", { active: false, finishedAt: new Date().toISOString(), lastResult: res });
+    emit("cp:progress", _syncState.cp);
+    return res;
+  } catch (err) {
+    setSync("cp", { active: false, finishedAt: new Date().toISOString(), lastResult: { ok: false, error: err.message } });
+    emit("cp:progress", _syncState.cp);
+    return { ok: false, error: err.message };
+  }
+});
 ipcMain.handle("cp:stats", (_e, personId) => db.listCpStats(personId));
 ipcMain.handle("cp:submissions", (_e, personId, limit) =>
   db.recentCpSubmissions(personId, limit ?? 20),
@@ -877,18 +1004,37 @@ ipcMain.handle("cp:fetchSrmLeaderboard", (event) =>
   }),
 );
 ipcMain.handle("cp:syncSrmLeaderboard", async (event) => {
-  const r = await cp.fetchSrmLeaderboard((info) => {
-    try { event.sender.send("cp:srmLeaderboardProgress", info); } catch {}
-  });
-  if (!r.ok) return r;
-  const synced = cp.syncSrmLeaderboardToPeople(r.rows);
-  return {
-    ...synced,
-    fetchedAt: r.fetchedAt,
-    via: r.via,
-    partial: !!r.partial,
-    note: r.note,
-  };
+  if (_syncState.srm.active) {
+    return { ok: false, error: "already-running", status: _syncState.srm };
+  }
+  setSync("srm", { active: true, stage: null, page: null, totalSoFar: 0 });
+  event.sender.send("cp:srmLeaderboardProgress", _syncState.srm);
+  try {
+    const r = await cp.fetchSrmLeaderboard((info) => {
+      setSync("srm", info);
+      try { event.sender.send("cp:srmLeaderboardProgress", _syncState.srm); } catch {}
+    });
+    if (!r.ok) {
+      setSync("srm", { active: false, finishedAt: new Date().toISOString(), lastResult: r });
+      try { event.sender.send("cp:srmLeaderboardProgress", _syncState.srm); } catch {}
+      return r;
+    }
+    const synced = cp.syncSrmLeaderboardToPeople(r.rows);
+    const result = {
+      ...synced,
+      fetchedAt: r.fetchedAt,
+      via: r.via,
+      partial: !!r.partial,
+      note: r.note,
+    };
+    setSync("srm", { active: false, finishedAt: new Date().toISOString(), lastResult: result });
+    try { event.sender.send("cp:srmLeaderboardProgress", _syncState.srm); } catch {}
+    return result;
+  } catch (err) {
+    setSync("srm", { active: false, finishedAt: new Date().toISOString(), lastResult: { ok: false, error: err.message } });
+    try { event.sender.send("cp:srmLeaderboardProgress", _syncState.srm); } catch {}
+    return { ok: false, error: err.message };
+  }
 });
 ipcMain.handle(
   "cp:srmLeaderboardLastSync",
@@ -961,6 +1107,13 @@ ipcMain.handle("activity:delete", (_e, id) => activity.deleteEntry(id));
 ipcMain.handle("activity:todayTotals", () => activity.todayTotals());
 ipcMain.handle("activity:buckets", (_e, date) => db.listBuckets(date));
 ipcMain.handle("activity:clearAll", () => db.clearAllActivity());
+
+// --- leisure timer (explicit user-declared breaks) ---
+ipcMain.handle("leisure:active", () => db.activeLeisure());
+ipcMain.handle("leisure:start", (_e, opts) => db.startLeisure(opts || {}));
+ipcMain.handle("leisure:extend", (_e, mins) => db.extendLeisure(mins));
+ipcMain.handle("leisure:stop", () => db.stopLeisure());
+ipcMain.handle("leisure:recent", (_e, opts) => db.recentLeisure(opts || {}));
 ipcMain.handle("schedule:clearAll", () => db.clearAllSchedule());
 ipcMain.handle("activity:weekTotals", () => activity.weekTotals());
 ipcMain.handle("activity:recentPushes", (_e, opts) =>
@@ -1167,6 +1320,84 @@ ipcMain.handle("repo:listByPerson", (_e, personId) => db.listRepos(personId));
 ipcMain.handle("repo:searchLocal", (_e, q, limit) =>
   db.searchAllRepos(q, limit || 80),
 );
+
+// Batch-summarize repos that either have no AI summary or were summarized
+// before the latest push. Lets "Browse repos" become semantic — the
+// stored payload includes oneliner / architecture / tech_stack which
+// searchAllRepos folds into its match hay. Emits a progress event per
+// repo so a UI can show the queue burning down.
+ipcMain.handle(
+  "repo:summarizeAll",
+  async (event, { force, max, model } = {}) => {
+    try {
+      const dbh = db._db();
+      const rows = dbh
+        .prepare(
+          `SELECT r.id, r.name, r.full_name, r.pushed_at, rs.created_at AS summarized_at
+             FROM repos r
+             LEFT JOIN repo_summaries rs ON rs.repo_id = r.id
+            ORDER BY r.pushed_at DESC NULLS LAST`,
+        )
+        .all();
+      // Stale = never summarized OR pushed after last summary.
+      const stale = rows.filter((r) => {
+        if (force) return true;
+        if (!r.summarized_at) return true;
+        if (!r.pushed_at) return false;
+        return r.pushed_at > r.summarized_at;
+      });
+      const limit = Math.max(1, Math.min(50, +max || 10));
+      const queue = stale.slice(0, limit);
+      const results = [];
+      for (let i = 0; i < queue.length; i++) {
+        const r = queue[i];
+        try { event.sender.send("repo:summarizeProgress", { i, total: queue.length, current: r.name }); } catch {}
+        try {
+          const detail = await github.fetchRepoDetail(r.id);
+          const res = await ollama.summarizeRepo({
+            repo: { ...detail.repo, languages: Object.keys(detail.languages || {}) },
+            readme: detail.readme,
+            ownRepos: [],
+            paths: detail.paths || [],
+            manifests: detail.manifests || {},
+            treeTruncated: !!detail.treeTruncated,
+            model,
+          });
+          if (res?.ok) {
+            db.saveRepoSummary(r.id, res, res.model || model || null);
+            results.push({ id: r.id, ok: true });
+          } else {
+            results.push({ id: r.id, ok: false, error: res?.error });
+          }
+        } catch (err) {
+          results.push({ id: r.id, ok: false, error: err.message });
+        }
+      }
+      try { event.sender.send("repo:summarizeProgress", { i: queue.length, total: queue.length, done: true }); } catch {}
+      return {
+        ok: true,
+        totalStale: stale.length,
+        processed: queue.length,
+        remaining: Math.max(0, stale.length - queue.length),
+        results,
+      };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  },
+);
+ipcMain.handle("repo:summarizeStats", () => {
+  const dbh = db._db();
+  const total = dbh.prepare("SELECT COUNT(*) AS c FROM repos").get().c;
+  const withSummary = dbh
+    .prepare(
+      `SELECT COUNT(*) AS c FROM repos r
+         JOIN repo_summaries rs ON rs.repo_id = r.id
+        WHERE r.pushed_at IS NULL OR rs.created_at >= r.pushed_at`,
+    )
+    .get().c;
+  return { total, withSummary, stale: total - withSummary };
+});
 // Public GitHub search — "what has the community built for this topic".
 ipcMain.handle("repo:searchPublic", (_e, q, opts) =>
   github.searchPublicRepos(q, opts || {}),

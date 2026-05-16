@@ -4697,6 +4697,82 @@ function AskApexDrawer({
   const [includeContext, setIncludeContext] = useState(true);
   const [includeDayNote, setIncludeDayNote] = useState(false);
   const [dayNoteSummary, setDayNoteSummary] = useState(null);
+  // Attached-file context (PDF/image extracted text → optionally turned
+  // into tasks). Lives as long as the drawer is open.
+  const [attached, setAttached] = useState(null); // {name, kind, text}
+  const [extracting, setExtracting] = useState(false);
+  const [extractedTasks, setExtractedTasks] = useState(null);
+  const [extractingTasks, setExtractingTasks] = useState(false);
+  const [savedCount, setSavedCount] = useState(0);
+
+  async function pickFile() {
+    setErr(null);
+    try {
+      const path = await api.settings.pickFile([
+        { name: "Documents & images", extensions: ["pdf", "png", "jpg", "jpeg", "webp", "txt", "md", "csv", "json"] },
+      ]);
+      if (!path) return;
+      setExtracting(true);
+      const r = await api.ollama.extractFromFile({ path, model });
+      if (r?.ok) {
+        const fname = path.split(/[\\/]/).pop();
+        setAttached({ name: fname, kind: r.kind, text: r.text || "" });
+      } else {
+        setErr(r?.error || "extract failed");
+      }
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  async function extractTasks() {
+    if (!attached?.text) return;
+    setExtractingTasks(true);
+    setExtractedTasks(null);
+    setErr(null);
+    try {
+      const r = await api.ollama.extractTasks({
+        text: attached.text,
+        intent: q.trim() || "Extract upcoming tasks, deadlines, classes, and exam dates from this content.",
+        model,
+      });
+      if (r?.ok && Array.isArray(r.tasks)) {
+        setExtractedTasks(r.tasks);
+      } else {
+        setErr(r?.error || "couldn't parse tasks from that file");
+      }
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setExtractingTasks(false);
+    }
+  }
+
+  async function saveTasks() {
+    if (!extractedTasks?.length) return;
+    let saved = 0;
+    for (const t of extractedTasks) {
+      try {
+        await api.tasks.create({
+          title: t.title || "Untitled",
+          description: t.description || null,
+          category: t.category || "Academics",
+          priority: t.priority || 3,
+          deadline: t.deadline || null,
+          course_code: t.course_code || null,
+          estimated_minutes: t.estimated_minutes || null,
+          tags: ["apex-extract"],
+          kind: "task",
+        });
+        saved += 1;
+      } catch { /* skip the broken one */ }
+    }
+    setSavedCount(saved);
+    setExtractedTasks(null);
+    setAttached(null);
+  }
 
   // Fetch today's day-note summary (opt-in) once.
   useEffect(() => {
@@ -4749,9 +4825,14 @@ function AskApexDrawer({
       `Be concrete. Avoid pep talk. Avoid restating the question. For plans, give a 3-step list + one sentence of reasoning. For code, one short example plus one caveat.`,
       `Do NOT invent times or facts the user didn't provide; if you reference their schedule or workload, use only the context block.`,
     ].join(" ");
+    // If the user attached a file, fold its extracted text into the
+    // prompt context so the answer can reference it.
+    const fileBlock = attached?.text
+      ? `\n\n# Attached file (${attached.name})\n${attached.text.slice(0, 8000)}`
+      : "";
     const user = includeContext
-      ? `# Context\n${ctx.blockText}\n\n# Question\n${q.trim()}`
-      : q.trim();
+      ? `# Context\n${ctx.blockText}${fileBlock}\n\n# Question\n${q.trim()}`
+      : q.trim() + fileBlock;
     const res = await api.ollama.chat({ model, system, user });
     setLoading(false);
     if (!res.ok) setErr(res.error || "Ollama error");
@@ -4791,11 +4872,82 @@ function AskApexDrawer({
           </div>
         )}
 
+        {/* Attached file panel — appears when the user picks a PDF/image
+            and we've extracted text from it. The user can then turn that
+            text into structured tasks via the AI and save them. */}
+        {attached && (
+          <div className="ask-apex-attach">
+            <div className="row between" style={{ alignItems: "baseline" }}>
+              <strong>
+                Attached · {attached.name}{" "}
+                <small className="muted">({attached.kind})</small>
+              </strong>
+              <button className="ghost xsmall" onClick={() => { setAttached(null); setExtractedTasks(null); }}>
+                Remove
+              </button>
+            </div>
+            <div className="ask-apex-attach-preview">
+              {(attached.text || "").slice(0, 600)}
+              {(attached.text || "").length > 600 && "…"}
+            </div>
+            {!extractedTasks && (
+              <div className="row" style={{ gap: 6, marginTop: 8 }}>
+                <button
+                  className="primary small"
+                  onClick={extractTasks}
+                  disabled={extractingTasks || !ollamaOk}
+                  title="Have Apex extract structured tasks (title, deadline, course) from the file"
+                >
+                  {extractingTasks ? "Extracting tasks…" : "Extract tasks"}
+                </button>
+              </div>
+            )}
+            {extractedTasks && extractedTasks.length > 0 && (
+              <div className="ask-apex-extracted">
+                <div className="row between" style={{ marginBottom: 6 }}>
+                  <strong>{extractedTasks.length} tasks ready to save</strong>
+                  <div className="row" style={{ gap: 6 }}>
+                    <button className="ghost xsmall" onClick={() => setExtractedTasks(null)}>
+                      Discard
+                    </button>
+                    <button className="primary small" onClick={saveTasks}>
+                      Save all
+                    </button>
+                  </div>
+                </div>
+                {extractedTasks.map((t, i) => (
+                  <div key={i} className="ask-apex-extracted-row">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <strong>{t.title}</strong>
+                      <div className="muted" style={{ fontSize: 11 }}>
+                        {[t.course_code, t.category, t.deadline && new Date(t.deadline).toLocaleString()].filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                    <span className="pill">P{t.priority || 3}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {extractedTasks && extractedTasks.length === 0 && (
+              <small className="muted" style={{ display: "block", marginTop: 6 }}>
+                No tasks found in that file.
+              </small>
+            )}
+          </div>
+        )}
+        {savedCount > 0 && (
+          <div className="ask-apex-saved-toast">
+            ✓ Saved {savedCount} task{savedCount === 1 ? "" : "s"} from the file.
+          </div>
+        )}
+
         <textarea
           rows={4}
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="e.g. Given today's schedule, what's a realistic evening plan?"
+          placeholder={attached
+            ? "Optional · tell Apex what to focus on in the attached file…"
+            : "e.g. Given today's schedule, what's a realistic evening plan?"}
           onKeyDown={(e) => {
             if (e.ctrlKey && e.key === "Enter") ask();
           }}
@@ -4843,6 +4995,15 @@ function AskApexDrawer({
           </div>
           <div className="row" style={{ gap: 8 }}>
             {err && <span className="error">{err}</span>}
+            <button
+              type="button"
+              className="ghost"
+              onClick={pickFile}
+              disabled={extracting}
+              title="Attach a PDF, image, or text file — Apex will extract its content"
+            >
+              {extracting ? "Reading file…" : "Attach file"}
+            </button>
             <button
               className="primary"
               onClick={ask}

@@ -52,12 +52,14 @@ export default function People() {
   useEffect(() => { setPage(1); }, [filter.q, filter.tag, filter.source, filter.only, groupBy]);
 
   useEffect(() => {
-    // Only update progress numbers — don't auto-flip `active` off.
-    // The previous logic `active: p.done < p.total` made the SyncBar flash
-    // away whenever a progress event arrived with done==total==0 (e.g. no
-    // people had CP handles yet). The parent function explicitly sets
-    // active:false on completion in syncAllGh / syncAllCp, which is the
-    // single source of truth.
+    // Hydrate sync state from the main process on mount — survives tab
+    // switches. Earlier the UI lost track of an in-flight sync the moment
+    // you navigated away because state lived only in component memory.
+    // Now main owns the truth; we just paint whatever it's holding.
+    api.sync?.status?.().then((s) => {
+      if (s?.gh) setGhSync((cur) => ({ ...cur, ...s.gh }));
+      if (s?.cp) setCpSync((cur) => ({ ...cur, ...s.cp }));
+    }).catch(() => {});
     const off1 = api.people.onSyncProgress((p) =>
       setGhSync((s) => ({ ...s, ...p })),
     );
@@ -173,19 +175,41 @@ export default function People() {
     reload();
   }
   async function syncAllGh() {
+    if (ghSync.active) {
+      setStatus({ msg: "GitHub sync already running — wait for it to finish." });
+      return;
+    }
     setGhSync({ active: true, total: 0, done: 0, current: null, rateLimited: false, resetAt: null });
     const res = await api.people.syncAll();
+    // Main guards against double-runs and returns this error if you slip
+    // through; surface it instead of crashing on res.filter().
+    if (res && res.ok === false && res.error === "already-running") {
+      setStatus({ msg: "GitHub sync is already running in the background." });
+      return;
+    }
     setGhSync((s) => ({ ...s, active: false }));
-    setStatus({ msg: `GitHub sync: ${res.filter((r) => r.ok).length} / ${res.length} ok` });
+    if (Array.isArray(res)) {
+      setStatus({ msg: `GitHub sync: ${res.filter((r) => r.ok).length} / ${res.length} ok` });
+    } else if (res?.ok === false) {
+      setStatus({ err: "GitHub sync failed: " + (res?.error || "unknown") });
+    }
     reload();
   }
   function handleClearData() {
     setShowBulkDelete(true);
   }
   async function syncAllCp() {
+    if (cpSync.active) {
+      setStatus({ msg: "CP sync already running — wait for it to finish." });
+      return;
+    }
     setCpSync({ active: true, total: 0, done: 0, ok: 0, err: 0, current: null });
     try {
       const res = await api.cp.fetchAll();
+      if (res?.ok === false && res?.error === "already-running") {
+        setStatus({ msg: "CP sync is already running in the background." });
+        return;
+      }
       if (!res || res.ok === false) {
         setStatus({ err: "CP sync: " + (res?.error || "unknown error") });
       } else if ((res.total || 0) === 0) {
@@ -722,7 +746,24 @@ function PeopleSyncMenu({ ghActive, cpActive, onSyncGh, onSyncCp, onSyncSrm }) {
     api.cp.srmLeaderboardLastSync?.().then((r) => setLast(r)).catch(() => {});
     api.settings?.get?.("github.lastSync")?.then((v) => v && setGhLast(v)).catch(() => {});
     api.settings?.get?.("cp.lastSync")?.then((v) => v && setCpLast(v)).catch(() => {});
-    const off = api.cp.onSrmLeaderboardProgress?.((info) => setProgress(info));
+    // Hydrate SRM busy state from main on mount — survives tab switches.
+    api.sync?.status?.().then((s) => {
+      if (s?.srm?.active) {
+        setBusy(true);
+        setProgress({
+          stage: s.srm.stage,
+          page: s.srm.page,
+          totalSoFar: s.srm.totalSoFar,
+        });
+      }
+    }).catch(() => {});
+    const off = api.cp.onSrmLeaderboardProgress?.((info) => {
+      setProgress(info);
+      // The main process now broadcasts an end-of-job event with
+      // active:false — flip our local busy to match.
+      if (info && info.active === false) setBusy(false);
+      else if (info && info.active === true) setBusy(true);
+    });
     return () => { try { off?.(); } catch {} };
   }, []);
 
@@ -756,11 +797,15 @@ function PeopleSyncMenu({ ghActive, cpActive, onSyncGh, onSyncCp, onSyncSrm }) {
   }, [cpActive]);
 
   async function runSrm() {
+    if (busy) return;
     setOpen(false); setBusy(true); setProgress(null); setMsg(null);
     try {
       const r = await api.cp.syncSrmLeaderboard();
-      if (!r?.ok) setMsg("Failed: " + (r?.error || "unknown"));
-      else {
+      if (r?.ok === false && r.error === "already-running") {
+        setMsg("Already syncing — wait for it to finish.");
+      } else if (!r?.ok) {
+        setMsg("Failed: " + (r?.error || "unknown"));
+      } else {
         setMsg(`Imported ${r.imported}, updated ${r.updated} of ${r.total}.`);
         setLast({ at: r.fetchedAt, ...r });
         onSyncSrm?.();
@@ -1338,6 +1383,42 @@ function RepoTopicSearch({ onOpenRepo }) {
   const [loadingLocal, setLoadingLocal] = useState(false);
   const [loadingPublic, setLoadingPublic] = useState(false);
   const [err, setErr] = useState(null);
+  // Semantic-summary build state — when the user clicks "Build summaries"
+  // we kick off a batch summarize and stream per-repo progress here so
+  // the UI shows the queue burning down.
+  const [stats, setStats] = useState(null); // { total, withSummary, stale }
+  const [summarizing, setSummarizing] = useState(false);
+  const [progress, setProgress] = useState(null); // { i, total, current }
+
+  // Load stats once + subscribe to per-repo progress while building.
+  useEffect(() => {
+    api.repo.summarizeStats?.().then((r) => r && setStats(r)).catch(() => {});
+    const off = api.repo.onSummarizeProgress?.((info) => setProgress(info));
+    return () => { try { off?.(); } catch {} };
+  }, []);
+
+  async function buildSummaries(force = false) {
+    setSummarizing(true);
+    setProgress(null);
+    try {
+      const r = await api.repo.summarizeAll({ force, max: 20 });
+      if (r?.ok) {
+        // Refresh stats and re-trigger the current search so semantic
+        // matches show up immediately.
+        const s = await api.repo.summarizeStats();
+        setStats(s);
+        if (debounced) {
+          const local = await api.repo.searchLocal(debounced, 60);
+          setLocalRows(Array.isArray(local) ? local : []);
+        }
+      }
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setSummarizing(false);
+      setProgress(null);
+    }
+  }
 
   // Debounce typing → search.
   useEffect(() => {
@@ -1393,6 +1474,46 @@ function RepoTopicSearch({ onOpenRepo }) {
           <button className="ghost xsmall" onClick={() => setQ("")} title="Clear">✕</button>
         )}
       </div>
+
+      {/* Semantic-summary status + builder. The local search hay
+          already folds the stored AI summaries into the match, so
+          having more repos summarised = better non-keyword hits. */}
+      {stats && stats.total > 0 && (
+        <div className="repo-topic-stats">
+          <small className="muted">
+            <strong>{stats.withSummary}</strong> of <strong>{stats.total}</strong> repos summarised
+            {stats.stale > 0 && <> · {stats.stale} stale</>}
+          </small>
+          <div className="row" style={{ gap: 6 }}>
+            {summarizing && progress && (
+              <small className="muted">
+                <span className="spinner" aria-hidden /> {progress.current ? `Summarising ${progress.current}` : "…"}
+                {progress.total ? ` · ${progress.i + 1}/${progress.total}` : ""}
+              </small>
+            )}
+            {stats.stale > 0 && !summarizing && (
+              <button
+                type="button"
+                className="ghost xsmall"
+                onClick={() => buildSummaries(false)}
+                title="Summarise the stale ones — runs through Ollama, ~30s each"
+              >
+                Build summaries
+              </button>
+            )}
+            {!summarizing && stats.stale === 0 && stats.total > 0 && (
+              <button
+                type="button"
+                className="ghost xsmall"
+                onClick={() => buildSummaries(true)}
+                title="Re-summarise everything, even if cached"
+              >
+                Rebuild all
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {!debounced && (
         <div className="repo-topic-quick">

@@ -137,6 +137,7 @@ contextBridge.exposeInMainWorld("apex", {
     burnoutCheck: (ctx) => invoke("ollama:burnoutCheck", ctx),
     eveningReview: (ctx) => invoke("ollama:eveningReview", ctx),
     extractTasks: (opts) => invoke("ollama:extractTasks", opts),
+    extractFromFile: (opts) => invoke("apex:extractFromFile", opts),
     best: () => invoke("ollama:best"),
     start: () => invoke("ollama:start"),
     ping: () => invoke("ollama:ping"),
@@ -161,13 +162,19 @@ contextBridge.exposeInMainWorld("apex", {
     merge: (args) => invoke("people:merge", args),
     repos: (id) => invoke("people:repos", id),
     sync: (id) => invoke("people:sync", id),
-    syncAll: () => invoke("people:syncAll"),
+    syncAll: (opts) => invoke("people:syncAll", opts),
     onSyncProgress: (h) => on("people:syncProgress", h),
     heatStrips: (ids, days) => invoke("people:heatStrips", ids, days),
   },
+  sync: {
+    // Singleton sync-state cache from main. Lets the UI re-paint an
+    // in-flight sync after a tab switch instead of losing the UI for an
+    // active job. Returns { gh, cp, srm } each with { active, ... }.
+    status: () => invoke("sync:status"),
+  },
   cp: {
     fetchPerson: (id) => invoke("cp:fetchPerson", id),
-    fetchAll: () => invoke("cp:fetchAll"),
+    fetchAll: (opts) => invoke("cp:fetchAll", opts),
     stats: (id) => invoke("cp:stats", id),
     submissions: (id, limit) => invoke("cp:submissions", id, limit),
     self: () => invoke("cp:self"),
@@ -210,6 +217,13 @@ contextBridge.exposeInMainWorld("apex", {
     buckets: (d) => invoke("activity:buckets", d),
     clearAll: () => invoke("activity:clearAll"),
   },
+  leisure: {
+    active: () => invoke("leisure:active"),
+    start: (opts) => invoke("leisure:start", opts),
+    extend: (mins) => invoke("leisure:extend", mins),
+    stop: () => invoke("leisure:stop"),
+    recent: (opts) => invoke("leisure:recent", opts),
+  },
   tracker: {
     start: () => invoke("tracker:start"),
     stop: () => invoke("tracker:stop"),
@@ -244,6 +258,9 @@ contextBridge.exposeInMainWorld("apex", {
     listByPerson: (personId) => invoke("repo:listByPerson", personId),
     searchLocal: (q, limit) => invoke("repo:searchLocal", q, limit),
     searchPublic: (q, opts) => invoke("repo:searchPublic", q, opts),
+    summarizeAll: (opts) => invoke("repo:summarizeAll", opts),
+    summarizeStats: () => invoke("repo:summarizeStats"),
+    onSummarizeProgress: (h) => on("repo:summarizeProgress", h),
     recentCommits: (args) => invoke("repo:recentCommits", args),
     summarizeRecentChanges: (args) => invoke("repo:summarizeRecentChanges", args),
     chat: (args) => invoke("repo:chat", args),

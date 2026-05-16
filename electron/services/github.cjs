@@ -209,14 +209,29 @@ async function syncPerson(personId) {
 //     near zero remaining requests
 //   • a hard 403/429 response sets a `stop` flag that drains the pool
 //     gracefully and surfaces resetAt to the UI
-async function syncAll(onProgress) {
+async function syncAll(onProgress, opts = {}) {
   const dbh = db._db();
-  const people = dbh
+  // Skip recently-synced people unless force=true. Default freshness window
+  // is 6 hours — anyone synced within the last 6h is skipped, which makes
+  // "Sync GitHub" cheap to re-run and stops the 50-person hammer that
+  // burned through rate limits.
+  const force = !!opts.force;
+  const staleAfterHours = +opts.staleAfterHours || 6;
+  const cutoff = new Date(Date.now() - staleAfterHours * 3600 * 1000).toISOString();
+  const allPeople = dbh
     .prepare(
-      `SELECT id, name FROM people
-       WHERE github_username IS NOT NULL AND TRIM(github_username) != ''`
+      `SELECT id, name, last_scraped_at FROM people
+       WHERE github_username IS NOT NULL AND TRIM(github_username) != ''`,
     )
     .all();
+  const people = force
+    ? allPeople
+    : allPeople.filter((p) => {
+        if (!p.last_scraped_at) return true;
+        // last_scraped_at stored as UTC ISO; SQLite gives plain string.
+        const t = p.last_scraped_at.length === 19 ? p.last_scraped_at + "Z" : p.last_scraped_at;
+        return t < cutoff;
+      });
 
   const total = people.length;
   const results = [];

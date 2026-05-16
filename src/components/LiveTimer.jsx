@@ -55,16 +55,36 @@ export default function LiveTimer({ tasks = [], onChanged }) {
   // "Take a 5-min break?" — one click starts a break-kind timer with a
   // sensible duration based on what just finished.
   const [breakSuggestion, setBreakSuggestion] = useState(null);
+  // Active leisure segment — runs independently of the live_timer state
+  // so the user can be "off the clock" without having to start a fake
+  // timer. Polled alongside the regular timer refresh.
+  const [leisure, setLeisure] = useState(null);
   const tickRef = useRef(null);
 
   async function refresh() {
     try {
-      const t = await api.timer.active();
+      const [t, l] = await Promise.all([
+        api.timer.active(),
+        api.leisure?.active?.() ?? Promise.resolve(null),
+      ]);
       setActive(t || null);
+      setLeisure(l || null);
       onChanged?.(t || null);
     } catch {
       setActive(null);
     }
+  }
+  async function startLeisureSegment(label) {
+    await api.leisure?.start?.({ label, estimatedMinutes: 15 });
+    await refresh();
+  }
+  async function extendLeisureSegment(mins) {
+    await api.leisure?.extend?.(mins);
+    await refresh();
+  }
+  async function stopLeisureSegment() {
+    await api.leisure?.stop?.();
+    await refresh();
   }
 
   // Initial load + subscribe to push updates from main.
@@ -176,15 +196,34 @@ export default function LiveTimer({ tasks = [], onChanged }) {
             </div>
           </div>
         )}
-        {/* Slim idle strip — the bulky "No active timer" card was visually
-            dominant for a state that's just "nothing happening". Now a
-            single quiet line + small button. Reads as a CTA, not a placeholder. */}
-        <div className="live-timer idle-slim">
-          <span className="muted">Ready to focus?</span>
-          <button className="ghost small" onClick={() => setShowStart(true)}>
-            Start a timer
-          </button>
-        </div>
+        {/* Leisure mode — a parallel "I'm on a break" state. Lives next
+            to the work-timer slot so the dashboard always reflects what
+            the user is actually doing. */}
+        {leisure ? (
+          <LeisureStrip
+            seg={leisure}
+            now={now}
+            onExtend={extendLeisureSegment}
+            onStop={stopLeisureSegment}
+          />
+        ) : (
+          <div className="live-timer idle-slim">
+            <span className="muted">Ready to focus?</span>
+            <div className="row" style={{ gap: 6 }}>
+              <button
+                type="button"
+                className="ghost small"
+                onClick={() => startLeisureSegment("On a break")}
+                title="Log a break — extend, resume, or stop when you're back"
+              >
+                Start leisure
+              </button>
+              <button className="primary small" onClick={() => setShowStart(true)}>
+                Start a timer
+              </button>
+            </div>
+          </div>
+        )}
         {showStart && (
           <StartTimerModal
             tasks={tasks}
@@ -505,4 +544,41 @@ function fmt(sec) {
 function prettyKind(k) {
   const o = KIND_OPTIONS.find((x) => x.key === k);
   return o?.label || k || "Activity";
+}
+
+// Compact strip shown while the user is in "leisure mode". Replaces the
+// "Ready to focus?" line. Shows how long the break has been running and
+// gives quick +5/+10/+15 extend buttons. Stop fires `leisure:stop` which
+// closes the open segment.
+function LeisureStrip({ seg, now, onExtend, onStop }) {
+  const start = seg?.started_at
+    ? new Date((seg.started_at.length === 19 ? seg.started_at + "Z" : seg.started_at))
+    : new Date();
+  const elapsedSec = Math.max(0, Math.floor((now - start.getTime()) / 1000));
+  const elapsedMin = Math.floor(elapsedSec / 60);
+  const estimated = seg?.estimated_minutes || null;
+  const overdue = estimated && elapsedMin > estimated;
+  return (
+    <div className={"live-timer leisure-strip" + (overdue ? " overdue" : "")}>
+      <div className="leisure-strip-left">
+        <div className="leisure-strip-title">
+          <span className="leisure-pulse" aria-hidden />
+          {seg.label || "On a break"}
+        </div>
+        <small className="muted">
+          {fmt(elapsedSec)}
+          {estimated ? ` / ~${estimated}m est` : ""}
+          {overdue ? " · over" : ""}
+        </small>
+      </div>
+      <div className="row" style={{ gap: 6 }}>
+        <button className="ghost xsmall" onClick={() => onExtend(5)} title="Extend by 5 min">+5</button>
+        <button className="ghost xsmall" onClick={() => onExtend(10)} title="Extend by 10 min">+10</button>
+        <button className="ghost xsmall" onClick={() => onExtend(15)} title="Extend by 15 min">+15</button>
+        <button className="primary small" onClick={onStop} title="Back to work">
+          Resume work
+        </button>
+      </div>
+    </div>
+  );
 }

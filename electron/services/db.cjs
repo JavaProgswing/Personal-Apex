@@ -223,6 +223,23 @@ function runMigrations() {
   )`);
   tryExec(`CREATE INDEX IF NOT EXISTS idx_buckets_date ON activity_buckets(date)`);
 
+  // leisure_segments — explicit user-declared "I'm on a break / leisure
+  // / lunch / scroll" intervals. Coexists with the auto-tracker but
+  // takes priority for context: when the AI asks "what was I doing
+  // 14:00-15:00", a leisure_segments row says "explicit break" even if
+  // the tracker says "Brave was foreground" (which would otherwise be
+  // mislabeled productive). Open segments have ended_at = NULL.
+  tryExec(`CREATE TABLE IF NOT EXISTS leisure_segments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    estimated_minutes INTEGER,
+    label TEXT,
+    kind TEXT DEFAULT 'leisure',
+    note TEXT
+  )`);
+  tryExec(`CREATE INDEX IF NOT EXISTS idx_leisure_started ON leisure_segments(started_at)`);
+
   // Post-migration indexes: these reference columns that may have just been
   // added by the ALTERs above, so they can't live in schema.sql (which runs
   // before migrations). IF NOT EXISTS makes them idempotent.
@@ -1429,13 +1446,74 @@ function listBuckets(date, { limit = 200 } = {}) {
     }));
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// leisure_segments — user-declared breaks. Single open segment at a time
+// (the model: you're either "working" or "on a break"; the work side is
+// covered by live_timer). Lets the user override the auto-tracker's
+// guess for ambiguous activity like "Brave foregrounded" → that could
+// be Insta scroll OR a PQT lecture. Explicit > inferred.
+// ───────────────────────────────────────────────────────────────────────────
+function activeLeisure() {
+  return db
+    .prepare(
+      `SELECT * FROM leisure_segments
+        WHERE ended_at IS NULL
+        ORDER BY started_at DESC LIMIT 1`,
+    )
+    .get() || null;
+}
+function startLeisure({ label, estimatedMinutes, kind, note } = {}) {
+  // Close any stale open segment first (defensive — there should only
+  // ever be one).
+  db.prepare(`UPDATE leisure_segments SET ended_at = datetime('now') WHERE ended_at IS NULL`).run();
+  const info = db
+    .prepare(
+      `INSERT INTO leisure_segments (started_at, estimated_minutes, label, kind, note)
+       VALUES (datetime('now'), ?, ?, ?, ?)`,
+    )
+    .run(
+      estimatedMinutes ? Math.max(1, Math.round(+estimatedMinutes)) : null,
+      label || null,
+      kind || "leisure",
+      note || null,
+    );
+  return db.prepare(`SELECT * FROM leisure_segments WHERE id = ?`).get(info.lastInsertRowid);
+}
+function extendLeisure(byMinutes) {
+  const open = activeLeisure();
+  if (!open) return null;
+  const m = Math.max(1, Math.round(+byMinutes || 0));
+  db.prepare(
+    `UPDATE leisure_segments SET estimated_minutes = COALESCE(estimated_minutes, 0) + ? WHERE id = ?`,
+  ).run(m, open.id);
+  return db.prepare(`SELECT * FROM leisure_segments WHERE id = ?`).get(open.id);
+}
+function stopLeisure() {
+  const open = activeLeisure();
+  if (!open) return null;
+  db.prepare(`UPDATE leisure_segments SET ended_at = datetime('now') WHERE id = ?`).run(open.id);
+  return db.prepare(`SELECT * FROM leisure_segments WHERE id = ?`).get(open.id);
+}
+// Recent leisure segments for the day-view + AI context.
+function recentLeisure({ days = 1 } = {}) {
+  const cutoff = new Date(Date.now() - days * 86400 * 1000).toISOString();
+  return db
+    .prepare(
+      `SELECT * FROM leisure_segments
+        WHERE started_at >= ?
+        ORDER BY started_at DESC`,
+    )
+    .all(cutoff);
+}
+
 function clearAllActivity() {
-  // Nuke every activity surface — buckets, sessions, time entries, last-
-  // scraped timestamps. Used by Settings → Data → "Clear activity history".
+  // Nuke every activity surface — buckets, sessions, time entries, leisure.
+  // Used by Settings → Data → "Clear activity history".
   const tx = db.transaction(() => {
     db.exec("DELETE FROM activity_buckets");
     try { db.exec("DELETE FROM activity_sessions"); } catch {}
     try { db.exec("DELETE FROM time_entries"); } catch {}
+    try { db.exec("DELETE FROM leisure_segments"); } catch {}
   });
   try { tx(); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; }
 }
@@ -1460,14 +1538,19 @@ function clearAllSchedule() {
 function searchAllRepos(query, limit = 80) {
   const q = String(query || "").trim().toLowerCase();
   if (!q) return [];
-  // Pull everything (cheap — repos table is small) then filter in JS so
-  // we can match the topics JSON properly. SQLite LIKE on JSON columns
-  // would match `"react"` but also `"react-router"`, etc., which is fine.
+  // Pull everything (cheap — repos table is small) then filter in JS.
+  // We also LEFT JOIN repo_summaries so the search hay includes the AI's
+  // structured summary (oneliner / architecture / tech_stack / what
+  // someone could learn from it) — this is the difference between a
+  // pure keyword match ("rag" finds 2 repos) and a semantic-ish hit
+  // ("rag" finds repos that DESCRIBE building retrieval flows).
   const rows = db
     .prepare(
       `SELECT r.*, p.name AS person_name, p.github_username AS person_handle,
-              p.avatar_url AS person_avatar
+              p.avatar_url AS person_avatar,
+              rs.payload AS ai_summary_json
          FROM repos r JOIN people p ON p.id = r.person_id
+         LEFT JOIN repo_summaries rs ON rs.repo_id = r.id
         ORDER BY r.stars DESC NULLS LAST, r.pushed_at DESC NULLS LAST`,
     )
     .all();
@@ -1476,12 +1559,27 @@ function searchAllRepos(query, limit = 80) {
     const topics = safeJson(r.topics, []);
     const langs = safeJson(r.languages, {});
     const langKeys = Object.keys(langs).map((k) => k.toLowerCase());
+    // Pull the AI summary text into the search hay so semantic matches
+    // (e.g. "rag" matches "uses an embedding store for retrieval") work.
+    let aiHay = "";
+    if (r.ai_summary_json) {
+      try {
+        const a = JSON.parse(r.ai_summary_json);
+        aiHay = [
+          a.oneliner || "",
+          a.architecture || "",
+          (a.tech_stack || []).join(" "),
+          (a.things_to_learn || []).map((x) => typeof x === "string" ? x : x?.text || "").join(" "),
+        ].join(" ");
+      } catch { /* ignore */ }
+    }
     const hay = [
       String(r.name || ""),
       String(r.description || ""),
       String(r.language || ""),
       topics.join(" "),
       langKeys.join(" "),
+      aiHay,
     ].join(" ").toLowerCase();
     if (hay.includes(q)) {
       out.push({
@@ -2511,6 +2609,11 @@ module.exports = {
   listBuckets,
   clearAllActivity,
   clearAllSchedule,
+  activeLeisure,
+  startLeisure,
+  extendLeisure,
+  stopLeisure,
+  recentLeisure,
   upsertRepo,
   importPeople,
   getCpStats,
