@@ -2450,8 +2450,70 @@ function AppearanceTab({ all, setAll, save }) {
 
       <ContrastCard all={all} setAll={setAll} save={save} />
 
+      <SystemStartupCard all={all} setAll={setAll} save={save} />
+
       <CustomColorsCard all={all} setAll={setAll} save={save} />
     </>
+  );
+}
+
+// ─── SystemStartupCard ──────────────────────────────────────────────────
+// Start-with-Windows + close-to-tray toggles. Each flip writes the pref
+// to settings AND calls window.applyStartup() so the OS-level state
+// (registry login item, tray icon) lines up with the saved preference
+// without needing a restart.
+function SystemStartupCard({ all, setAll, save }) {
+  const [status, setStatus] = useState(null);
+  useEffect(() => {
+    api.window?.startupStatus?.().then(setStatus).catch(() => {});
+  }, []);
+
+  async function flip(key, value) {
+    setAll({ ...all, [key]: value ? "1" : "0" });
+    await save(key, value ? "1" : "0");
+    const r = await api.window?.applyStartup?.();
+    if (r?.ok) {
+      // Re-pull status so the UI shows the actual OS-level state.
+      api.window?.startupStatus?.().then(setStatus).catch(() => {});
+    }
+  }
+
+  const trayOn = (all["ui.minimizeToTray"] ?? "0") === "1";
+  const autoOn = (all["ui.autostart"] ?? "0") === "1";
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-title">System</div>
+      <small className="hint" style={{ display: "block", marginBottom: 12 }}>
+        How Apex behaves around the OS — start with your machine, hide to
+        the tray instead of quitting when you close the window.
+      </small>
+
+      <ToggleRow
+        label="Minimize to system tray"
+        sub="Closing the window hides Apex to the tray instead of quitting. Click the tray icon to bring it back."
+        checked={trayOn}
+        onChange={(v) => flip("ui.minimizeToTray", v)}
+      />
+      <div className="settings-divider" />
+      <ToggleRow
+        label="Start Apex with Windows"
+        sub={
+          trayOn
+            ? "Launches Apex automatically at login, hidden in the tray. Click the tray icon when you need it."
+            : "Launches Apex automatically at login. Window opens normally."
+        }
+        checked={autoOn}
+        onChange={(v) => flip("ui.autostart", v)}
+      />
+
+      {status && (
+        <small className="muted" style={{ display: "block", marginTop: 10, fontSize: 11 }}>
+          OS state: login-item is <strong>{status.openAtLogin ? "on" : "off"}</strong>
+          {" · "}tray icon is <strong>{status.trayActive ? "active" : "off"}</strong>.
+        </small>
+      )}
+    </div>
   );
 }
 

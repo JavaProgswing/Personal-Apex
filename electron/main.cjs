@@ -12,6 +12,9 @@ const {
   session,
   Notification,
   globalShortcut,
+  Tray,
+  Menu,
+  nativeImage,
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
@@ -47,8 +50,25 @@ const importLinks = require("./services/importLinks.cjs");
 const cp = require("./services/cp.cjs");
 
 let mainWindow = null;
+let tray = null;
+// Flipped to true only when the user picks "Quit" from the tray or
+// Cmd/Ctrl+Q. Tells the close handler "this is a real quit, don't hide".
+let isQuitting = false;
+// True if the OS auto-started the app at login. Used so we open the
+// window minimised (or not at all if tray-mode is on) when launched
+// invisibly at startup, vs full-window when the user opens the app
+// from their Start menu / taskbar.
+let launchedAtLogin = false;
 
 function createWindow() {
+  // Honour "start minimised" when launched at login — open hidden if
+  // the user enabled minimise-to-tray and the OS auto-launched us.
+  let startHidden = false;
+  try {
+    const wantTray = db.getSetting("ui.minimizeToTray") === "1";
+    if (launchedAtLogin && wantTray) startHidden = true;
+  } catch { /* ignore */ }
+
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 960,
@@ -56,7 +76,9 @@ function createWindow() {
     minHeight: 700,
     backgroundColor: "#0a0a0b",
     title: "Apex",
+    show: !startHidden,
     autoHideMenuBar: true,
+    icon: getAppIcon(),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -80,6 +102,115 @@ function createWindow() {
     }
     return { action: "allow" };
   });
+
+  // Hide-to-tray instead of quitting when the close button is clicked,
+  // if (a) the tray icon exists AND (b) minimise-to-tray is enabled.
+  // Cmd/Ctrl+Q or tray → Quit still exits properly because they flip
+  // `isQuitting` before triggering close.
+  mainWindow.on("close", (event) => {
+    if (isQuitting) return;
+    let wantTray = false;
+    try { wantTray = db.getSetting("ui.minimizeToTray") === "1"; } catch {}
+    if (wantTray && tray) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
+}
+
+// Returns the app icon as a nativeImage if we can find one, else null
+// (Electron falls back to its default icon). Looks for any of the common
+// asset locations the build/dist process produces.
+function getAppIcon() {
+  const candidates = [
+    path.join(__dirname, "..", "build", "icon.png"),
+    path.join(__dirname, "..", "build", "icon.ico"),
+    path.join(__dirname, "..", "assets", "icon.png"),
+    path.join(__dirname, "..", "dist", "icon.png"),
+    path.join(__dirname, "icon.png"),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) {
+        const img = nativeImage.createFromPath(p);
+        if (!img.isEmpty()) return img;
+      }
+    } catch {}
+  }
+  return null;
+}
+
+// Build the system-tray icon + context menu. Creates one tray instance
+// per app lifetime; the menu's items reach into mainWindow so we always
+// act on the current renderer.
+function createTray() {
+  if (tray) return;
+  const icon = getAppIcon();
+  // Fallback: a 16x16 transparent template so Tray() doesn't throw if no
+  // icon shipped with the build. Windows will show a generic placeholder.
+  const trayImg = icon || nativeImage.createEmpty();
+  try {
+    tray = new Tray(trayImg);
+    tray.setToolTip("Apex");
+    rebuildTrayMenu();
+    // Single-click → show/hide. Default Windows tray UX.
+    tray.on("click", () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+  } catch (err) {
+    console.warn("[apex] tray init failed:", err.message);
+    tray = null;
+  }
+}
+function rebuildTrayMenu() {
+  if (!tray) return;
+  const menu = Menu.buildFromTemplate([
+    {
+      label: "Open Apex",
+      click: () => {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          createWindow();
+          return;
+        }
+        mainWindow.show();
+        mainWindow.focus();
+      },
+    },
+    { type: "separator" },
+    {
+      label: "Quit Apex",
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+  tray.setContextMenu(menu);
+}
+
+// Apply the "start with Windows" preference to the OS. Idempotent: safe
+// to call on every boot to keep the registry/Login Items entry in sync.
+function applyAutostartFromSettings() {
+  try {
+    const want = db.getSetting("ui.autostart") === "1";
+    const minimised = db.getSetting("ui.minimizeToTray") === "1";
+    // openAsHidden hides the window at login on macOS; on Windows we
+    // approximate it by setting `args: ["--launched-at-login"]` and
+    // letting createWindow check it.
+    app.setLoginItemSettings({
+      openAtLogin: want,
+      openAsHidden: !!minimised,
+      args: minimised ? ["--launched-at-login"] : [],
+    });
+  } catch (err) {
+    console.warn("[apex] applyAutostartFromSettings:", err.message);
+  }
 }
 
 // Register a custom `apex-img://` protocol so the renderer can display
@@ -112,6 +243,12 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+// Detect "launched at login" so we know whether to open the window
+// hidden. Set by setLoginItemSettings({ args: ["--launched-at-login"] }).
+if (process.argv.includes("--launched-at-login")) {
+  launchedAtLogin = true;
+}
+
 app.whenReady().then(async () => {
   registerTimetableProtocol();
   try {
@@ -130,6 +267,15 @@ app.whenReady().then(async () => {
   // db.init() already seeds classes + weekly_goals + course habits on first
   // run. Nothing to do here.
   createWindow();
+  // Create the system-tray icon ONLY if the user opted in. We keep it
+  // off by default so the app doesn't grow a tray icon nobody asked for.
+  try {
+    if (db.getSetting("ui.minimizeToTray") === "1") {
+      createTray();
+    }
+  } catch {}
+  // Sync the login-item entry with the saved preference.
+  applyAutostartFromSettings();
 
   // Auto-resume activity tracker. Default = on: if the setting has never been
   // written, we still start it so "today's apps" isn't empty on first launch.
@@ -261,8 +407,15 @@ app.on("will-quit", () => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  // Keep the app alive when the tray is up — closing every window is
+  // equivalent to "minimise to tray" in tray mode. macOS already keeps
+  // the app running by convention; on Windows + Linux we now do too
+  // when the user has opted into the tray.
+  if (process.platform === "darwin") return;
+  if (tray) return;
+  app.quit();
 });
+app.on("before-quit", () => { isQuitting = true; });
 
 // Helpers to push progress events to the renderer.
 function emit(channel, payload) {
@@ -280,6 +433,35 @@ function emit(channel, payload) {
 ipcMain.handle("settings:get", (_e, key) => db.getSetting(key));
 ipcMain.handle("settings:set", (_e, key, value) => db.setSetting(key, value));
 ipcMain.handle("settings:delete", (_e, key) => db.deleteSetting(key));
+
+// Tray + autostart. Renderer flips these via the standard settings:set
+// path, then calls window:applyStartup so the changes take effect
+// immediately (tray icon appears/disappears, login-item gets written).
+ipcMain.handle("window:applyStartup", () => {
+  try {
+    const wantTray = db.getSetting("ui.minimizeToTray") === "1";
+    if (wantTray && !tray) createTray();
+    else if (!wantTray && tray) {
+      try { tray.destroy(); } catch {}
+      tray = null;
+    }
+    applyAutostartFromSettings();
+    return { ok: true, tray: !!tray };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+// Status read — Settings UI uses this to reflect the *actual* OS-level
+// login-item state (vs what we wrote to settings).
+ipcMain.handle("window:startupStatus", () => {
+  const li = app.getLoginItemSettings();
+  return {
+    openAtLogin: !!li.openAtLogin,
+    trayActive: !!tray,
+    minimizeToTrayPref: db.getSetting("ui.minimizeToTray") === "1",
+    autostartPref: db.getSetting("ui.autostart") === "1",
+  };
+});
 ipcMain.handle("settings:all", () => db.allSettings());
 
 ipcMain.handle("dialog:pickDirectory", async () => {

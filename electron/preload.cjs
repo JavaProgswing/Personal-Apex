@@ -172,6 +172,10 @@ contextBridge.exposeInMainWorld("apex", {
     // active job. Returns { gh, cp, srm } each with { active, ... }.
     status: () => invoke("sync:status"),
   },
+  window: {
+    applyStartup: () => invoke("window:applyStartup"),
+    startupStatus: () => invoke("window:startupStatus"),
+  },
   cp: {
     fetchPerson: (id) => invoke("cp:fetchPerson", id),
     fetchAll: (opts) => invoke("cp:fetchAll", opts),

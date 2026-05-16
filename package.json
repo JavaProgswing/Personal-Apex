@@ -1,6 +1,6 @@
 {
   "name": "apex",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Apex — personal productivity OS: timetable, tasks, Ollama planner, burnout check-in, and classmate project radar.",
   "private": true,
   "main": "electron/main.cjs",
@@ -43,7 +43,23 @@
       "output": "release"
     },
     "win": {
-      "target": "nsis"
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "signAndEditExecutable": false,
+      "signtoolOptions": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Apex"
+    },
+    "portable": {
+      "artifactName": "Apex-portable.exe"
     }
   }
 }
