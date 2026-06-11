@@ -64,11 +64,18 @@ object WellbeingReader {
         "com.instagram.barcelona" to "Threads",
     )
 
-    // Keep only things a human can actually open: must have a launcher entry
-    // and not match the junk patterns.
+    // Keep only things a human can actually open. The junk regex is the
+    // primary gate; the launch-intent check only DEMOTES a package when we can
+    // positively see it has no launcher entry. When package visibility hides
+    // an app from us (the cause of the "7m vs 2h" undercount), we keep it —
+    // a hidden-but-used app is almost certainly a real app.
     private fun isRealApp(packageManager: PackageManager, pkg: String): Boolean {
         if (junkPkg.containsMatchIn(pkg)) return false
-        return try { packageManager.getLaunchIntentForPackage(pkg) != null } catch (_: Exception) { false }
+        return try {
+            val visible = try { packageManager.getApplicationInfo(pkg, 0); true } catch (_: Exception) { false }
+            if (!visible) return true // can't inspect it → trust the regex verdict
+            packageManager.getLaunchIntentForPackage(pkg) != null
+        } catch (_: Exception) { true }
     }
 
     fun readToday(context: Context): List<WellbeingSession> {
@@ -103,6 +110,17 @@ object WellbeingReader {
                     }
                     UsageEvents.Event.MOVE_TO_BACKGROUND -> {
                         active.remove(pkg)?.let { s -> agg.getOrPut(pkg) { Agg() }.credit(s, ev.timeStamp) }
+                    }
+                    // Screen off / keyguard / shutdown: nothing is "in use"
+                    // anymore even though no MOVE_TO_BACKGROUND fired. Without
+                    // this clamp a locked phone kept crediting the last app,
+                    // which is why Apex's numbers ran way past Digital
+                    // Wellbeing's.
+                    UsageEvents.Event.SCREEN_NON_INTERACTIVE,
+                    UsageEvents.Event.KEYGUARD_SHOWN,
+                    UsageEvents.Event.DEVICE_SHUTDOWN -> {
+                        for ((p, s) in active) agg.getOrPut(p) { Agg() }.credit(s, ev.timeStamp)
+                        active.clear()
                     }
                 }
             }
@@ -180,6 +198,12 @@ object WellbeingReader {
                 }
                 UsageEvents.Event.MOVE_TO_BACKGROUND -> if (ev.packageName == latestPkg && ev.timeStamp > latestTs) {
                     latestPkg = null
+                }
+                // Screen off = nothing foreground; stops the Zen blocker from
+                // "bouncing" apps while the phone is locked in a pocket.
+                UsageEvents.Event.SCREEN_NON_INTERACTIVE,
+                UsageEvents.Event.KEYGUARD_SHOWN -> if (ev.timeStamp > latestTs) {
+                    latestTs = ev.timeStamp; latestPkg = null
                 }
             }
         }

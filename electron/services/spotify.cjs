@@ -1429,7 +1429,9 @@ async function createFocusPlaylist(opts, onProgress) {
     await _replacePlaylistAll(playlistId, matched.map(function(t){ return t.uri; }));
     db.setSetting("spotify.focusPlaylistUri", playlistUri);
     db.setSetting("spotify.focusPlaylistName", playlistName);
-    db.setSetting("spotify.autoPlayFocus", "1");
+    // NB: deliberately NOT flipping spotify.autoPlayFocus here. Zen plays its
+    // own playlist for the session; whether plain timers auto-play music is
+    // the user's call via Settings → Integrations → Spotify.
 
     if (onProgress) onProgress({ message: "Done!", current: 4, total: 4 });
     return {

@@ -311,8 +311,9 @@ export default function ZenMode({ onChanged, onActiveChange }) {
               </div>
               <h2 className="zen-title">{active.title}</h2>
               <div className="zen-meta">
-                {zenPlaylistLabel(active, playlistState)} - {active.violations || 0} drift
-                {isLocked ? " - locked to timer" : ""}
+                <span>{zenPlaylistLabel(active, playlistState)}</span>
+                <span>{active.violations || 0} drift</span>
+                {isLocked && <span className="zen-meta-locked">🔒 locked to timer</span>}
               </div>
             </div>
             <div className="zen-clock">
@@ -814,7 +815,9 @@ function ZenSummaryPanel({ summary, onDismiss }) {
           <div className="zen-kicker">Zen summary</div>
           <h2 className="zen-title">{summary?.title || "Focus block"}</h2>
           <div className="zen-meta">
-            {actualMinutes || 0}m - {summary?.status || "ended"} - {summary?.violations || 0} drift
+            <span>{actualMinutes || 0}m</span>
+            <span>{summary?.status || "ended"}</span>
+            <span>{summary?.violations || 0} drift</span>
           </div>
         </div>
         <button className="ghost small" onClick={onDismiss}>Dismiss</button>

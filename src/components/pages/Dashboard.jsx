@@ -262,8 +262,11 @@ export default function Dashboard({ go }) {
   async function refreshActivity() {
     const [tr, apps, totals, blocks] = await Promise.all([
       api.activity.trend ? api.activity.trend(7).catch(() => []) : [],
+      // Fetch deep (40) — the visible list slices per source filter. With
+      // only 8, desktop hours crowded out every phone app, so the Phone
+      // filter looked empty even right after a successful sync.
       api.activity.topApps
-        ? api.activity.topApps(topAppsDate, 8).catch(() => [])
+        ? api.activity.topApps(topAppsDate, 40).catch(() => [])
         : [],
       api.activity.todayTotals().catch(() => null),
       api.activity.focusBlocks
@@ -766,8 +769,14 @@ export default function Dashboard({ go }) {
           </div>
           <div className="scroll-body">
           {classes.length === 0 && (
-            <div className="muted">
-              {dayOrder ? "Nothing scheduled." : "Weekend — no classes."}
+            <div className="empty-state">
+              <span className="empty-state-glyph" aria-hidden>▦</span>
+              <strong>{dayOrder ? "No classes today" : "Weekend"}</strong>
+              <small className="muted">
+                {dayOrder
+                  ? "Free slots all day — good day for deep work."
+                  : "No day order. Recharge or get ahead."}
+              </small>
             </div>
           )}
           {classes.map((c) => {
@@ -1876,7 +1885,6 @@ function ActivitySection({
             )}
           </div>
 
-          <FocusBlocksList blocks={focusBlocks} />
 
           {filteredApps.length > 0 && catBreakdown.length > 1 && (
             <div
@@ -1912,7 +1920,7 @@ function ActivitySection({
             </div>
           ) : (
             <div className="app-rows">
-              {filteredApps.map((a) => (
+              {filteredApps.slice(0, 10).map((a) => (
                 <AppRow
                   key={a.app}
                   app={a}
@@ -2292,6 +2300,8 @@ function DaySummaryModal({ onClose, onAsk }) {
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate] = useState(today);
   const [summary, setSummary] = useState(null);
+  const [buckets, setBuckets] = useState([]);
+  const [pickedBucket, setPickedBucket] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
 
@@ -2299,9 +2309,15 @@ function DaySummaryModal({ onClose, onAsk }) {
     let cancelled = false;
     setLoading(true);
     setErr(null);
-    api.activity.daySummary(date)
-      .then((res) => {
-        if (!cancelled) setSummary(res || null);
+    setPickedBucket(null);
+    Promise.all([
+      api.activity.daySummary(date),
+      api.activity.buckets ? api.activity.buckets(date).catch(() => []) : [],
+    ])
+      .then(([res, bk]) => {
+        if (cancelled) return;
+        setSummary(res || null);
+        setBuckets(Array.isArray(bk) ? bk : []);
       })
       .catch((e) => {
         if (!cancelled) setErr(e?.message || "Could not load summary.");
@@ -2358,6 +2374,59 @@ function DaySummaryModal({ onClose, onAsk }) {
               <SummaryStat label="Distract" value={fmtMinutes(sumMinutes(distractions))} />
               <SummaryStat label="Done" value={`${summary.completedTasks?.length || 0}`} />
             </div>
+
+            {/* Minute-by-minute — every 10-min bucket, clickable. Click a bar
+                to see exactly which apps filled that window. */}
+            {buckets.length > 0 && (
+              <div className="day-summary-timeline">
+                <div className="row between" style={{ alignItems: "baseline", marginBottom: 6 }}>
+                  <div className="section-label" style={{ margin: 0 }}>Minute by minute</div>
+                  <small className="muted">
+                    {fmtTime(buckets[0].startMin)}–{fmtTime(buckets[buckets.length - 1].endMin)} · click a bar
+                  </small>
+                </div>
+                <div className="day-timeline-bars">
+                  {buckets.map((b) => {
+                    const sorted = [...(b.apps || [])].sort((a, z) => z.minutes - a.minutes);
+                    const top = sorted[0];
+                    const cat = (top?.category || "other").toLowerCase();
+                    const isPicked = pickedBucket?.startMin === b.startMin;
+                    return (
+                      <button
+                        key={b.startMin}
+                        type="button"
+                        className={`day-timeline-bar cat-${cat}${isPicked ? " picked" : ""}`}
+                        style={{ "--h": `${Math.max(16, Math.min(100, (b.totalMinutes || 1) * 10))}%` }}
+                        title={`${fmtTime(b.startMin)} · ${b.totalMinutes || 0}m · ${top ? prettyAppName(top.app) : ""}`}
+                        onClick={() => setPickedBucket(isPicked ? null : b)}
+                      />
+                    );
+                  })}
+                </div>
+                {pickedBucket && (
+                  <div className="day-timeline-detail">
+                    <div className="row between" style={{ marginBottom: 6 }}>
+                      <strong>
+                        {fmtTime(pickedBucket.startMin)}–{fmtTime(pickedBucket.endMin)}
+                        <span className="muted" style={{ fontWeight: 400 }}>
+                          {" "}· {pickedBucket.totalMinutes || 0}m tracked
+                        </span>
+                      </strong>
+                      <button className="ghost xsmall" onClick={() => setPickedBucket(null)}>✕</button>
+                    </div>
+                    {[...(pickedBucket.apps || [])]
+                      .sort((a, z) => z.minutes - a.minutes)
+                      .map((a) => (
+                        <div key={a.app} className="day-timeline-app">
+                          <span className={`cat-dot cat-${(a.category || "other").toLowerCase()}`} aria-hidden />
+                          <span className="day-timeline-app-name">{prettyAppName(a.app)}</span>
+                          <small className="muted">{a.minutes}m</small>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="day-summary-grid">
               <SummarySection title="Close reasons" empty="No close reasons stored.">
@@ -4494,6 +4563,10 @@ function DayNoteCard({ model, ollamaOk }) {
 
       {!lockState.locked && expanded && (
         <>
+          <DayNoteTaskChips
+            todayIso={today}
+            onInsert={(line) => setBody((b) => (b ? b.replace(/\s*$/, "\n") : "") + line)}
+          />
           <textarea
             rows={5}
             value={body}
@@ -4589,6 +4662,70 @@ function DayNoteCard({ model, ollamaOk }) {
           onUnlocked={handleUnlockSuccess}
         />
       )}
+    </div>
+  );
+}
+
+// ─── DayNoteTaskChips ────────────────────────────────────────────────────
+// Structured task notes alongside the free text: today's completed tasks
+// plus a day recap, one tap each. Clicking inserts a "• [Task] — " line into
+// the note body so per-task observations stay separated from the diary text.
+function DayNoteTaskChips({ todayIso, onInsert }) {
+  const [done, setDone] = useState([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    api.tasks?.completedOn?.(todayIso).then((r) => setDone((r || []).slice(0, 8))).catch(() => {});
+  }, [todayIso]);
+
+  async function insertRecap() {
+    try {
+      const [totals, apps, blocks] = await Promise.all([
+        api.activity.totalsOn?.(todayIso).catch(() => null),
+        api.activity.topApps?.(todayIso, 5).catch(() => []),
+        api.activity.focusBlocks?.(todayIso, 5).catch(() => []),
+      ]);
+      const lines = ["", "— Today so far —"];
+      if (totals) {
+        const parts = ["productive", "distraction", "leisure"]
+          .filter((k) => totals[k])
+          .map((k) => `${k} ${fmtMinutes(totals[k])}`);
+        if (parts.length) lines.push(`Time: ${parts.join(" · ")}`);
+      }
+      if (apps?.length) {
+        lines.push(`Top apps: ${apps.slice(0, 4).map((a) => `${prettyAppName(a.app)} ${fmtMinutes(Math.round(a.minutes))}`).join(", ")}`);
+      }
+      if (blocks?.length) {
+        lines.push(`Focus blocks: ${blocks.map((b) => `${b.title} ${fmtMinutes(b.minutes || 0)}`).join(", ")}`);
+      }
+      if (done.length) {
+        lines.push(`Done: ${done.map((t) => t.title).join("; ")}`);
+      }
+      onInsert(lines.join("\n") + "\n");
+    } catch { /* recap is best-effort */ }
+  }
+
+  return (
+    <div className="day-note-chips">
+      <button type="button" className="ghost xsmall" onClick={insertRecap} title="Insert a recap of tracked time, top apps, focus blocks, and completed tasks">
+        ＋ Insert today so far
+      </button>
+      {done.length > 0 && (
+        <button type="button" className="ghost xsmall" onClick={() => setOpen((v) => !v)}>
+          Task notes {open ? "▴" : "▾"}
+        </button>
+      )}
+      {open && done.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          className="chip"
+          title="Insert a note line for this task"
+          onClick={() => onInsert(`• [${t.title}] — `)}
+        >
+          ✓ {t.title.length > 28 ? t.title.slice(0, 28) + "…" : t.title}
+        </button>
+      ))}
     </div>
   );
 }
@@ -4974,12 +5111,13 @@ function DayNoteUnlockModal({ onClose, onUnlocked }) {
         )}
 
         {phase === "unlock" && (
-          <div>
+          <div key={"unlock-" + formKey}>
             <div className="form-row">
               <label>Passcode</label>
               <input
                 type="password"
                 autoFocus
+                autoComplete="off"
                 value={pass}
                 onChange={(e) => setPass(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && doUnlock()}
@@ -6230,6 +6368,13 @@ function formatDaySummaryForContext(summary) {
 // MarkdownBlock lives in src/lib/markdown.jsx — imported above.
 
 // ─── helpers ──────────────────────────────────────────────────────────────
+// Module-level HH:MM for minute-of-day values (bucket timelines).
+function fmtTime(min) {
+  const h = Math.floor((min || 0) / 60);
+  const m = (min || 0) % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 function fmtMinutes(m) {
   if (!m) return "0m";
   const h = Math.floor(m / 60);

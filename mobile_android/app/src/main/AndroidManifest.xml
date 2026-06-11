@@ -6,6 +6,13 @@
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
+    <!-- Android 11+ package-visibility: without this, getLaunchIntentForPackage /
+         getApplicationInfo return null for almost every other app, which made the
+         screen-time filter silently drop Instagram/Netflix/etc (7m vs Digital
+         Wellbeing's 2h+). Fine for a sideloaded personal app. -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Auto-granted exact-alarm right for alarm-clock apps (API 33+); without
          it the OS silently widens alarms to a 1-hour window. -->

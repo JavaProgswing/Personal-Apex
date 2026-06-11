@@ -31,7 +31,7 @@ const KEY_EVENING_HOUR = 'notifications.eveningHour';
 // Per-kind toggle keys: notifications.kind.{class,deadline,timer,morning,evening,streak}
 function KEY_KIND(k) { return `notifications.kind.${k}`; }
 
-const ALL_KINDS = ['class', 'deadline', 'timer', 'morning', 'evening', 'streak'];
+const ALL_KINDS = ['class', 'deadline', 'timer', 'morning', 'evening', 'streak', 'accountability'];
 
 function _kindEnabled(k) {
   const v = db.getSetting(KEY_KIND(k));
@@ -316,7 +316,81 @@ function tick() {
   if (_kindEnabled('morning'))  { try { _checkMorningDigest(now); } catch (e) { console.warn('[notifier.morning]', e.message); } }
   if (_kindEnabled('evening'))  { try { _checkEveningPrompt(now); } catch (e) { console.warn('[notifier.evening]', e.message); } }
   if (_kindEnabled('streak'))   { try { _checkHabitStreakAtRisk(now); } catch (e) { console.warn('[notifier.streak]', e.message); } }
+  if (_kindEnabled('accountability')) { try { _checkAccountability(now); } catch (e) { console.warn('[notifier.accountability]', e.message); } }
   _gcSeenKeys(now.getTime());
+}
+
+// ── Accountability ──────────────────────────────────────────────────────
+// Two pressure valves so the day doesn't leak away untracked:
+//   1. Active at the desk but NO live timer for 45+ min → "what are you
+//      working on?" nudge with the top open task.
+//   2. Distraction minutes today cross a threshold (default 60m, then every
+//      +30m) → a blunt reminder with today's agenda.
+function _checkAccountability(now) {
+  const hour = now.getHours();
+  if (hour < 9 || hour >= 23) return; // sleep hours: leave the user alone
+
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const topTask = (() => {
+    try {
+      const open = (db.listTasks?.({ kind: 'task', completed: false }) || [])
+        .sort((a, b) => (a.priority || 3) - (b.priority || 3));
+      return open[0]?.title || null;
+    } catch { return null; }
+  })();
+
+  // 1) No-timer nudge. Only when the desktop tracker has logged activity in
+  // the last 10 minutes (user is actually at the machine).
+  try {
+    const NUDGE_MIN = _settingNum('accountability.timerNudgeMin', 45);
+    const recentRow = db._db()
+      .prepare(`SELECT MAX(ended_at) AS last FROM activity_sessions
+                 WHERE date = ? AND source IN ('desktop','desktop-open')`)
+      .get(todayIso);
+    const lastActive = recentRow?.last ? new Date(recentRow.last).getTime() : 0;
+    const atDesk = Date.now() - lastActive < 10 * 60_000;
+    const timer = db.getActiveTimer?.();
+    if (atDesk && !timer) {
+      const lastNudge = +(db.getSetting('accountability.lastTimerNudge') || 0);
+      if (Date.now() - lastNudge > NUDGE_MIN * 60_000) {
+        db.setSetting('accountability.lastTimerNudge', String(Date.now()));
+        fire({
+          title: 'No timer running',
+          body: topTask
+            ? `You're at the desk untracked. Start a timer — top task: ${topTask}`
+            : "You're at the desk untracked. Start a timer so the day has a record.",
+          kind: 'accountability',
+          payload: { reason: 'no-timer' },
+        });
+      }
+    }
+  } catch { /* table may be empty on first run */ }
+
+  // 2) Distraction budget.
+  try {
+    const WARN_MIN = _settingNum('accountability.distractionWarnMin', 60);
+    const totals = db.activityTotalsOn?.(todayIso) || {};
+    const distraction = totals.distraction || 0;
+    if (distraction >= WARN_MIN) {
+      const lastWarnedAt = +(db.getSetting('accountability.lastDistractionWarnLevel') || 0);
+      // Warn at the threshold, then every additional 30 minutes.
+      const level = Math.floor((distraction - WARN_MIN) / 30);
+      if (level >= lastWarnedAt) {
+        db.setSetting('accountability.lastDistractionWarnLevel', String(level + 1));
+        fire({
+          title: `${distraction}m of distraction today`,
+          body: topTask
+            ? `That's past your ${WARN_MIN}m line. Agenda: ${topTask}`
+            : `That's past your ${WARN_MIN}m line. Pick one task and start a timer.`,
+          kind: 'accountability',
+          payload: { reason: 'distraction-budget', minutes: distraction },
+        });
+      }
+    } else {
+      // New day / dipped back under: reset the ladder.
+      db.setSetting('accountability.lastDistractionWarnLevel', '0');
+    }
+  } catch { /* non-fatal */ }
 }
 
 function start() {
