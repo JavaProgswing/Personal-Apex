@@ -913,6 +913,8 @@ function productiveRecentApps(rows, tracker) {
     if (!app) return;
     const category = entry?.category || "productive";
     if (category !== "productive") return;
+    const srcs = (entry?.sources || entry?.source || "").toString();
+    if (srcs.includes("mobile") && !srcs.includes("desktop")) return;
     const key = app.toLowerCase();
     if (out.some((x) => x.app.toLowerCase() === key)) return;
     out.push({
@@ -940,6 +942,8 @@ function attentionRecentApps(rows, tracker) {
     if (!app) return;
     const category = entry?.category || "neutral";
     if (category === "productive") return;
+    const srcs = (entry?.sources || entry?.source || "").toString();
+    if (srcs.includes("mobile") && !srcs.includes("desktop")) return;
     const key = app.toLowerCase();
     if (out.some((x) => x.app.toLowerCase() === key)) return;
     out.push({
