@@ -104,6 +104,7 @@ contextBridge.exposeInMainWorld("apex", {
     state: () => invoke("routine:state"),
     saveConfig: (patch) => invoke("routine:saveConfig", patch),
     mark: (kind, payload) => invoke("routine:mark", kind, payload),
+    dismissNudge: (kind) => invoke("routine:dismissNudge", kind),
     approveCloseReason: (payload) => invoke("routine:approveCloseReason", payload),
     syncNow: () => invoke("routine:syncNow"),
     createPairingCode: (payload) => invoke("routine:createPairingCode", payload),
@@ -260,6 +261,7 @@ contextBridge.exposeInMainWorld("apex", {
     feed: (opts) => invoke("activity:feed", opts),
     buckets: (d) => invoke("activity:buckets", d),
     clearAll: () => invoke("activity:clearAll"),
+    openApps: () => invoke("activity:openApps"),
   },
   leisure: {
     active: () => invoke("leisure:active"),
@@ -272,7 +274,6 @@ contextBridge.exposeInMainWorld("apex", {
     start: () => invoke("tracker:start"),
     stop: () => invoke("tracker:stop"),
     status: () => invoke("tracker:status"),
-    openWindows: () => invoke("tracker:openWindows"),
     categorize: (app, category) => invoke("tracker:categorize", app, category),
     onNudge: (h) => on("activity:nudge", h),
     onSessionEnded: (h) => on("activity:sessionEnded", h),

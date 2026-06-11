@@ -104,20 +104,26 @@ export default function ZenMode({ onChanged, onActiveChange }) {
 
   async function refresh() {
     const today = new Date().toISOString().slice(0, 10);
-    const [z, h, apps, tracker, timer, wins] = await Promise.all([
+    const [z, h, apps, tracker, timer, open] = await Promise.all([
       api.zen?.active?.().catch(() => null),
       api.zen?.history?.(6).catch(() => []),
       api.activity?.topApps?.(today, 14).catch(() => []),
       api.tracker?.status?.().catch(() => null),
       api.timer?.active?.().catch(() => null),
-      api.tracker?.openWindows?.().catch(() => []),
+      api.activity?.openApps?.().catch(() => []),
     ]);
     setActive(z || null);
     setActiveTimer(timer || null);
     onActiveChange?.(!!z, z || null);
     setHistory(h || []);
 
-    const openApps = Array.from(new Set((wins || []).filter(w => w && w.exe && w.title).map(w => w.exe))).map(exe => ({ app: exe, category: 'open' }));
+    const openApps = (Array.isArray(open) ? open : [])
+      .filter((w) => w && w.app)
+      .map((w) => ({
+        app: w.app,
+        category: w.category || "open",
+        title: w.title || "",
+      }));
     
     const nextRecent = productiveRecentApps(apps, tracker);
     const recentMap = new Map();
@@ -194,13 +200,10 @@ export default function ZenMode({ onChanged, onActiveChange }) {
             status: "ready",
             playlistName: r.playlistName,
             matched: r.matched,
-            warning: r.warning || null,
+            warning: null,
             preview: r.preview || [],
           });
-          setMessage(
-            `${r.created ? "Created" : "Updated"} ${r.playlistName} with ${r.matched} tracks.` +
-              (r.warning ? ` ${r.warning}` : ""),
-          );
+          setMessage(`${r.created ? "Created" : "Updated"} ${r.playlistName} with ${r.matched} tracks.`);
         } else if (r?.error) {
           const friendly = spotifyPlaylistError(r);
           setPlaylistState({

@@ -1008,11 +1008,21 @@ function ToolsTab({ playlists }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const TABS = [
-  { key: "library",   label: "Library",   icon: "♥" },
-  { key: "playlists", label: "Playlists", icon: "▤" },
-  { key: "analyse",   label: "Analyse",   icon: "◈" },
-  { key: "tools",     label: "Tools",     icon: "⊞" },
+  { key: "library",   label: "Library",   icon: "♥", desc: "Liked songs, exports, time machine" },
+  { key: "playlists", label: "Playlists", icon: "▤", desc: "Sort, arcs, duplicates, merge" },
+  { key: "analyse",   label: "Analyse",   icon: "◈", desc: "Audio dashboard and smart filters" },
+  { key: "tools",     label: "Tools",     icon: "⊞", desc: "Backups, restore, cross-playlist cleanup" },
 ];
+
+function SpotifyOverviewCard({ label, value, detail, tone = "info" }) {
+  return (
+    <div className={"spm-overview-card " + tone}>
+      <small>{label}</small>
+      <strong>{value}</strong>
+      {detail && <span>{detail}</span>}
+    </div>
+  );
+}
 
 export default function Spotify() {
   const [tab, setTab]           = useState("library");
@@ -1051,6 +1061,18 @@ export default function Spotify() {
     if (s?.connected) { loadPlaylists(); pollNow(); }
   }
 
+  async function refreshAll() {
+    const s = await loadStatus();
+    if (s?.connected) {
+      await loadPlaylists();
+      await pollNow();
+    }
+  }
+
+  async function openSpotifyApp() {
+    try { await api.ext?.openSpotify?.(); } catch {}
+  }
+
   async function pollNow() {
     try {
       const np = await api.spotify.nowPlaying();
@@ -1076,15 +1098,23 @@ export default function Spotify() {
       <div className="spm-page">
         <div className="spm-not-connected">
           <span className="spm-big-icon">♪</span>
+          <span className="spm-kicker">Music cockpit</span>
           <h2>Spotify Manager</h2>
-          <p className="muted">Connect your Spotify account to manage playlists, export liked songs, run audio analytics, and more.</p>
+          <p className="muted">
+            Connect once to sync liked songs, build time-machine playlists, sort messy playlists, inspect audio stats, and start focus music from Zen.
+          </p>
+          <div className="spm-connect-grid">
+            <SpotifyOverviewCard label="Library" value="Liked songs" detail="Export and mirror" tone="ok" />
+            <SpotifyOverviewCard label="Playlists" value="Tools" detail="Sort, merge, dedupe" tone="info" />
+            <SpotifyOverviewCard label="Focus" value="Zen music" detail="Playlist playback" tone="warn" />
+          </div>
           <button className="primary" onClick={async () => {
             await api.spotify.connect();
             const s = await loadStatus();
             if (s?.connected) { loadPlaylists(); pollNow(); }
           }}>Connect Spotify</button>
-          <small className="hint" style={{ marginTop: 12 }}>
-            Or connect via Settings → Integrations → Spotify
+          <small className="hint">
+            You can also connect from Settings / Integrations / Spotify.
           </small>
         </div>
       </div>
@@ -1096,16 +1126,31 @@ export default function Spotify() {
     <div className="spm-page">
       {/* Header */}
       <div className="spm-header">
-        <div className="row" style={{ gap: 12, alignItems: "center" }}>
-          <span className="spm-logo">♪</span>
-          <div>
-            <h2 style={{ margin: 0 }}>Spotify Manager</h2>
-            <small className="muted">
-              {status.user?.displayName || status.user?.id || "Connected"}
-              {playlists.length > 0 && ` · ${playlists.length} playlists`}
-            </small>
+        <div className="spm-hero">
+          <div className="spm-hero-main">
+            <span className="spm-logo">♪</span>
+            <div>
+              <span className="spm-kicker">Spotify Manager</span>
+              <h2>Music that works with focus.</h2>
+              <small className="muted">
+                {status.user?.displayName || status.user?.id || "Connected"}
+                {playlists.length > 0 && ` / ${playlists.length} playlists`}
+              </small>
+            </div>
           </div>
-          {plLoading && <span className="pill gray" style={{ marginLeft: "auto" }}>Loading playlists…</span>}
+          <div className="spm-hero-actions">
+            <button className="ghost xsmall" onClick={refreshAll} disabled={plLoading}>
+              {plLoading ? "Refreshing..." : "Refresh"}
+            </button>
+            <button className="ghost xsmall" onClick={openSpotifyApp}>
+              Open Spotify
+            </button>
+            {status.needsReconnectForPlaylistWrite && (
+              <button className="primary small" onClick={reconnectSpotify}>
+                Reconnect
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Mini now-playing strip */}
@@ -1126,6 +1171,33 @@ export default function Spotify() {
             <span className={`spm-np-dot${now.playing ? " playing" : ""}`} />
           </div>
         )}
+
+        <div className="spm-overview-grid">
+          <SpotifyOverviewCard
+            label="Playback"
+            value={now?.item ? (now.playing ? "Playing" : "Paused") : "No active device"}
+            detail={now?.item ? now.item.name : "Open Spotify to control audio"}
+            tone={now?.playing ? "ok" : "warn"}
+          />
+          <SpotifyOverviewCard
+            label="Playlists"
+            value={plLoading ? "Loading" : playlists.length}
+            detail="Available to tools"
+            tone={playlists.length ? "ok" : "info"}
+          />
+          <SpotifyOverviewCard
+            label="Focus playlist"
+            value={status.focusPlaylistName || "Not set"}
+            detail={status.autoPlayFocus ? "Auto-play enabled" : "Manual playback"}
+            tone={status.focusPlaylistUri ? "ok" : "warn"}
+          />
+          <SpotifyOverviewCard
+            label="Permissions"
+            value={status.needsReconnectForPlaylistWrite ? "Reconnect" : "Ready"}
+            detail={status.needsReconnectForPlaylistWrite ? "Playlist writes missing" : "Core tools available"}
+            tone={status.needsReconnectForPlaylistWrite ? "danger" : "ok"}
+          />
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -1136,9 +1208,13 @@ export default function Spotify() {
             type="button"
             className={`spm-tab${tab === key ? " active" : ""}`}
             onClick={() => setTab(key)}
+            title={TABS.find((t) => t.key === key)?.desc}
           >
             <span className="spm-tab-icon">{icon}</span>
-            {label}
+            <span className="spm-tab-copy">
+              <strong>{label}</strong>
+              <small>{TABS.find((t) => t.key === key)?.desc}</small>
+            </span>
           </button>
         ))}
       </div>

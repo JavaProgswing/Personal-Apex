@@ -61,6 +61,7 @@ let tray = null;
 // Cmd/Ctrl+Q. Tells the close handler "this is a real quit, don't hide".
 let isQuitting = false;
 let routinePoll = null;
+let routineCloudPullAt = 0;
 // True if the OS auto-started the app at login. Used so we open the
 // window minimised (or not at all if tray-mode is on) when launched
 // invisibly at startup, vs full-window when the user opens the app
@@ -737,8 +738,13 @@ function surfaceRoutineGuard(source) {
 
 function startRoutineMonitor() {
   if (routinePoll) return;
-  const tick = () => {
+  const tick = async () => {
     try {
+      const cloud = wellbeing.cloudConfigured?.();
+      if (cloud?.paired && Date.now() - routineCloudPullAt > 120_000) {
+        routineCloudPullAt = Date.now();
+        await wellbeing.pullFromCloud?.().catch(() => null);
+      }
       const nudge = routine.nextNudge?.();
       if (!nudge) return;
       emit("routine:nudge", nudge);
@@ -756,6 +762,65 @@ function startRoutineMonitor() {
   };
   routinePoll = setInterval(tick, 60_000);
   setTimeout(tick, 6_000);
+}
+
+function listOpenApps() {
+  return new Promise((resolve) => {
+    const fallback = () => {
+      const fg = activityTracker.status?.().current;
+      resolve(fg?.app ? [{
+        app: fg.app,
+        title: fg.title || "",
+        category: fg.category || null,
+        source: "foreground",
+      }] : []);
+    };
+    if (process.platform !== "win32") return fallback();
+
+    const script = `
+      $ErrorActionPreference='SilentlyContinue'
+      Get-Process |
+        Where-Object { $_.MainWindowTitle -and $_.ProcessName } |
+        Sort-Object ProcessName -Unique |
+        Select-Object @{Name='app';Expression={$_.ProcessName}},
+                      @{Name='title';Expression={$_.MainWindowTitle}},
+                      @{Name='pid';Expression={$_.Id}} |
+        ConvertTo-Json -Compress
+    `;
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+      { windowsHide: true, timeout: 2500, maxBuffer: 256 * 1024 },
+      (err, stdout) => {
+        if (err) return fallback();
+        let rows = [];
+        try {
+          const parsed = JSON.parse(String(stdout || "[]").trim() || "[]");
+          rows = Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          rows = [];
+        }
+        const seen = new Set();
+        resolve(rows
+          .map((row) => {
+            const appName = String(row?.app || "").trim();
+            const title = String(row?.title || "").trim();
+            const key = appName.toLowerCase();
+            if (!appName || seen.has(key)) return null;
+            seen.add(key);
+            return {
+              app: appName,
+              title,
+              pid: row?.pid || null,
+              category: activityTracker.inferCategory?.(appName, title) || null,
+              source: "open",
+            };
+          })
+          .filter(Boolean)
+          .slice(0, 80));
+      },
+    );
+  });
 }
 
 // ---- IPC surface -------------------------------------------------------------
@@ -1848,6 +1913,7 @@ ipcMain.handle("activity:daySummary", (_e, isoDate) =>
   db.daySummaryOn(isoDate ?? today()),
 );
 ipcMain.handle("activity:feed", (_e, opts) => db.listActivityFeed(opts || {}));
+ipcMain.handle("activity:openApps", () => listOpenApps());
 ipcMain.handle("people:heatStrips", (_e, ids, days) =>
   db.pushHeatStripsFor(ids || [], days || 14),
 );

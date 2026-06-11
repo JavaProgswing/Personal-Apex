@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import api from "../../lib/api.js";
 
 // Upcoming = next N days of {classes, task deadlines} in chronological order.
@@ -101,67 +101,98 @@ export default function Upcoming({ go }) {
   const summary = useMemo(() => {
     let cls = 0,
       dl = 0,
-      free = 0;
+      free = 0,
+      urgent = 0,
+      todayDue = 0;
     for (const d of days) {
       cls += d.classes?.length || 0;
-      dl += (d.deadlines || []).length;
-      if (
-        (d.classes?.length || 0) === 0 &&
-        (d.deadlines || []).length === 0 &&
-        (tasksByDate[d.date]?.length || 0) === 0
-      )
-        free += 1;
+      const due = dedupeById([
+        ...(d.deadlines || []),
+        ...(tasksByDate[d.date] || []),
+      ]);
+      dl += due.length;
+      urgent += due.filter((t) => t.priority <= 2).length;
+      if (d.date === todayIso()) todayDue = due.length;
+      if ((d.classes?.length || 0) === 0 && due.length === 0) free += 1;
     }
-    return { cls, dl, free };
+    return { cls, dl, free, urgent, todayDue };
   }, [days, tasksByDate]);
 
   return (
     <>
-      <div className="row between" style={{ marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-        <div>
+      <section className="upcoming-hero">
+        <div className="upcoming-hero-copy">
           <h1 className="page-title">Upcoming</h1>
+          <p className="muted">
+            Classes and academic deadlines in one chronological lane, with
+            today/next/current state called out.
+          </p>
         </div>
-        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-          <button className="ghost" onClick={reload} title="Refresh" aria-label="Refresh">
-            ↻
+        <div className="upcoming-hero-actions">
+          <button
+            className="ghost"
+            onClick={reload}
+            title="Refresh"
+            aria-label="Refresh"
+          >
+            Refresh
           </button>
           <button className="ghost" onClick={() => go("settings")}>
             Edit schedule
           </button>
         </div>
-      </div>
+      </section>
 
       {/* Week summary strip */}
       {!loading && days.length > 0 && (
-        <div
-          className="row"
-          style={{ gap: 8, flexWrap: "wrap", marginBottom: 12 }}
-        >
-          <span className="pill teal">{summary.cls} classes</span>
-          <span className={"pill " + (summary.dl ? "rose" : "gray")}>
-            {summary.dl} deadlines
-          </span>
-          <span className="pill gray">
-            {summary.free} free {summary.free === 1 ? "day" : "days"}
-          </span>
+        <div className="upcoming-overview-grid">
+          <UpcomingStat
+            label="Classes"
+            value={summary.cls}
+            detail="Scheduled sessions"
+            tone="ok"
+          />
+          <UpcomingStat
+            label="Due this week"
+            value={summary.dl}
+            detail={`${summary.todayDue} due today`}
+            tone={summary.dl ? "warn" : "info"}
+          />
+          <UpcomingStat
+            label="Urgent"
+            value={summary.urgent}
+            detail="P1/P2 deadlines"
+            tone={summary.urgent ? "danger" : "ok"}
+          />
+          <UpcomingStat
+            label="Open days"
+            value={summary.free}
+            detail="No class or due work"
+            tone="info"
+          />
         </div>
       )}
 
       {/* Quick add: a new college task with optional deadline */}
-      <div className="card" style={{ marginBottom: 18 }}>
-        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+      <div className="card upcoming-quick-add">
+        <div className="upcoming-quick-copy">
+          <strong>Quick academic task</strong>
+          <small className="muted">
+            Defaults to category Academics, priority P3. Edit details later in
+            Tasks.
+          </small>
+        </div>
+        <div className="upcoming-quick-fields">
           <input
-            placeholder="Add college work… (e.g. DBMS assignment 2)"
+            placeholder="DBMS assignment 2, DAA lab record..."
             value={quickTitle}
             onChange={(e) => setQuickTitle(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addQuickTask()}
-            style={{ flex: "1 1 240px" }}
           />
           <input
             type="datetime-local"
             value={quickDue}
             onChange={(e) => setQuickDue(e.target.value)}
-            style={{ width: 210 }}
           />
           <button
             className="primary"
@@ -171,9 +202,6 @@ export default function Upcoming({ go }) {
             + Add
           </button>
         </div>
-        <small className="hint">
-          Defaults to category <em>Academics</em>, priority P3. Edit in Tasks.
-        </small>
       </div>
 
       {loading && <div className="muted">Loading…</div>}
@@ -185,8 +213,7 @@ export default function Upcoming({ go }) {
           const allDueToday = dedupeById([...deadlines, ...extras]);
           const isToday = d.date === iso0;
           const isWeekend = !d.dayOrder;
-          const isEmpty =
-            d.classes.length === 0 && allDueToday.length === 0;
+          const isEmpty = d.classes.length === 0 && allDueToday.length === 0;
           const dateObj = new Date(d.date + "T00:00:00");
           const dateLabel = dateObj.toLocaleDateString(undefined, {
             weekday: "long",
@@ -246,7 +273,10 @@ export default function Upcoming({ go }) {
                   {isWeekend ? "weekend" : `Day order ${d.dayOrder}`}
                   {(d.classes.length > 0 || allDueToday.length > 0) && " · "}
                   {d.classes.length > 0 && (
-                    <>{d.classes.length} class{d.classes.length === 1 ? "" : "es"}</>
+                    <>
+                      {d.classes.length} class
+                      {d.classes.length === 1 ? "" : "es"}
+                    </>
                   )}
                   {d.classes.length > 0 && allDueToday.length > 0 && " · "}
                   {allDueToday.length > 0 && (
@@ -353,6 +383,16 @@ export default function Upcoming({ go }) {
   );
 }
 
+function UpcomingStat({ label, value, detail, tone = "info" }) {
+  return (
+    <div className={"upcoming-stat " + tone}>
+      <small>{label}</small>
+      <strong>{value}</strong>
+      <span>{detail}</span>
+    </div>
+  );
+}
+
 function DeadlineRow({ t, onToggle }) {
   const isUrgent = t.priority <= 2;
   return (
@@ -377,13 +417,7 @@ function DeadlineRow({ t, onToggle }) {
         className={
           "pill " + (isUrgent ? "rose" : t.priority === 3 ? "amber" : "gray")
         }
-        title={
-          isUrgent
-            ? "Urgent"
-            : t.priority === 3
-              ? "Normal"
-              : "Low"
-        }
+        title={isUrgent ? "Urgent" : t.priority === 3 ? "Normal" : "Low"}
       >
         P{t.priority}
       </span>
@@ -411,4 +445,3 @@ function dedupeById(list) {
   }
   return out;
 }
-

@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import api from "../../lib/api.js";
 import { daysUntil, niceDate } from "../../lib/date.js";
 import BrainDumpModal from "../BrainDumpModal.jsx";
@@ -21,8 +21,8 @@ const CATEGORIES = [
 // `category=Academics` with `course_code`; interests used to live on their own
 // page and are now filtered here.
 const KINDS = [
-  { key: "task",     label: "Tasks" },
-  { key: "habit",    label: "Habits" },
+  { key: "task", label: "Tasks" },
+  { key: "habit", label: "Habits" },
   { key: "interest", label: "Interests" },
 ];
 
@@ -30,29 +30,29 @@ const KINDS = [
 // was a footgun. 99% of what users want is one of these; the remaining 1%
 // can still pick Custom and type the rule directly.
 const RECURRENCE_PRESETS = [
-  { value: "",                   label: "One-off (no recurrence)" },
-  { value: "daily",              label: "Daily" },
-  { value: "weekly:mon",         label: "Weekly · Mon" },
-  { value: "weekly:tue",         label: "Weekly · Tue" },
-  { value: "weekly:wed",         label: "Weekly · Wed" },
-  { value: "weekly:thu",         label: "Weekly · Thu" },
-  { value: "weekly:fri",         label: "Weekly · Fri" },
-  { value: "weekly:sat",         label: "Weekly · Sat" },
-  { value: "weekly:sun",         label: "Weekly · Sun" },
-  { value: "day:1|day:3|day:5",  label: "Day-order 1 / 3 / 5" },
-  { value: "day:2|day:4",        label: "Day-order 2 / 4" },
-  { value: "__custom__",         label: "Custom…" },
+  { value: "", label: "One-off (no recurrence)" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly:mon", label: "Weekly · Mon" },
+  { value: "weekly:tue", label: "Weekly · Tue" },
+  { value: "weekly:wed", label: "Weekly · Wed" },
+  { value: "weekly:thu", label: "Weekly · Thu" },
+  { value: "weekly:fri", label: "Weekly · Fri" },
+  { value: "weekly:sat", label: "Weekly · Sat" },
+  { value: "weekly:sun", label: "Weekly · Sun" },
+  { value: "day:1|day:3|day:5", label: "Day-order 1 / 3 / 5" },
+  { value: "day:2|day:4", label: "Day-order 2 / 4" },
+  { value: "__custom__", label: "Custom…" },
 ];
 
 const SORT_OPTIONS = [
-  { value: "priority",  label: "Priority" },
-  { value: "deadline",  label: "Deadline" },
-  { value: "recent",    label: "Recently added" },
-  { value: "category",  label: "Category" },
+  { value: "priority", label: "Priority" },
+  { value: "deadline", label: "Deadline" },
+  { value: "recent", label: "Recently added" },
+  { value: "category", label: "Category" },
 ];
 
 const GROUP_OPTIONS = [
-  { value: "none",     label: "Flat" },
+  { value: "none", label: "Flat" },
   { value: "category", label: "By category" },
   { value: "deadline", label: "By when" },
   { value: "priority", label: "By priority" },
@@ -79,7 +79,9 @@ export default function Tasks() {
     if (q.trim()) filter.q = q.trim();
     setTasks(await api.tasks.list(filter));
   }
-  useEffect(() => { reload(); /* eslint-disable-next-line */ }, [kind, completed, category, q]);
+  useEffect(() => {
+    reload(); /* eslint-disable-next-line */
+  }, [kind, completed, category, q]);
 
   // Cmd/Ctrl+Shift+B → open brain dump while on Tasks. (Cmd+Shift+N is
   // already wired globally to quick-capture in App.jsx.)
@@ -95,13 +97,42 @@ export default function Tasks() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  async function toggle(id) { await api.tasks.toggle(id); reload(); }
-  async function remove(id) { await api.tasks.delete(id); reload(); }
+  async function toggle(id) {
+    await api.tasks.toggle(id);
+    reload();
+  }
+  async function remove(id) {
+    await api.tasks.delete(id);
+    reload();
+  }
+
+  async function quickAdd(e) {
+    e?.preventDefault?.();
+    const title = quickTitle.trim();
+    if (!title) return;
+    await api.tasks.create({
+      kind,
+      title,
+      description: "",
+      priority: kind === "interest" ? 4 : 3,
+      category: category || (kind === "interest" ? "Project" : "Deep work"),
+      course_code: null,
+      estimated_minutes: kind === "interest" ? null : 25,
+      recurrence_rule: kind === "habit" ? "daily" : null,
+      tags: [],
+      links: [],
+      status: kind === "interest" ? "idea" : "idea",
+      progress: 0,
+      source: "tasks-quick-add",
+    });
+    setQuickTitle("");
+    reload();
+  }
 
   // Clear all completed tasks of the current kind
   async function clearCompleted() {
     if (!confirm(`Remove all completed ${kind}s?`)) return;
-    const doneTasks = tasks.filter(t => t.completed);
+    const doneTasks = tasks.filter((t) => t.completed);
     for (const t of doneTasks) {
       await api.tasks.delete(t.id);
     }
@@ -140,10 +171,22 @@ export default function Tasks() {
   // the strip remains a stable picture of "what's on my plate".
   const [allOpen, setAllOpen] = useState([]);
   useEffect(() => {
-    api.tasks.list({ kind, completed: false }).then(setAllOpen).catch(() => setAllOpen([]));
+    api.tasks
+      .list({ kind, completed: false })
+      .then(setAllOpen)
+      .catch(() => setAllOpen([]));
   }, [kind, tasks.length]);
 
   const stats = useMemo(() => buildStats(allOpen), [allOpen]);
+  const kindMeta = KINDS.find((k) => k.key === kind) || KINDS[0];
+  const activeFilters = [
+    completed === false ? "Open" : completed === true ? "Done" : "All",
+    category || null,
+    q.trim() ? `Search: ${q.trim()}` : null,
+    groupBy !== "none"
+      ? GROUP_OPTIONS.find((o) => o.value === groupBy)?.label
+      : null,
+  ].filter(Boolean);
 
   // Sorted / grouped view of `tasks`
   const sorted = useMemo(() => sortTasks(tasks, sortBy), [tasks, sortBy]);
@@ -151,43 +194,48 @@ export default function Tasks() {
 
   return (
     <>
-      <div className="row between" style={{ marginBottom: 18 }}>
-        <div>
+      <section className="tasks-hero">
+        <div className="tasks-hero-copy">
           <h1 className="page-title">Tasks</h1>
+          <p className="muted">
+            Capture work, habits, and side-project ideas in one place. Start
+            timers directly from rows when it is time to lock in.
+          </p>
         </div>
-        <div className="row" style={{ gap: 6 }}>
+        <div className="tasks-hero-actions">
           <button
             className="ghost"
             onClick={() => setShowBrainDump(true)}
             title="Paste a chat or text dump and Apex extracts tasks (Ctrl+Shift+B)"
           >
-            📋 Brain dump
+            Brain dump
           </button>
-          <button 
-            className="ghost" 
+          <button
+            className="ghost"
             onClick={clearCompleted}
-            disabled={!tasks.some(t => t.completed)}
+            disabled={!tasks.some((t) => t.completed)}
             title="Clear finished items"
           >
             Clear done
           </button>
-          <button className="primary" onClick={() => setShowNew(true)}>+ New</button>
+          <button className="primary" onClick={() => setShowNew(true)}>
+            + New
+          </button>
         </div>
-      </div>
+      </section>
 
       {importToast && (
-        <div className="card" style={{ marginBottom: 12, borderColor: "var(--accent)" }}>
-          <strong>Imported {importToast.added} task{importToast.added === 1 ? "" : "s"}</strong>
-          {importToast.summary && (
-            <small className="muted" style={{ display: "block", marginTop: 4 }}>
-              {importToast.summary}
-            </small>
-          )}
-          <button
-            className="ghost xsmall"
-            style={{ marginTop: 6 }}
-            onClick={() => setImportToast(null)}
-          >
+        <div className="tasks-import-toast">
+          <div>
+            <strong>
+              Imported {importToast.added} task
+              {importToast.added === 1 ? "" : "s"}
+            </strong>
+            {importToast.summary && (
+              <small className="muted">{importToast.summary}</small>
+            )}
+          </div>
+          <button className="ghost xsmall" onClick={() => setImportToast(null)}>
             Dismiss
           </button>
         </div>
@@ -228,59 +276,152 @@ export default function Tasks() {
       </div>
 
       {/* Kind tabs */}
-      <div className="row" style={{ marginBottom: 14, gap: 6, flexWrap: "wrap" }}>
+      <div className="tasks-kind-tabs">
         {KINDS.map((k) => (
           <button
             key={k.key}
-            className={kind === k.key ? "primary" : "ghost"}
+            className={kind === k.key ? "active" : ""}
             onClick={() => setKind(k.key)}
-          >{k.label}</button>
+          >
+            <strong>{k.label}</strong>
+            <small>
+              {k.key === "task"
+                ? "One-off work"
+                : k.key === "habit"
+                  ? "Recurring rhythm"
+                  : "Ideas to grow"}
+            </small>
+          </button>
         ))}
       </div>
 
+      <form className="task-quick-add" onSubmit={quickAdd}>
+        <input
+          placeholder={`Quick add ${kindMeta.label.slice(0, -1).toLowerCase()}...`}
+          value={quickTitle}
+          onChange={(e) => setQuickTitle(e.target.value)}
+        />
+        <button className="primary" type="submit" disabled={!quickTitle.trim()}>
+          Add
+        </button>
+      </form>
+
       {/* Filters + sort/group */}
-      <div className="row task-filters" style={{ marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
-        <select
-          value={completed === false ? "open" : completed === true ? "done" : "all"}
-          onChange={(e) => {
-            const v = e.target.value;
-            setCompleted(v === "open" ? false : v === "done" ? true : null);
-          }}
-          style={{ width: 110 }}
-        >
-          <option value="open">Open</option>
-          <option value="done">Done</option>
-          <option value="all">All</option>
-        </select>
-        <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ width: 150 }}>
-          <option value="">All categories</option>
-          {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ width: 160 }}>
-          {SORT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>Sort · {o.label}</option>
+      <div className="task-filter-panel">
+        <div className="task-filter-row">
+          <label>
+            <span>Status</span>
+            <select
+              value={
+                completed === false
+                  ? "open"
+                  : completed === true
+                    ? "done"
+                    : "all"
+              }
+              onChange={(e) => {
+                const v = e.target.value;
+                setCompleted(v === "open" ? false : v === "done" ? true : null);
+              }}
+            >
+              <option value="open">Open</option>
+              <option value="done">Done</option>
+              <option value="all">All</option>
+            </select>
+          </label>
+          <label>
+            <span>Category</span>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              <option value="">All categories</option>
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Sort</span>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Group</span>
+            <select
+              value={groupBy}
+              onChange={(e) => setGroupBy(e.target.value)}
+            >
+              {GROUP_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="task-search-field">
+            <span>Search</span>
+            <input
+              placeholder="title or description..."
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </label>
+        </div>
+        <div className="task-active-filters">
+          {activeFilters.map((x) => (
+            <span key={x}>{x}</span>
           ))}
-        </select>
-        <select value={groupBy} onChange={(e) => setGroupBy(e.target.value)} style={{ width: 150 }}>
-          {GROUP_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>Group · {o.label}</option>
-          ))}
-        </select>
-        <input placeholder="search title / description…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1, minWidth: 180 }} />
+          {(q || category || completed !== false || groupBy !== "none") && (
+            <button
+              type="button"
+              className="ghost xsmall"
+              onClick={() => {
+                setCompleted(false);
+                setCategory("");
+                setQ("");
+                setGroupBy("none");
+              }}
+            >
+              Reset filters
+            </button>
+          )}
+        </div>
       </div>
 
       {tasks.length === 0 ? (
-        <div className="card">
-          <div className="muted">
-            No {kind + "s"} match.
-            {q || category || completed === true ? (
-              <> Try clearing filters above, or </>
-            ) : (
-              <> Get started - </>
-            )}
-            <a href="#" onClick={(e) => { e.preventDefault(); setShowNew(true); }}>
-              create a new {kind}
-            </a>.
+        <div className="card tasks-empty-state">
+          <div className="tasks-empty-mark">
+            {kind === "habit" ? "H" : kind === "interest" ? "I" : "T"}
+          </div>
+          <div>
+            <strong>No {kind + "s"} match this view.</strong>
+            <p className="muted">
+              {q || category || completed === true
+                ? "Try clearing filters, or add something new directly."
+                : `Create your first ${kind} or paste a messy brain dump and let Apex extract the list.`}
+            </p>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <button
+                className="primary small"
+                onClick={() => setShowNew(true)}
+              >
+                New {kind}
+              </button>
+              <button
+                className="ghost small"
+                onClick={() => setShowBrainDump(true)}
+              >
+                Brain dump
+              </button>
+            </div>
           </div>
         </div>
       ) : groupBy === "none" ? (
@@ -323,14 +464,20 @@ export default function Tasks() {
         <TaskModal
           defaults={{ kind }}
           onClose={() => setShowNew(false)}
-          onSaved={() => { setShowNew(false); reload(); }}
+          onSaved={() => {
+            setShowNew(false);
+            reload();
+          }}
         />
       )}
       {editing && (
         <TaskModal
           task={editing}
           onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); reload(); }}
+          onSaved={() => {
+            setEditing(null);
+            reload();
+          }}
         />
       )}
       <BrainDumpModal
@@ -362,16 +509,16 @@ function TaskRow({ t, onToggle, onEdit, onDelete, onSnooze, onBumpPriority }) {
   const deadlineInfo = t.deadline
     ? (() => {
         const d = daysUntil(t.deadline);
-        const cls = d != null && d < 0
-          ? "rose"
-          : d != null && d <= 1
+        const cls =
+          d != null && d < 0
             ? "rose"
-            : d != null && d <= 3
-              ? "amber"
-              : "gray";
-        const txt = d != null && d < 0
-          ? `overdue ${Math.abs(d)}d`
-          : niceDate(t.deadline);
+            : d != null && d <= 1
+              ? "rose"
+              : d != null && d <= 3
+                ? "amber"
+                : "gray";
+        const txt =
+          d != null && d < 0 ? `overdue ${Math.abs(d)}d` : niceDate(t.deadline);
         return { cls, txt };
       })()
     : null;
@@ -403,9 +550,7 @@ function TaskRow({ t, onToggle, onEdit, onDelete, onSnooze, onBumpPriority }) {
           (isInterest && typeof t.progress === "number" && t.progress > 0) ||
           t.recurrence_rule) && (
           <div className="task-row-meta">
-            {isInterest && (
-              <span className="pill">{t.status || "idea"}</span>
-            )}
+            {isInterest && <span className="pill">{t.status || "idea"}</span>}
             {t.course_code && <span className="pill">{t.course_code}</span>}
             {t.category && <span className="pill gray">{t.category}</span>}
             {deadlineInfo && (
@@ -414,15 +559,11 @@ function TaskRow({ t, onToggle, onEdit, onDelete, onSnooze, onBumpPriority }) {
               </span>
             )}
             {t.estimated_minutes ? (
-              <span className="task-meta-text">
-                ~{t.estimated_minutes} min
-              </span>
+              <span className="task-meta-text">~{t.estimated_minutes} min</span>
             ) : null}
-            {isInterest &&
-              typeof t.progress === "number" &&
-              t.progress > 0 && (
-                <span className="task-meta-text">{t.progress}%</span>
-              )}
+            {isInterest && typeof t.progress === "number" && t.progress > 0 && (
+              <span className="task-meta-text">{t.progress}%</span>
+            )}
             {t.recurrence_rule && (
               <span className="task-meta-text">
                 ↻ {labelForRecurrence(t.recurrence_rule)}
@@ -430,9 +571,7 @@ function TaskRow({ t, onToggle, onEdit, onDelete, onSnooze, onBumpPriority }) {
             )}
           </div>
         )}
-        {t.description && (
-          <div className="task-row-desc">{t.description}</div>
-        )}
+        {t.description && <div className="task-row-desc">{t.description}</div>}
       </div>
 
       <div className="task-row-actions">
@@ -516,16 +655,29 @@ function TaskRow({ t, onToggle, onEdit, onDelete, onSnooze, onBumpPriority }) {
 // ─── helpers ───────────────────────────────────────────────────────────
 
 function buildStats(rows) {
-  let open = 0, overdue = 0, dueToday = 0, dueWeek = 0, untimed = 0;
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(todayStart); todayEnd.setDate(todayEnd.getDate() + 1);
-  const weekEnd = new Date(todayStart); weekEnd.setDate(weekEnd.getDate() + 7);
+  let open = 0,
+    overdue = 0,
+    dueToday = 0,
+    dueWeek = 0,
+    untimed = 0;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(todayStart);
+  todayEnd.setDate(todayEnd.getDate() + 1);
+  const weekEnd = new Date(todayStart);
+  weekEnd.setDate(weekEnd.getDate() + 7);
   for (const t of rows || []) {
     if (t.completed) continue;
     open++;
-    if (!t.deadline) { untimed++; continue; }
+    if (!t.deadline) {
+      untimed++;
+      continue;
+    }
     const d = new Date(t.deadline);
-    if (Number.isNaN(+d)) { untimed++; continue; }
+    if (Number.isNaN(+d)) {
+      untimed++;
+      continue;
+    }
     if (d < todayStart) overdue++;
     else if (d < todayEnd) dueToday++;
     else if (d < weekEnd) dueWeek++;
@@ -538,7 +690,8 @@ function sortTasks(rows, sortBy) {
   if (sortBy === "priority") {
     // Lower priority number = higher importance. Tiebreak by deadline.
     return arr.sort((a, b) => {
-      const pa = a.priority ?? 3, pb = b.priority ?? 3;
+      const pa = a.priority ?? 3,
+        pb = b.priority ?? 3;
       if (pa !== pb) return pa - pb;
       return deadlineKey(a) - deadlineKey(b);
     });
@@ -547,8 +700,11 @@ function sortTasks(rows, sortBy) {
     return arr.sort((a, b) => deadlineKey(a) - deadlineKey(b));
   }
   if (sortBy === "category") {
-    return arr.sort((a, b) => (a.category || "").localeCompare(b.category || "")
-      || deadlineKey(a) - deadlineKey(b));
+    return arr.sort(
+      (a, b) =>
+        (a.category || "").localeCompare(b.category || "") ||
+        deadlineKey(a) - deadlineKey(b),
+    );
   }
   // recent - most-recently-added first; fall back to id order
   return arr.sort((a, b) => (b.id || 0) - (a.id || 0));
@@ -579,11 +735,20 @@ function groupTasks(rows, groupBy) {
   }
   // Preserve a sensible order per group type.
   if (groupBy === "deadline") {
-    const order = ["Overdue", "Today", "Tomorrow", "This week", "Later", "No deadline"];
+    const order = [
+      "Overdue",
+      "Today",
+      "Tomorrow",
+      "This week",
+      "Later",
+      "No deadline",
+    ];
     return order.filter((k) => map.has(k)).map((k) => [k, map.get(k)]);
   }
   if (groupBy === "priority") {
-    return ["P1", "P2", "P3", "P4", "P5"].filter((k) => map.has(k)).map((k) => [k, map.get(k)]);
+    return ["P1", "P2", "P3", "P4", "P5"]
+      .filter((k) => map.has(k))
+      .map((k) => [k, map.get(k)]);
   }
   return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 }
@@ -593,10 +758,14 @@ function deadlineBucket(t) {
   const d = new Date(t.deadline);
   if (Number.isNaN(+d)) return "No deadline";
   const now = new Date();
-  const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
-  const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-  const dayAfter = new Date(tomorrowStart); dayAfter.setDate(dayAfter.getDate() + 1);
-  const weekEnd = new Date(todayStart); weekEnd.setDate(weekEnd.getDate() + 7);
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const tomorrowStart = new Date(todayStart);
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+  const dayAfter = new Date(tomorrowStart);
+  dayAfter.setDate(dayAfter.getDate() + 1);
+  const weekEnd = new Date(todayStart);
+  weekEnd.setDate(weekEnd.getDate() + 7);
   if (d < todayStart) return "Overdue";
   if (d < tomorrowStart) return "Today";
   if (d < dayAfter) return "Tomorrow";
@@ -620,18 +789,16 @@ function TaskModal({ task, defaults, onClose, onSaved }) {
     description: task?.description || "",
     priority: task?.priority || 3,
     deadline: task?.deadline ? task.deadline.slice(0, 16) : "",
-    category: task?.category || (initKind === "interest" ? "Project" : "Deep work"),
+    category:
+      task?.category || (initKind === "interest" ? "Project" : "Deep work"),
     course_code: task?.course_code || "",
     estimated_minutes: task?.estimated_minutes || "",
     kind: initKind,
     status: task?.status || "idea",
     progress: task?.progress ?? 0,
     recurrence_rule: initRule,
-    recurrence_choice: initRule === ""
-      ? ""
-      : initRuleIsPreset
-        ? initRule
-        : "__custom__",
+    recurrence_choice:
+      initRule === "" ? "" : initRuleIsPreset ? initRule : "__custom__",
   });
 
   async function save() {
@@ -639,13 +806,16 @@ function TaskModal({ task, defaults, onClose, onSaved }) {
       ...form,
       priority: +form.priority,
       progress: +form.progress,
-      estimated_minutes: form.estimated_minutes === "" ? null : +form.estimated_minutes,
-      deadline: form.deadline === "" ? null : new Date(form.deadline).toISOString(),
+      estimated_minutes:
+        form.estimated_minutes === "" ? null : +form.estimated_minutes,
+      deadline:
+        form.deadline === "" ? null : new Date(form.deadline).toISOString(),
       // Keep tags/links arrays intact on existing rows - we stopped exposing
       // them in the form but we don't want saving to wipe what's there.
       tags: task?.tags || [],
       links: task?.links || [],
-      course_code: form.category === "Academics" ? (form.course_code || null) : null,
+      course_code:
+        form.category === "Academics" ? form.course_code || null : null,
       recurrence_rule: form.recurrence_rule || null,
     };
     // Strip helper-only fields we added for the dropdown.
@@ -660,13 +830,22 @@ function TaskModal({ task, defaults, onClose, onSaved }) {
   const isAcademics = form.category === "Academics";
 
   return (
-    <div className="modal-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className="modal-scrim"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div className="modal">
-        <h3>{task ? "Edit" : "New"} {isInterest ? "interest" : isHabit ? "habit" : "task"}</h3>
+        <h3>
+          {task ? "Edit" : "New"}{" "}
+          {isInterest ? "interest" : isHabit ? "habit" : "task"}
+        </h3>
 
         <div className="form-row">
           <label>Kind</label>
-          <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
+          <select
+            value={form.kind}
+            onChange={(e) => setForm({ ...form, kind: e.target.value })}
+          >
             <option value="task">Task</option>
             <option value="habit">Habit (recurring)</option>
             <option value="interest">Interest / side project</option>
@@ -674,22 +853,40 @@ function TaskModal({ task, defaults, onClose, onSaved }) {
         </div>
         <div className="form-row">
           <label>Title</label>
-          <input autoFocus value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <input
+            autoFocus
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+          />
         </div>
         <div className="form-row">
           <label>Description</label>
-          <textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          <textarea
+            rows={3}
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+          />
         </div>
         <div className="grid-2">
           <div className="form-row">
             <label>Category</label>
-            <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            <select
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
             </select>
           </div>
           <div className="form-row">
             <label>Priority</label>
-            <select value={form.priority} onChange={(e) => setForm({ ...form, priority: +e.target.value })}>
+            <select
+              value={form.priority}
+              onChange={(e) => setForm({ ...form, priority: +e.target.value })}
+            >
               <option value={1}>P1 · Urgent</option>
               <option value={2}>P2 · High</option>
               <option value={3}>P3 · Medium</option>
@@ -702,11 +899,23 @@ function TaskModal({ task, defaults, onClose, onSaved }) {
           <div className="grid-2">
             <div className="form-row">
               <label>Deadline</label>
-              <input type="datetime-local" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
+              <input
+                type="datetime-local"
+                value={form.deadline}
+                onChange={(e) => setForm({ ...form, deadline: e.target.value })}
+              />
             </div>
             <div className="form-row">
               <label>Estimated minutes</label>
-              <input type="number" min={5} step={5} value={form.estimated_minutes} onChange={(e) => setForm({ ...form, estimated_minutes: e.target.value })} />
+              <input
+                type="number"
+                min={5}
+                step={5}
+                value={form.estimated_minutes}
+                onChange={(e) =>
+                  setForm({ ...form, estimated_minutes: e.target.value })
+                }
+              />
             </div>
           </div>
         )}
@@ -716,11 +925,15 @@ function TaskModal({ task, defaults, onClose, onSaved }) {
               <label>Course code</label>
               <input
                 value={form.course_code}
-                onChange={(e) => setForm({ ...form, course_code: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, course_code: e.target.value })
+                }
                 placeholder="e.g. 21CSC204J"
               />
             </div>
-          ) : <div />}
+          ) : (
+            <div />
+          )}
           <div className="form-row">
             <label>Recurrence</label>
             <select
@@ -730,12 +943,15 @@ function TaskModal({ task, defaults, onClose, onSaved }) {
                 setForm({
                   ...form,
                   recurrence_choice: v,
-                  recurrence_rule: v === "__custom__" ? form.recurrence_rule : v,
+                  recurrence_rule:
+                    v === "__custom__" ? form.recurrence_rule : v,
                 });
               }}
             >
               {RECURRENCE_PRESETS.map((p) => (
-                <option key={p.value || "none"} value={p.value}>{p.label}</option>
+                <option key={p.value || "none"} value={p.value}>
+                  {p.label}
+                </option>
               ))}
             </select>
             {form.recurrence_choice === "__custom__" && (
@@ -743,7 +959,9 @@ function TaskModal({ task, defaults, onClose, onSaved }) {
                 style={{ marginTop: 6 }}
                 placeholder="day:1|day:3  or  weekly:mon  or  daily"
                 value={form.recurrence_rule}
-                onChange={(e) => setForm({ ...form, recurrence_rule: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, recurrence_rule: e.target.value })
+                }
               />
             )}
           </div>
@@ -752,7 +970,10 @@ function TaskModal({ task, defaults, onClose, onSaved }) {
           <div className="grid-2">
             <div className="form-row">
               <label>Status</label>
-              <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+              <select
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+              >
                 <option value="idea">idea</option>
                 <option value="exploring">exploring</option>
                 <option value="building">building</option>
@@ -762,16 +983,31 @@ function TaskModal({ task, defaults, onClose, onSaved }) {
             </div>
             <div className="form-row">
               <label>Progress (%)</label>
-              <input type="number" min={0} max={100} step={5} value={form.progress} onChange={(e) => setForm({ ...form, progress: e.target.value })} />
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={5}
+                value={form.progress}
+                onChange={(e) => setForm({ ...form, progress: e.target.value })}
+              />
             </div>
           </div>
         )}
-        <div className="row" style={{ marginTop: 16, justifyContent: "flex-end" }}>
+        <div
+          className="row"
+          style={{ marginTop: 16, justifyContent: "flex-end" }}
+        >
           <button onClick={onClose}>Cancel</button>
-          <button className="primary" onClick={save} disabled={!form.title.trim()}>Save</button>
+          <button
+            className="primary"
+            onClick={save}
+            disabled={!form.title.trim()}
+          >
+            Save
+          </button>
         </div>
       </div>
     </div>
   );
 }
-

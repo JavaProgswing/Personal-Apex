@@ -35,6 +35,70 @@ function SectionHeader({ title, hint }) {
   );
 }
 
+function SettingsOverview({ items }) {
+  return (
+    <div className="settings-overview-grid">
+      {items.map((item) => (
+        <div key={item.label} className={"settings-overview-card " + (item.tone || "info")}>
+          <small>{item.label}</small>
+          <strong>{item.value}</strong>
+          {item.detail && <span>{item.detail}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MobileSettingsOverview({ all }) {
+  const [cloud, setCloud] = useState(null);
+  const [usb, setUsb] = useState(null);
+
+  useEffect(() => {
+    api.wellbeing.cloudStatus?.().then(setCloud).catch(() => setCloud(null));
+    api.wellbeing.diagnose?.().then(setUsb).catch(() => setUsb(null));
+  }, []);
+
+  const cloudPaired = !!cloud?.paired;
+  const lastPull = cloud?.lastSyncAt || all["wellbeing.lastSyncAt"];
+  const authorized = Array.isArray(usb?.authorized) ? usb.authorized.length : null;
+  const usbOk = usb?.ok !== false;
+
+  return (
+    <SettingsOverview
+      items={[
+        {
+          label: "Cloud sync",
+          value: cloudPaired ? "Paired" : "Needs pairing",
+          detail: cloud?.auto ? "Auto every 15 min" : "Manual pull",
+          tone: cloudPaired ? "ok" : "warn",
+        },
+        {
+          label: "API base",
+          value: all["cloud.apiBase"] ? "Saved" : "Default",
+          detail: all["cloud.apiBase"] || cloud?.apiBase || "apex sync API",
+          tone: "info",
+        },
+        {
+          label: "USB fallback",
+          value: usbOk ? (authorized ? `${authorized} phone` : "Ready") : "Needs fix",
+          detail: all["wellbeing.adbPath"] ? "Custom ADB path" : "Auto-detect ADB",
+          tone: usbOk ? "info" : "danger",
+        },
+        {
+          label: "Last phone pull",
+          value: lastPull
+            ? new Date(lastPull).toLocaleDateString([], { month: "short", day: "numeric" })
+            : "Never",
+          detail: lastPull
+            ? new Date(lastPull).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            : "Sync from phone app",
+          tone: lastPull ? "ok" : "warn",
+        },
+      ]}
+    />
+  );
+}
+
 export default function Settings() {
   const [tab, setTab] = useState("schedule");
   const [all, setAll] = useState({});
@@ -111,12 +175,44 @@ export default function Settings() {
       )}
 
       {tab === "mobile" && (
-        <WellbeingTab all={all} setAll={setAll} save={save} setMsg={setMsg} />
+        <>
+          <MobileSettingsOverview all={all} />
+          <SectionHeader
+            title="Cloud sync"
+            hint="Primary path: pair desktop + Android app once, then sync over the network."
+          />
+          <CloudWellbeingPanel save={save} setMsg={setMsg} />
+          <SectionHeader
+            title="USB fallback"
+            hint="Local testing path when the phone is plugged in and ADB is authorized."
+          />
+          <WellbeingTab all={all} setAll={setAll} save={save} setMsg={setMsg} />
+        </>
       )}
 
       {tab === "goals" && (
         <>
+          <SettingsOverview
+            items={[
+              { label: "Weekly goals", value: "Active", detail: "Dashboard targets", tone: "ok" },
+              {
+                label: "CP handles",
+                value: [all["cp.leetcode"], all["cp.codeforces"], all["cp.codechef"]].filter(Boolean).length + "/3",
+                detail: "LeetCode / CF / CodeChef",
+                tone: [all["cp.leetcode"], all["cp.codeforces"], all["cp.codechef"]].some(Boolean) ? "ok" : "warn",
+              },
+              { label: "Review loop", value: "Manual", detail: "Refresh stats when needed", tone: "info" },
+            ]}
+          />
+          <SectionHeader
+            title="Weekly targets"
+            hint="Small visible commitments that show up on the dashboard."
+          />
           <WeeklyGoalsEditor />
+          <SectionHeader
+            title="Competitive programming"
+            hint="Optional handles for contest and problem-solving stats."
+          />
           <Collapse
             title="Competitive programming"
             hint="LeetCode / Codeforces / CodeChef handles + cadence"
@@ -128,10 +224,44 @@ export default function Settings() {
 
       {tab === "integrations" && (
         <>
+          <SettingsOverview
+            items={[
+              {
+                label: "Local AI",
+                value: all["ollama.host"] || "Auto host",
+                detail: all["ollama.model"] || "Auto-pick model",
+                tone: "info",
+              },
+              {
+                label: "Spotify",
+                value: "Focus music",
+                detail: "Playback + playlists",
+                tone: "ok",
+              },
+              {
+                label: "GitHub",
+                value: all["github.username"] ? "Configured" : "Optional",
+                detail: all["github.username"] || "Repo comparison",
+                tone: all["github.username"] ? "ok" : "warn",
+              },
+            ]}
+          />
+          <SectionHeader
+            title="Local AI"
+            hint="Ollama powers Ask Apex, planning, burnout checks, and reviews."
+          />
           <OllamaTab all={all} setAll={setAll} save={save} />
+          <SectionHeader
+            title="Music"
+            hint="Spotify focus playlist and device playback controls."
+          />
           <Collapse title="Spotify" hint="Connect, focus playlist, playback controls">
             <SpotifyTab setMsg={setMsg} />
           </Collapse>
+          <SectionHeader
+            title="Code"
+            hint="GitHub profile and optional token for richer repo data."
+          />
           <Collapse title="GitHub" hint="Username + personal-access token">
             <GithubTab all={all} setAll={setAll} save={save} />
           </Collapse>
@@ -146,18 +276,34 @@ export default function Settings() {
 
       {tab === "data" && (
         <>
+          <SettingsOverview
+            items={[
+              { label: "Backup", value: "Export first", detail: "Portable SQLite copy", tone: "ok" },
+              { label: "Restore", value: "Relaunches", detail: "Keeps previous DB", tone: "warn" },
+              { label: "Seeds", value: "Additive", detail: "No destructive overwrite", tone: "info" },
+              { label: "Clears", value: "Confirmed", detail: "Type-to-confirm only", tone: "danger" },
+            ]}
+          />
+          <SectionHeader
+            title="Database"
+            hint="Export/import the local SQLite database before risky changes."
+          />
           <BackupTab setMsg={setMsg} />
+          <SectionHeader
+            title="Starter content"
+            hint="Optional one-click seeds for tasks, habits, and project ideas."
+          />
+          <SeedTab setMsg={setMsg} />
+          <SectionHeader
+            title="Danger zone"
+            hint="Destructive clears are isolated and require confirmation."
+          />
           <Collapse
             title="Danger zone"
             hint="Bulk-clear activity / schedule / everything"
+            defaultOpen
           >
             <DangerZone setMsg={setMsg} />
-          </Collapse>
-          <Collapse
-            title="Seed content"
-            hint="Populate with sample tasks, classes, habits"
-          >
-            <SeedTab setMsg={setMsg} />
           </Collapse>
         </>
       )}
@@ -320,10 +466,47 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  const scheduleOverview = [
+    {
+      label: "SRM session",
+      value: sess.sessionActive ? "Signed in" : "Needs login",
+      tone: sess.sessionActive ? "ok" : "warn",
+      detail: sess.username || "Browser login",
+    },
+    {
+      label: "Batch",
+      value: `Batch ${all["srm.batch"] || "1"}`,
+      tone: "neutral",
+      detail: "Slot table",
+    },
+    {
+      label: "Auto-sync",
+      value: (all["srm.autoSync"] ?? "1") !== "0" ? "On" : "Off",
+      tone: (all["srm.autoSync"] ?? "1") !== "0" ? "ok" : "neutral",
+      detail: "On app startup",
+    },
+    {
+      label: "Last pull",
+      value: lastSync?.ok ? `${lastSync.classes} classes` : "Not yet",
+      tone: lastSync?.ok ? "ok" : "neutral",
+      detail: lastSync?.calendar_rows ? `${lastSync.calendar_rows} calendar dates` : "Run Sync now",
+    },
+  ];
+
   return (
     <>
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-title">SRM Academia</div>
+
+        <div className="settings-overview-grid">
+          {scheduleOverview.map((item) => (
+            <div key={item.label} className={"settings-overview-card " + item.tone}>
+              <small>{item.label}</small>
+              <strong>{item.value}</strong>
+              <span>{item.detail}</span>
+            </div>
+          ))}
+        </div>
 
         <div
           className="row"
@@ -831,6 +1014,38 @@ function ActivityTab({ all, setAll, save, setMsg }) {
 
   return (
     <>
+      <SettingsOverview
+        items={[
+          {
+            label: "Tracker",
+            value: status?.running ? "Running" : "Off",
+            detail: status?.running ? "Sampling foreground apps" : "No desktop samples",
+            tone: status?.running ? "ok" : "warn",
+          },
+          {
+            label: "Current app",
+            value: status?.current?.app ? prettyAppName(status.current.app) : "Waiting",
+            detail: status?.current?.minutes ? `${status.current.minutes} min · ${status.current.category}` : "Start tracker to populate",
+            tone: status?.current?.category === "distraction" ? "danger" : "info",
+          },
+          {
+            label: "Nudge after",
+            value: `${all["activity.nudgeAfterMin"] || 45} min`,
+            detail: "One-app stretch limit",
+            tone: "info",
+          },
+          {
+            label: "Idle cutoff",
+            value: `${all["activity.idleThresholdMin"] || 5} min`,
+            detail: "Stops counting AFK time",
+            tone: "info",
+          },
+        ]}
+      />
+      <SectionHeader
+        title="Tracking"
+        hint="Foreground app sampling, idle handling, and break nudges."
+      />
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="row between">
           <div className="card-title">Desktop activity tracker</div>
@@ -868,8 +1083,16 @@ function ActivityTab({ all, setAll, save, setMsg }) {
         </div>
       </div>
 
+      <SectionHeader
+        title="Close behavior"
+        hint="Decide when Apex should ask for a reason before quitting."
+      />
       <CloseGuardCard all={all} setAll={setAll} save={save} />
 
+      <SectionHeader
+        title="App rules"
+        hint="Correct automatic app categories and keep future sessions cleaner."
+      />
       <div className="card">
         <div className="card-title">App categorization overrides</div>
         <p className="muted">Manually reclassify specific apps. Applies to all future samples (old sessions keep their original category).</p>
@@ -1216,6 +1439,25 @@ function CloudWellbeingPanel({ save, setMsg }) {
         </div>
       </section>
 
+      <div className="wellbeing-metrics cloud-metrics" aria-label="Cloud phone sync state">
+        <div className="wellbeing-metric">
+          <small>Connection</small>
+          <strong>{paired ? "Paired" : "Setup needed"}</strong>
+        </div>
+        <div className="wellbeing-metric">
+          <small>Devices</small>
+          <strong>{devices.length ? `${devices.length} linked` : paired ? "Refresh" : "None"}</strong>
+        </div>
+        <div className="wellbeing-metric">
+          <small>Phones</small>
+          <strong>{phoneCount}</strong>
+        </div>
+        <div className="wellbeing-metric">
+          <small>Auto-sync</small>
+          <strong>{status?.auto ? "On" : "Off"}</strong>
+        </div>
+      </div>
+
       <section className="wellbeing-panel">
         <div className="wellbeing-panel-head">
           <div>
@@ -1415,8 +1657,6 @@ function WellbeingTab({ all, setAll, save, setMsg }) {
 
   return (
     <div className="wellbeing-shell">
-      <CloudWellbeingPanel save={save} setMsg={setMsg} />
-
       <section className={"wellbeing-hero" + (hasDevice ? " is-ready" : "")}>
         <div className="wellbeing-hero-copy">
           <div className="wellbeing-kicker">USB · ADB fallback</div>
@@ -1720,15 +1960,22 @@ function OllamaTab({ all, setAll, save }) {
             Auto-pick priority: <code>gpt-oss:120b-cloud</code> → <code>llama3:latest</code> → <code>gemma3:4b</code> → others.
           </small>
         </div>
-        <div className="form-row">
-          <label className="row" style={{ gap: 6, alignItems: "center" }}>
-            <input type="checkbox" checked={autoStart}
-              onChange={(e) => { setAll({ ...all, "ollama.autoStart": String(e.target.checked) }); save("ollama.autoStart", String(e.target.checked)); }} />
-            Auto-start Ollama when Apex launches
-          </label>
-        </div>
+        <div className="settings-divider" />
+        <ToggleRow
+          label="Auto-start Ollama when Apex launches"
+          sub="Keeps Ask Apex and planning features ready without opening Ollama manually."
+          checked={autoStart}
+          onChange={(on) => {
+            setAll({ ...all, "ollama.autoStart": String(on) });
+            save("ollama.autoStart", String(on));
+          }}
+        />
       </div>
 
+      <SectionHeader
+        title="Assistant context"
+        hint="Personal profile used by planning, reviews, burnout checks, and repo chat."
+      />
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-title">Personal context</div>
         <small className="muted">
@@ -2730,7 +2977,38 @@ function AppearanceTab({ all, setAll, save }) {
 
   return (
     <>
-
+      <SettingsOverview
+        items={[
+          {
+            label: "Theme",
+            value: THEMES.find((t) => t.key === current)?.label || current,
+            detail: tag === "All" ? "Full catalog" : `${tag} filter`,
+            tone: "ok",
+          },
+          {
+            label: "Accent",
+            value: customAccent || "Theme default",
+            detail: customAccent ? "Custom override" : "Inherited",
+            tone: customAccent ? "ok" : "info",
+          },
+          {
+            label: "Contrast",
+            value: all["ui.contrast"] === "high" ? "High" : "Normal",
+            detail: "Dashboard + settings",
+            tone: all["ui.contrast"] === "high" ? "warn" : "info",
+          },
+          {
+            label: "Startup",
+            value: (all["ui.autostart"] ?? "0") === "1" ? "Windows login" : "Manual",
+            detail: (all["ui.minimizeToTray"] ?? "0") === "1" ? "Tray enabled" : "No tray minimize",
+            tone: (all["ui.autostart"] ?? "0") === "1" ? "ok" : "info",
+          },
+        ]}
+      />
+      <SectionHeader
+        title="Visual system"
+        hint="Theme, accent, contrast, and color tokens are previewed live."
+      />
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="row between" style={{ alignItems: "baseline", marginBottom: 6 }}>
           <div className="card-title" style={{ margin: 0 }}>Theme</div>
@@ -2863,8 +3141,16 @@ function AppearanceTab({ all, setAll, save }) {
 
       <ContrastCard all={all} setAll={setAll} save={save} />
 
+      <SectionHeader
+        title="Window behavior"
+        hint="Tray and startup settings that affect how Apex behaves outside the window."
+      />
       <SystemStartupCard all={all} setAll={setAll} save={save} />
 
+      <SectionHeader
+        title="Advanced colors"
+        hint="Only touch this when you want to override individual theme tokens."
+      />
       <CustomColorsCard all={all} setAll={setAll} save={save} />
     </>
   );
@@ -3250,103 +3536,137 @@ function NotificationsTab() {
   }
 
   return (
-    <div className="card" style={{ marginBottom: 16 }}>
-      <div className="row between" style={{ alignItems: "center" }}>
-        <div>
-          <div className="card-title" style={{ margin: 0 }}>Notifications</div>
-          <small className="hint">
-            Local desktop notifications. {status.supported ? "Supported." : "Your OS reports no notification support."}
-          </small>
-        </div>
-        <label className="switch">
-          <input
-            type="checkbox"
-            checked={!!status.enabled}
-            onChange={(e) => setEnabled(e.target.checked)}
-          />
-          <span>{status.enabled ? "On" : "Off"}</span>
-        </label>
+    <>
+      <SettingsOverview
+        items={[
+          {
+            label: "Desktop alerts",
+            value: status.enabled ? "On" : "Off",
+            detail: status.supported ? "OS supported" : "OS unsupported",
+            tone: status.enabled ? "ok" : "warn",
+          },
+          {
+            label: "Classes",
+            value: `${status.classLeadMinutes ?? 10} min`,
+            detail: "Before start",
+            tone: status.kinds?.class === false ? "warn" : "info",
+          },
+          {
+            label: "Deadlines",
+            value: `${status.deadlineLeadMinutes ?? 60} min`,
+            detail: "Before due",
+            tone: status.kinds?.deadline === false ? "warn" : "info",
+          },
+          {
+            label: "Daily rhythm",
+            value: `${status.morningHour ?? 8}:00 / ${status.eveningHour ?? 21}:00`,
+            detail: "Morning + evening",
+            tone: "info",
+          },
+        ]}
+      />
+
+      <SectionHeader
+        title="Master switch"
+        hint="Local desktop notifications only. Mobile reminders are controlled on Android."
+      />
+      <div className="card" style={{ marginBottom: 16 }}>
+        <ToggleRow
+          label="Enable desktop notifications"
+          sub={status.supported ? "Apex can show native Windows notifications." : "Your OS reports no notification support."}
+          checked={!!status.enabled}
+          onChange={setEnabled}
+          disabled={!status.supported}
+        />
       </div>
 
-      <hr className="soft" />
-
-      <div className="grid-2">
-        <div className="form-row">
-          <label>Class start lead (min)</label>
-          <input
-            type="number"
-            min={1}
-            max={60}
-            value={status.classLeadMinutes ?? 10}
-            onChange={(e) =>
-              setLeads({ classLeadMinutes: +e.target.value || 10 })
-            }
-          />
-        </div>
-        <div className="form-row">
-          <label>Deadline lead (min)</label>
-          <input
-            type="number"
-            min={5}
-            max={240}
-            value={status.deadlineLeadMinutes ?? 60}
-            onChange={(e) =>
-              setLeads({ deadlineLeadMinutes: +e.target.value || 60 })
-            }
-          />
-        </div>
-      </div>
-
-      <hr className="soft" />
-
-      <div className="grid-2">
-        <div className="form-row">
-          <label>Morning digest hour (0-23)</label>
-          <input
-            type="number"
-            min={0}
-            max={23}
-            value={status.morningHour ?? 8}
-            onChange={(e) => setHour("morningHour", +e.target.value || 8)}
-          />
-        </div>
-        <div className="form-row">
-          <label>Evening review hour (0-23)</label>
-          <input
-            type="number"
-            min={0}
-            max={23}
-            value={status.eveningHour ?? 21}
-            onChange={(e) => setHour("eveningHour", +e.target.value || 21)}
-          />
-        </div>
-      </div>
-
-      <div style={{ marginTop: 8 }}>
-        {[
-          ["class", "Class starts"],
-          ["deadline", "Task deadlines"],
-          ["timer", "Timer expiry"],
-          ["morning", "Morning digest"],
-          ["evening", "Evening review prompt"],
-          ["streak", "Habit streak at-risk"],
-        ].map(([k, label]) => (
-          <label key={k} className="switch" style={{ display: "flex", margin: "4px 0" }}>
+      <SectionHeader
+        title="Timing"
+        hint="Choose how early Apex warns you before classes and task deadlines."
+      />
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="grid-2">
+          <div className="form-row">
+            <label>Class start lead (min)</label>
             <input
-              type="checkbox"
-              checked={status.kinds?.[k] !== false}
-              onChange={(e) => setKindFlag(k, e.target.checked)}
+              type="number"
+              min={1}
+              max={60}
+              value={status.classLeadMinutes ?? 10}
+              onChange={(e) =>
+                setLeads({ classLeadMinutes: +e.target.value || 10 })
+              }
             />
-            <span>{label}</span>
-          </label>
-        ))}
+          </div>
+          <div className="form-row">
+            <label>Deadline lead (min)</label>
+            <input
+              type="number"
+              min={5}
+              max={240}
+              value={status.deadlineLeadMinutes ?? 60}
+              onChange={(e) =>
+                setLeads({ deadlineLeadMinutes: +e.target.value || 60 })
+              }
+            />
+          </div>
+          <div className="form-row">
+            <label>Morning digest hour (0-23)</label>
+            <input
+              type="number"
+              min={0}
+              max={23}
+              value={status.morningHour ?? 8}
+              onChange={(e) => setHour("morningHour", +e.target.value || 8)}
+            />
+          </div>
+          <div className="form-row">
+            <label>Evening review hour (0-23)</label>
+            <input
+              type="number"
+              min={0}
+              max={23}
+              value={status.eveningHour ?? 21}
+              onChange={(e) => setHour("eveningHour", +e.target.value || 21)}
+            />
+          </div>
+        </div>
       </div>
 
-      <div className="row" style={{ marginTop: 14 }}>
-        <button className="ghost" onClick={test} disabled={busy}>
-          Send test notification
+      <SectionHeader
+        title="Channels"
+        hint="Turn off noisy categories without disabling the notification system."
+      />
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="settings-toggle-stack">
+          {[
+            ["class", "Class starts", "Before each scheduled class."],
+            ["deadline", "Task deadlines", "Upcoming due dates from tasks."],
+            ["timer", "Timer expiry", "Focus timer complete alerts."],
+            ["morning", "Morning digest", "Start-of-day plan prompt."],
+            ["evening", "Evening review prompt", "End-of-day reflection prompt."],
+            ["streak", "Habit streak at-risk", "Gentle warning before a habit streak breaks."],
+          ].map(([k, label, sub]) => (
+            <ToggleRow
+              key={k}
+              label={label}
+              sub={sub}
+              checked={status.kinds?.[k] !== false}
+              onChange={(on) => setKindFlag(k, on)}
+            />
+          ))}
+        </div>
+      </div>
+
+      <SectionHeader
+        title="Test"
+        hint="Confirm Windows notifications are visible before relying on them."
+      />
+      <div className="card" style={{ marginBottom: 16 }}>
+        <button className="ghost" onClick={test} disabled={busy || !status.enabled}>
+          {busy ? "Sending..." : "Send test notification"}
         </button>
       </div>
-    </div>
+    </>
   );
 }

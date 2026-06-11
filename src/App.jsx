@@ -27,6 +27,7 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [closeRequest, setCloseRequest] = useState(null);
+  const [routineNudge, setRoutineNudge] = useState(null);
 
   // Hydrate the theme on mount. Default = "library". Stored in settings as
   // `ui.theme`; applied via a data attr on <html> so the CSS theme blocks
@@ -109,6 +110,12 @@ export default function App() {
     return () => off?.();
   }, []);
 
+  useEffect(() => {
+    if (!api?.routine?.onNudge) return;
+    const off = api.routine.onNudge((payload) => setRoutineNudge(payload || null));
+    return () => off?.();
+  }, []);
+
   const Active = PAGES[page].Comp;
 
   return (
@@ -138,6 +145,41 @@ export default function App() {
           onClose={() => setCloseRequest(null)}
         />
       )}
+      {routineNudge && (
+        <RoutineNudgeToast
+          nudge={routineNudge}
+          onClose={() => setRoutineNudge(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function RoutineNudgeToast({ nudge, onClose }) {
+  const [busy, setBusy] = useState(false);
+  async function markDone() {
+    setBusy(true);
+    try {
+      await api.routine?.dismissNudge?.(nudge.key);
+      onClose?.();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="routine-toast">
+      <div>
+        <strong>{nudge.title || "Routine reminder"}</strong>
+        <small className="muted">{nudge.body || "Mark this done or hide this reminder."}</small>
+      </div>
+      <div className="row" style={{ gap: 6, flexShrink: 0 }}>
+        <button className="primary small" onClick={markDone} disabled={busy}>
+          {busy ? "Saving..." : "Already done"}
+        </button>
+        <button className="ghost xsmall" onClick={onClose} aria-label="Dismiss routine reminder">
+          x
+        </button>
+      </div>
     </div>
   );
 }

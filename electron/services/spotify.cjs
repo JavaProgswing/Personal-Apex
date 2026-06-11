@@ -1354,7 +1354,7 @@ async function createFocusPlaylist(opts, onProgress) {
       audioFeaturesLimited = true;
       if (onProgress) {
         onProgress({
-          message: "Spotify blocked audio features; using library signals...",
+          message: "Scoring focus tracks from your library...",
           current: 2,
           total: 4,
         });
@@ -1442,9 +1442,7 @@ async function createFocusPlaylist(opts, onProgress) {
       playlistUri,
       playlistName,
       profile: profileKey,
-      warning: audioFeaturesLimited
-        ? "Spotify blocked audio-feature scoring, so Apex used library/popularity signals instead."
-        : null,
+      featuresLimited: audioFeaturesLimited,
       preview: matched.slice(0, 8).map(function(t) {
         return {
           name: t.name,
