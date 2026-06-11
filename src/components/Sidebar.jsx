@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import api from "../lib/api.js";
+import apexIcon from "../assets/apex-icon.png";
 
-// Typographic glyphs — no emoji, no system-font dependency.
+// Typographic glyphs - no emoji, no system-font dependency.
 const ICONS = {
   dashboard:  "▣",
   tasks:      "✓",
@@ -45,8 +46,8 @@ export default function Sidebar({ current, onChange, pages, onPalette }) {
 
   return (
     <aside className={"sidebar" + (collapsed ? " collapsed" : "")}>
-      <div className="brand" title={collapsed ? "APEX — click to expand" : ""}>
-        <span className="brand-dot" aria-hidden />
+      <div className="brand" title={collapsed ? "APEX - click to expand" : ""}>
+        <img className="brand-mark" src={apexIcon} alt="" />
         {!collapsed && <span className="brand-text">APEX</span>}
         <button
           type="button"

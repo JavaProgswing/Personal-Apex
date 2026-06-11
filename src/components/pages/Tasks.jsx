@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import api from "../../lib/api.js";
 import { daysUntil, niceDate } from "../../lib/date.js";
 import BrainDumpModal from "../BrainDumpModal.jsx";
@@ -26,7 +26,7 @@ const KINDS = [
   { key: "interest", label: "Interests" },
 ];
 
-// Recurrence presets — the old freeform "day:1|day:3 or weekly:mon" text input
+// Recurrence presets - the old freeform "day:1|day:3 or weekly:mon" text input
 // was a footgun. 99% of what users want is one of these; the remaining 1%
 // can still pick Custom and type the rule directly.
 const RECURRENCE_PRESETS = [
@@ -98,22 +98,13 @@ export default function Tasks() {
   async function toggle(id) { await api.tasks.toggle(id); reload(); }
   async function remove(id) { await api.tasks.delete(id); reload(); }
 
-  // Quick-add inline: title only, sensible defaults from current filters.
-  async function quickAdd(e) {
-    e?.preventDefault?.();
-    const title = quickTitle.trim();
-    if (!title) return;
-    const defaultCat = category
-      || (kind === "interest" ? "Project" : kind === "habit" ? "Health" : "Deep work");
-    await api.tasks.create({
-      title,
-      kind,
-      priority: 3,
-      category: defaultCat,
-      tags: [],
-      links: [],
-    });
-    setQuickTitle("");
+  // Clear all completed tasks of the current kind
+  async function clearCompleted() {
+    if (!confirm(`Remove all completed ${kind}s?`)) return;
+    const doneTasks = tasks.filter(t => t.completed);
+    for (const t of doneTasks) {
+      await api.tasks.delete(t.id);
+    }
     reload();
   }
 
@@ -163,9 +154,6 @@ export default function Tasks() {
       <div className="row between" style={{ marginBottom: 18 }}>
         <div>
           <h1 className="page-title">Tasks</h1>
-          <p className="page-sub">
-            One list for coursework, habits, and interests. P1 = urgent, P5 = someday.
-          </p>
         </div>
         <div className="row" style={{ gap: 6 }}>
           <button
@@ -174,6 +162,14 @@ export default function Tasks() {
             title="Paste a chat or text dump and Apex extracts tasks (Ctrl+Shift+B)"
           >
             📋 Brain dump
+          </button>
+          <button 
+            className="ghost" 
+            onClick={clearCompleted}
+            disabled={!tasks.some(t => t.completed)}
+            title="Clear finished items"
+          >
+            Clear done
           </button>
           <button className="primary" onClick={() => setShowNew(true)}>+ New</button>
         </div>
@@ -197,7 +193,7 @@ export default function Tasks() {
         </div>
       )}
 
-      {/* Stats strip — always shown, useful at a glance */}
+      {/* Stats strip - always shown, useful at a glance */}
       <div className="task-stats-strip">
         <StatBlock
           label="Open"
@@ -242,16 +238,6 @@ export default function Tasks() {
         ))}
       </div>
 
-      {/* Quick-add */}
-      <form onSubmit={quickAdd} className="task-quick-add">
-        <input
-          placeholder={`Quick-add ${kind} … (Enter to save)`}
-          value={quickTitle}
-          onChange={(e) => setQuickTitle(e.target.value)}
-        />
-        <button type="submit" className="ghost small" disabled={!quickTitle.trim()}>+ Add</button>
-      </form>
-
       {/* Filters + sort/group */}
       <div className="row task-filters" style={{ marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
         <select
@@ -290,7 +276,7 @@ export default function Tasks() {
             {q || category || completed === true ? (
               <> Try clearing filters above, or </>
             ) : (
-              <> Get started — </>
+              <> Get started - </>
             )}
             <a href="#" onClick={(e) => { e.preventDefault(); setShowNew(true); }}>
               create a new {kind}
@@ -564,7 +550,7 @@ function sortTasks(rows, sortBy) {
     return arr.sort((a, b) => (a.category || "").localeCompare(b.category || "")
       || deadlineKey(a) - deadlineKey(b));
   }
-  // recent — most-recently-added first; fall back to id order
+  // recent - most-recently-added first; fall back to id order
   return arr.sort((a, b) => (b.id || 0) - (a.id || 0));
 }
 
@@ -655,7 +641,7 @@ function TaskModal({ task, defaults, onClose, onSaved }) {
       progress: +form.progress,
       estimated_minutes: form.estimated_minutes === "" ? null : +form.estimated_minutes,
       deadline: form.deadline === "" ? null : new Date(form.deadline).toISOString(),
-      // Keep tags/links arrays intact on existing rows — we stopped exposing
+      // Keep tags/links arrays intact on existing rows - we stopped exposing
       // them in the form but we don't want saving to wipe what's there.
       tags: task?.tags || [],
       links: task?.links || [],
@@ -665,7 +651,7 @@ function TaskModal({ task, defaults, onClose, onSaved }) {
     // Strip helper-only fields we added for the dropdown.
     delete payload.recurrence_choice;
     if (task?.id) await api.tasks.update(task.id, payload);
-    else await api.tasks.create(payload);
+    else await api.tasks.create({ ...payload, source: "task-modal" });
     onSaved();
   }
 
@@ -788,3 +774,4 @@ function TaskModal({ task, defaults, onClose, onSaved }) {
     </div>
   );
 }
+

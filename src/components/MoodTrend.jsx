@@ -3,7 +3,7 @@ import api from "../lib/api.js";
 
 // 14-day sparkline of sleep / clarity / dread / energy. Pure SVG, no chart lib.
 //
-// v0.3 — date axis, week-over-week delta per metric, insight callout,
+// v0.3 - date axis, week-over-week delta per metric, insight callout,
 // sparse-data fallback that still shows the latest value, click any sparkline
 // to swap to a single-metric detail view.
 const METRICS = [
@@ -47,7 +47,7 @@ export default function MoodTrend() {
       <div className="card">
         <div className="card-title">Mood trend · 14d</div>
         <div className="muted">
-          No check-ins yet. Fill one on the Dashboard — trends appear after two
+          No check-ins yet. Fill one on the Dashboard - trends appear after two
           days.
         </div>
       </div>
@@ -140,7 +140,7 @@ export default function MoodTrend() {
               <Spark values={values} color={m.color} />
               <div style={{ textAlign: "right", fontSize: 12, lineHeight: 1.2 }}>
                 <div style={{ color: "var(--text)", fontWeight: 500 }}>
-                  {last == null ? "—" : last.toFixed(1)}
+                  {last == null ? "-" : last.toFixed(1)}
                   <span className="muted" style={{ fontSize: 10 }}> /10</span>
                 </div>
                 {delta && (
@@ -211,7 +211,7 @@ function buildInsight(rows, metrics) {
   return {
     color: best.color,
     text: goodish
-      ? `${best.label} is trending ${direction} this week — keep doing what you're doing.`
+      ? `${best.label} is trending ${direction} this week - keep doing what you're doing.`
       : `${best.label} dipped this week. Worth a look.`,
   };
 }
@@ -292,7 +292,7 @@ function BigSpark({ values, days, color }) {
           <title>{`${day}: ${v}`}</title>
         </g>
       ))}
-      {/* X axis labels — first, middle, last */}
+      {/* X axis labels - first, middle, last */}
       {[0, Math.floor(points.length / 2), points.length - 1].filter((i, idx, arr) => arr.indexOf(i) === idx).map((i) => (
         <text key={i} x={points[i][0]} y={H - 6} fontSize="10" fill="var(--text-dim)" textAnchor="middle">
           {fmtDay(points[i][3])}

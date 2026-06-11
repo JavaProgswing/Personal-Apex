@@ -12,7 +12,7 @@ export default function NowPlayingChip() {
   const [now, setNow] = useState(null);         // nowPlaying() result
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  // Extra player state — we read these from /me/player so the popover can
+  // Extra player state - we read these from /me/player so the popover can
   // reflect shuffle / repeat / volume without an extra round-trip per click.
   const [playerState, setPlayerState] = useState({
     shuffle: false,
@@ -74,14 +74,7 @@ export default function NowPlayingChip() {
   }, [open]);
 
   if (!status?.connected) return null;
-  if (!now?.item) {
-    return (
-      <div className="now-playing-chip idle" title="Spotify connected — nothing playing">
-        <span className="np-vinyl idle" aria-hidden />
-        <span className="muted">silence</span>
-      </div>
-    );
-  }
+  if (!now?.item) return null;
 
   const it = now.item;
 
@@ -94,7 +87,7 @@ export default function NowPlayingChip() {
       else if (action === "prev")  await api.spotify.previous();
     } finally {
       setBusy(false);
-      // Brief delay before refresh — Spotify's playback state takes a sec
+      // Brief delay before refresh - Spotify's playback state takes a sec
       // to flip on its end.
       setTimeout(refresh, 600);
     }
@@ -108,7 +101,7 @@ export default function NowPlayingChip() {
         onClick={() => setOpen((v) => !v)}
         title={`${it.name} · ${it.artists}`}
       >
-        {/* Album art rotates while playing — a vinyl-record nod that
+        {/* Album art rotates while playing - a vinyl-record nod that
             makes the chip feel alive instead of static. CSS handles the
             spin via `data-playing` so we don't reapply animation classes
             and reset the transform on every poll. */}

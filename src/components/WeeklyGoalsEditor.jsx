@@ -65,7 +65,7 @@ export default function WeeklyGoalsEditor() {
           <div className="card-title">Weekly goals</div>
           <div className="muted small">
             {total === 0
-              ? "Set a few loose targets for the week — no pressure."
+              ? "Set a few loose targets for the week - no pressure."
               : `${done} of ${total} complete this week`}
           </div>
         </div>

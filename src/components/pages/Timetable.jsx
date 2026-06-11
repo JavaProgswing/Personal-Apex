@@ -1,4 +1,4 @@
-// DEPRECATED — replaced by Upcoming.jsx. Kept only because the file system
+// DEPRECATED - replaced by Upcoming.jsx. Kept only because the file system
 // doesn't allow deletion from this environment; nothing imports it now.
 import React from "react";
 export default function Timetable() {

@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../../lib/api.js";
 import LiveTimer from "../LiveTimer.jsx";
 import NowPlayingChip from "../NowPlayingChip.jsx";
+import ZenMode from "../ZenMode.jsx";
 import { MarkdownBlock } from "../../lib/markdown.jsx";
 import { prettyAppName } from "../../lib/appName.js";
 
@@ -28,6 +29,12 @@ const GOAL_PRESETS = [
   { title: "Gym sessions", target: 4 },
   { title: "Deep-work hours", target: 12 },
 ];
+const ASK_APEX_PROMPTS = [
+  "What should I do next with my current energy?",
+  "Turn today's open tasks into a realistic evening plan.",
+  "Find the biggest distraction pattern in my activity today.",
+  "What should I skip or defer today?",
+];
 const CATEGORY_LABELS = {
   productive: "productive",
   distraction: "distraction",
@@ -37,6 +44,43 @@ const CATEGORY_LABELS = {
   mobile: "mobile",
   other: "other",
 };
+const APP_VISUALS = [
+  { match: /visual studio|vs code|code(?:\.exe)?$/i, label: "VS", color: "#3fa7ff" },
+  { match: /chrome|google chrome/i, label: "CH", color: "#65c466" },
+  { match: /brave/i, label: "BR", color: "#ff7a3d" },
+  { match: /edge|msedge/i, label: "ED", color: "#4cc9f0" },
+  { match: /firefox/i, label: "FF", color: "#ff9f45" },
+  { match: /terminal|windowsterminal/i, label: "WT", color: "#9aa7ff" },
+  { match: /powershell|pwsh/i, label: "PS", color: "#6aa7ff" },
+  { match: /spotify/i, label: "SP", color: "#42d96b" },
+  { match: /youtube/i, label: "YT", color: "#ff5a5a" },
+  { match: /instagram|threads/i, label: "IG", color: "#f06ac8" },
+  { match: /whatsapp/i, label: "WA", color: "#3bd67f" },
+  { match: /discord/i, label: "DC", color: "#8b9bff" },
+  { match: /telegram/i, label: "TG", color: "#4bb9ff" },
+  { match: /reddit/i, label: "RD", color: "#ff7657" },
+  { match: /notion/i, label: "NO", color: "#e7e2d8" },
+  { match: /github/i, label: "GH", color: "#b6c2ff" },
+  { match: /figma/i, label: "FI", color: "#b18cff" },
+  { match: /steam/i, label: "ST", color: "#8eb8ff" },
+  { match: /netflix/i, label: "NX", color: "#ff4b5f" },
+  { match: /word/i, label: "WD", color: "#4d8dff" },
+  { match: /excel/i, label: "XL", color: "#5ccf82" },
+  { match: /powerpoint/i, label: "PP", color: "#ff845f" },
+  { match: /outlook|mail|gmail/i, label: "ML", color: "#64a9ff" },
+  { match: /phone|messages|contacts/i, label: "PH", color: "#7bdcff" },
+  { match: /launcher|system ui|settings/i, label: "OS", color: "#a9b5c4" },
+];
+const APP_FALLBACK_COLORS = [
+  "#38d8c4",
+  "#7db7ff",
+  "#f5b84b",
+  "#ff6b7a",
+  "#b69cff",
+  "#66d38f",
+  "#f06ac8",
+  "#8fd7ff",
+];
 
 export default function Dashboard({ go }) {
   const [goals, setGoals] = useState([]);
@@ -69,6 +113,8 @@ export default function Dashboard({ go }) {
   const [todayTotals, setTodayTotals] = useState(null);
   const [trend, setTrend] = useState([]);
   const [topApps, setTopApps] = useState([]);
+  const [focusBlocks, setFocusBlocks] = useState([]);
+  const [zenActive, setZenActive] = useState(false);
   const [topAppsDate, setTopAppsDate] = useState(
     new Date().toISOString().slice(0, 10),
   );
@@ -76,6 +122,7 @@ export default function Dashboard({ go }) {
 
   const [toast, setToast] = useState(null);
   const [showAskApex, setShowAskApex] = useState(false);
+  const [showDaySummary, setShowDaySummary] = useState(false);
   // Per-day class overrides — click a row to edit/cancel, or "+ Extra
   // class" to add a one-off entry to today's schedule.
   const [editingClass, setEditingClass] = useState(null);
@@ -176,10 +223,24 @@ export default function Dashboard({ go }) {
 
     let cancelled = false;
     const load = () => {
-      api.activity
-        .topApps(topAppsDate, 8)
-        .then((apps) => { if (!cancelled) setTopApps(apps); })
-        .catch(() => { if (!cancelled) setTopApps([]); });
+      Promise.all([
+        api.activity
+          .topApps(topAppsDate, 8)
+          .catch(() => []),
+        api.activity.focusBlocks
+          ? api.activity.focusBlocks(topAppsDate, 8).catch(() => [])
+          : [],
+      ])
+        .then(([apps, blocks]) => {
+          if (cancelled) return;
+          setTopApps(apps);
+          setFocusBlocks(blocks || []);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setTopApps([]);
+          setFocusBlocks([]);
+        });
       if (viewingToday) {
         api.activity.trend?.(7)
           .then((tr) => { if (!cancelled) setTrend(tr); })
@@ -199,16 +260,20 @@ export default function Dashboard({ go }) {
   }, [topAppsDate]);
 
   async function refreshActivity() {
-    const [tr, apps, totals] = await Promise.all([
+    const [tr, apps, totals, blocks] = await Promise.all([
       api.activity.trend ? api.activity.trend(7).catch(() => []) : [],
       api.activity.topApps
         ? api.activity.topApps(topAppsDate, 8).catch(() => [])
         : [],
       api.activity.todayTotals().catch(() => null),
+      api.activity.focusBlocks
+        ? api.activity.focusBlocks(topAppsDate, 8).catch(() => [])
+        : [],
     ]);
     setTrend(tr);
     setTopApps(apps);
     setTodayTotals(totals);
+    setFocusBlocks(blocks || []);
   }
 
   async function refresh(firstMount = false) {
@@ -533,7 +598,7 @@ export default function Dashboard({ go }) {
     <>
       {/* Header */}
       <div
-        className="row between"
+        className="row between dashboard-header"
         style={{ alignItems: "flex-start", marginBottom: 8 }}
       >
         <div>
@@ -551,9 +616,6 @@ export default function Dashboard({ go }) {
         </div>
         <div className="dashboard-actions">
           <NowPlayingChip />
-          <button className="primary small" onClick={() => setShowAskApex(true)}>
-            Ask Apex
-          </button>
           {/* Burnout-tracking surface removed from the dashboard header.
               The underlying check still runs in the background (used by
               Apex's recommendations) but no longer takes header space. */}
@@ -645,14 +707,6 @@ export default function Dashboard({ go }) {
               setTimeout(() => setToast(null), 3000);
             }}
           />}
-          <OverflowMenu
-            items={[
-              cpHasAny && {
-                label: "My CP snapshot",
-                onClick: () => setShowCp(true),
-              },
-            ].filter(Boolean)}
-          />
         </div>
       </div>
 
@@ -661,7 +715,13 @@ export default function Dashboard({ go }) {
           desktop tracker still runs underneath (its current foreground
           app shows up in Top apps), but the live timer is the explicit
           time the user has agreed to spend on something. */}
-      <LiveTimer tasks={tasks} onChanged={() => refreshActivity()} />
+      {!zenActive && (
+        <LiveTimer tasks={tasks} onChanged={() => refreshActivity()} />
+      )}
+      <ZenMode
+        onChanged={() => refreshActivity()}
+        onActiveChange={(isActive) => setZenActive(!!isActive)}
+      />
       {trackerStatus && !trackerStatus.running && (
         <div className="now-strip idle" style={{ marginTop: 8 }}>
           <span className="dot" />
@@ -893,6 +953,27 @@ export default function Dashboard({ go }) {
         </div>
       </div>
 
+      <DashboardToolsCard
+        selfCp={selfCp}
+        cpHasAny={cpHasAny}
+        onAsk={() => setShowAskApex(true)}
+        onOpenSummary={() => setShowDaySummary(true)}
+        onOpenCp={() => setShowCp(true)}
+        onRefreshCp={async () => {
+          const r = await api.cp.self();
+          if (r?.results) {
+            setSelfCp({ ...r.results, cached_at: new Date().toISOString() });
+            setToast({
+              kind: "success",
+              title: "CP refreshed",
+              msg: "Your competitive-programming snapshot is up to date.",
+            });
+            setTimeout(() => setToast(null), 3000);
+          }
+        }}
+        onCopyBrief={copyTodayBrief}
+      />
+
       {/* Reflect row — private journal. The focus timer was retired in
           favour of LiveTimer at the top, which subsumes its functionality
           (task selection + auto-log + AI awareness). */}
@@ -905,6 +986,7 @@ export default function Dashboard({ go }) {
         hiddenCats={hiddenCats}
         setHiddenCats={setHiddenCats}
         topApps={topApps}
+        focusBlocks={focusBlocks}
         topAppsDate={topAppsDate}
         setTopAppsDate={setTopAppsDate}
         trackerStatus={trackerStatus}
@@ -920,25 +1002,17 @@ export default function Dashboard({ go }) {
           }
         }}
         onSyncMobile={async () => {
-          const r = await api.wellbeing?.syncNow?.();
+          // Prefer the no-cable cloud pull; fall back to ADB when unpaired.
+          let r = await api.wellbeing?.pullCloud?.();
+          if (!r?.ok && r?.error === "cloud-not-paired") {
+            r = await api.wellbeing?.syncNow?.();
+          }
           setToast({
             kind: r?.ok ? "success" : "error",
-            title: r?.ok ? "Mobile synced" : "Mobile sync failed",
+            title: r?.ok ? "Phone synced" : "Phone sync failed",
             msg: r?.ok
-              ? `${r.count} apps, ${r.total_minutes} min · device ${r.device}`
-              : r?.error || "No ADB device found",
-          });
-          setTimeout(() => setToast(null), 5000);
-          refreshActivity();
-        }}
-        onSyncBattery={async () => {
-          const r = await api.battery?.syncToActivity?.(14);
-          setToast({
-            kind: r?.ok ? "success" : "error",
-            title: r?.ok ? "Desktop usage synced" : "Battery sync failed",
-            msg: r?.ok
-              ? `${r.added} day${r.added === 1 ? "" : "s"} imported from battery report.`
-              : r?.error || "powercfg failed (Windows only)",
+              ? `${r.count} apps, ${r.total_minutes} min today`
+              : r?.error || "Pair the phone in Settings → Mobile",
           });
           setTimeout(() => setToast(null), 5000);
           refreshActivity();
@@ -960,6 +1034,16 @@ export default function Dashboard({ go }) {
           checkin={checkin}
           burnoutReport={burnoutReport}
           onClose={() => setShowAskApex(false)}
+        />
+      )}
+
+      {showDaySummary && (
+        <DaySummaryModal
+          onClose={() => setShowDaySummary(false)}
+          onAsk={() => {
+            setShowDaySummary(false);
+            setShowAskApex(true);
+          }}
         />
       )}
 
@@ -1345,18 +1429,32 @@ function ActivitySection({
   hiddenCats,
   setHiddenCats,
   topApps,
+  focusBlocks = [],
   topAppsDate,
   setTopAppsDate,
   trackerStatus,
   onToggleTracker,
   onSyncMobile,
-  onSyncBattery,
   onOpenSettings,
 }) {
   const [hover, setHover] = useState(null);
   const [source, setSource] = useState("all"); // all | desktop | mobile
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem("apex.activity.collapsed") !== "0";
+    } catch {
+      return true;
+    }
+  });
   const today = new Date().toISOString().slice(0, 10);
   const isToday = topAppsDate === today;
+
+  function setActivityCollapsed(next) {
+    setCollapsed(next);
+    try {
+      window.localStorage.setItem("apex.activity.collapsed", next ? "1" : "0");
+    } catch { /* ignore */ }
+  }
 
   function toggleCat(k) {
     const n = new Set(hiddenCats);
@@ -1432,6 +1530,7 @@ function ActivitySection({
     sumBySource(topApps, "desktop") + sumBySource(topApps, "battery");
   const selMobileMin = sumBySource(topApps, "mobile");
   const selBatteryMin = sumBySource(topApps, "battery");
+  const focusTotalMin = (focusBlocks || []).reduce((s, b) => s + (b.minutes || 0), 0);
   // Does the DB have any battery rows visible in the current top-apps slice?
   // Used to distinguish "never synced" vs "no battery data for this day".
   const hasAnyBatteryInTopApps = selBatteryMin > 0;
@@ -1443,40 +1542,112 @@ function ActivitySection({
         .map((k) => [k, topCatRow[k] || 0])
         .sort((a, b) => b[1] - a[1])[0]
     : null;
+  const todayBreakdown = useMemo(() => {
+    if (!todayRow) return [];
+    const total = CATEGORY_KEYS.reduce((s, k) => s + (todayRow[k] || 0), 0) || 1;
+    return CATEGORY_KEYS
+      .map((k) => ({
+        cat: k,
+        minutes: todayRow[k] || 0,
+        pct: Math.round(((todayRow[k] || 0) / total) * 100),
+      }))
+      .filter((x) => x.minutes > 0)
+      .sort((a, b) => b.minutes - a.minutes);
+  }, [todayRow]);
+  const nowApp = trackerStatus?.running && trackerStatus?.current?.app
+    ? prettyAppName(trackerStatus.current.app)
+    : "";
+  const topApp = topApps?.[0] ? prettyAppName(topApps[0].app) : "";
+  const activitySummary = nowApp
+    ? `now ${nowApp}`
+    : topApp
+      ? `top ${topApp}`
+      : "no apps yet";
 
   return (
-    <div className="card activity-section" style={{ marginBottom: 16 }}>
-      {/* Hero — today's total as the headline number, status + sync menu
-          pinned right. Drops the redundant "Activity · desktop + mobile ·
-          Today, Thu May 14" line clutter. */}
-      <div className="activity-hero">
-        <div className="activity-hero-num">
-          <div className="activity-hero-value">{fmtMinutes(todayTotalMin) || "0m"}</div>
-          <small className="muted">
-            tracked today · {isToday ? "live" : `viewing ${topAppsDate}`}
-          </small>
-        </div>
+    <div
+      className={"card activity-section activity-card" + (collapsed ? " collapsed" : " expanded")}
+      style={{ marginBottom: 16 }}
+    >
+      <div className="activity-summary-shell">
+        <button
+          type="button"
+          className="activity-summary-main"
+          onClick={() => setActivityCollapsed(!collapsed)}
+          aria-expanded={!collapsed}
+        >
+          <span className="activity-kicker">Activity tracker</span>
+          <span className="activity-summary-title">
+            <strong>{fmtMinutes(todayTotalMin) || "0m"}</strong>
+            <small className="muted">tracked today</small>
+          </span>
+          <span className="activity-summary-sub muted">
+            {isToday ? activitySummary : `viewing ${topAppsDate}`}
+          </span>
+        </button>
+
+        {collapsed && (
+          <div className="activity-summary-metrics">
+            <span className="activity-summary-chip">
+              <small>week</small>
+              <strong>{fmtMinutes(visibleWeekTotal)}</strong>
+            </span>
+            <span className="activity-summary-chip">
+              <small>desktop</small>
+              <strong>{fmtMinutes(selDesktopMin)}</strong>
+            </span>
+            <span className="activity-summary-chip">
+              <small>phone</small>
+              <strong>{fmtMinutes(selMobileMin)}</strong>
+            </span>
+            <span className="activity-summary-chip">
+              <small>focus</small>
+              <strong>{fmtMinutes(focusTotalMin)}</strong>
+            </span>
+          </div>
+        )}
+
         <div className="activity-hero-actions">
-          {trackerStatus?.running ? (
-            <span className="pill teal" title="Desktop tracker is running">
-              <span className="pulse" style={{ marginRight: 6 }} />
-              tracking
-            </span>
-          ) : (
-            <span className="pill gray" title="Desktop tracker is off">
-              idle
-            </span>
-          )}
-          <button className="ghost small" onClick={onToggleTracker}>
-            {trackerStatus?.running ? "Stop" : "Start"}
+          <button
+            className={`ghost small ${trackerStatus?.running ? "running" : "idle"}`}
+            onClick={onToggleTracker}
+            title={trackerStatus?.running ? "Stop desktop tracker" : "Start desktop tracker"}
+          >
+            {trackerStatus?.running ? (
+              <><span className="pulse" style={{ marginRight: 6 }} /> Stop</>
+            ) : (
+              "Start tracking"
+            )}
           </button>
-          <ActivitySyncMenu
-            onSyncMobile={onSyncMobile}
-            onSyncBattery={onSyncBattery}
-          />
+          <button
+            className="ghost small activity-collapse-toggle"
+            onClick={() => setActivityCollapsed(!collapsed)}
+            aria-label={collapsed ? "Expand tracker" : "Collapse tracker"}
+          >
+            {collapsed ? "▼" : "▲"}
+          </button>
         </div>
       </div>
 
+      {todayBreakdown.length > 0 && (
+        <div
+          className="activity-summary-spectrum"
+          title={todayBreakdown
+            .map((x) => `${CATEGORY_LABELS[x.cat] || x.cat}: ${fmtMinutes(x.minutes)}`)
+            .join(" · ")}
+        >
+          {todayBreakdown.map((x) => (
+            <span
+              key={x.cat}
+              className={`activity-summary-spectrum-seg cat-${x.cat}`}
+              style={{ width: `${Math.max(3, x.pct)}%` }}
+            />
+          ))}
+        </div>
+      )}
+
+      {!collapsed && (
+        <div className="activity-body">
       {/* Stats strip */}
       <div className="stats-strip">
         <StatPill
@@ -1505,7 +1676,7 @@ function ActivitySection({
         />
         <StatPill
           cat="mobile"
-          label="Mobile"
+          label="Phone"
           value={fmtMinutes(selMobileMin)}
           sub={isToday ? "today" : topAppsDate}
         />
@@ -1676,8 +1847,8 @@ function ActivitySection({
           <div className="source-toggle chip-row" style={{ marginBottom: 10 }}>
             {[
               { key: "all", label: "All", title: "Every source combined" },
-              { key: "desktop", label: "Desktop", title: "Foreground-window tracker + Windows battery report" },
-              { key: "mobile", label: "Mobile", title: "ADB digital-wellbeing" },
+              { key: "desktop", label: "Desktop", title: "Foreground-window tracker" },
+              { key: "mobile", label: "Phone", title: "Apex Mobile usage, plus ADB fallback imports" },
             ].map((o) => (
               <button
                 key={o.key}
@@ -1689,6 +1860,9 @@ function ActivitySection({
                 {o.label}
               </button>
             ))}
+            <button className="ghost small" onClick={onSyncMobile} title="Pull the phone's usage from the sync API">
+              ⟳ Sync phone
+            </button>
             {!isToday && (
               <button
                 className="chip"
@@ -1702,43 +1876,36 @@ function ActivitySection({
             )}
           </div>
 
+          <FocusBlocksList blocks={focusBlocks} />
+
+          {filteredApps.length > 0 && catBreakdown.length > 1 && (
+            <div
+              className="activity-spectrum"
+              title={catBreakdown
+                .map((x) => `${CATEGORY_LABELS[x.cat] || x.cat}: ${fmtMinutes(x.minutes)}`)
+                .join(" · ")}
+              aria-label="Selected activity mix"
+            >
+              {catBreakdown.map((x) => (
+                <span
+                  key={x.cat}
+                  className={`activity-spectrum-seg cat-${x.cat}`}
+                  style={{ width: `${Math.max(3, x.pct)}%` }}
+                />
+              ))}
+            </div>
+          )}
+
           {filteredApps.length === 0 ? (
             <div className="muted" style={{ padding: "10px 0" }}>
               {topApps.length === 0 ? (
                 <>
-                  Nothing tracked on this day.{" "}
-                  {onSyncBattery && (
-                    <button
-                      className="ghost xsmall"
-                      onClick={onSyncBattery}
-                      style={{ marginLeft: 6 }}
-                      title="Pull last 14 days from the Windows battery report"
-                    >
-                      Sync desktop
-                    </button>
-                  )}
-                </>
-              ) : source === "battery" ? (
-                <>
-                  No battery-report data for this day.
-                  {onSyncBattery && (
-                    <>
-                      {" "}
-                      <button
-                        className="ghost xsmall"
-                        onClick={onSyncBattery}
-                        style={{ marginLeft: 6 }}
-                        title="Re-run powercfg /batteryreport and import the last 14 days"
-                      >
-                        Sync desktop
-                      </button>
-                    </>
-                  )}
+                  Nothing tracked on this day.
                 </>
               ) : source === "desktop" ? (
-                "No desktop tracker data for this day. Start the tracker in Settings, or try Battery for longer history."
+                "No desktop tracker data for this day."
               ) : source === "mobile" ? (
-                "No mobile data for this day. Sync ADB to pull digital wellbeing."
+                "No phone activity for this day — sync from the phone app."
               ) : (
                 `No ${source} data for this day.`
               )}
@@ -1758,6 +1925,48 @@ function ActivitySection({
           )}
         </div>
       </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FocusBlocksList({ blocks = [] }) {
+  const visible = (blocks || []).filter((b) => (b.minutes || 0) > 0).slice(0, 5);
+  if (!visible.length) return null;
+  const total = visible.reduce((s, b) => s + (b.minutes || 0), 0);
+  return (
+    <div className="focus-blocks" aria-label="Task and Zen focus blocks">
+      <div className="focus-blocks-head">
+        <div>
+          <strong>Focus blocks</strong>
+          <small className="muted">Tasks and Zen timers, separate from app usage</small>
+        </div>
+        <span>{fmtMinutes(total)}</span>
+      </div>
+      <div className="focus-block-list">
+        {visible.map((block) => {
+          const category = block.category || "productive";
+          const visual = appVisual(block.title || block.kind || "Focus");
+          const isRunning = /in-progress/i.test(block.note || "");
+          return (
+            <div
+              key={block.id || `${block.started_at}-${block.title}`}
+              className={`focus-block-row cat-${category}`}
+              style={{ "--app-color": visual.color }}
+            >
+              <span className={`app-icon cat-${category}`}>{visual.label}</span>
+              <div className="focus-block-copy">
+                <strong>{prettyAppName(block.title || "Focus")}</strong>
+                <small className="muted">
+                  {block.kind || "task"} - {isRunning ? "running" : relativeAgo(block.ended_at || block.started_at)}
+                </small>
+              </div>
+              <span className="focus-block-min">{fmtMinutes(block.minutes || 0)}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1774,6 +1983,7 @@ function ActivitySection({
 function BucketTimeline({ date }) {
   const [buckets, setBuckets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
   async function load() {
@@ -1810,6 +2020,54 @@ function BucketTimeline({ date }) {
   // for the full day. Keeps the dashboard from sprawling.
   const visible = expanded ? buckets : buckets.slice(-14);
   const hiddenCount = buckets.length - visible.length;
+  const totalMinutes = buckets.reduce((s, b) => s + (b.totalMinutes || 0), 0);
+  const latest = buckets[buckets.length - 1];
+  const latestApps = latest?.apps?.length
+    ? [...latest.apps].sort((a, z) => z.minutes - a.minutes)
+    : [];
+  const latestTop = latestApps[0];
+
+  if (!open) {
+    return (
+      <div className="bucket-timeline bucket-timeline-collapsed">
+        <button
+          type="button"
+          className="bucket-summary"
+          onClick={() => setOpen(true)}
+          aria-expanded="false"
+        >
+          <span className="bucket-summary-copy">
+            <span className="section-label">Minute-by-minute</span>
+            <strong>
+              {buckets.length} slice{buckets.length === 1 ? "" : "s"} · {fmtMinutes(totalMinutes)}
+            </strong>
+            <small className="muted">
+              {latest
+                ? `${fmtTime(latest.startMin)}-${fmtTime(latest.endMin)} · ${
+                    latestTop ? prettyAppName(latestTop.app) : "untracked"
+                  }`
+                : "No timeline yet"}
+            </small>
+          </span>
+          <span className="bucket-summary-bars" aria-hidden="true">
+            {buckets.slice(-18).map((b) => {
+              const top = [...(b.apps || [])].sort((a, z) => z.minutes - a.minutes)[0];
+              const cat = (top?.category || "other").toLowerCase();
+              return (
+                <span
+                  key={b.startMin}
+                  className={`bucket-mini-bar cat-${cat}`}
+                  style={{ height: `${Math.max(18, Math.min(100, (b.totalMinutes || 1) * 10))}%` }}
+                  title={`${fmtTime(b.startMin)} · ${b.totalMinutes || 0}m`}
+                />
+              );
+            })}
+          </span>
+          <span className="ghost small bucket-summary-action">Open timeline</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="bucket-timeline">
@@ -1817,7 +2075,8 @@ function BucketTimeline({ date }) {
         <div className="section-label" style={{ marginTop: 0 }}>
           Minute-by-minute
         </div>
-        {hiddenCount > 0 && (
+        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+          {hiddenCount > 0 && (
           <button
             type="button"
             className="ghost xsmall"
@@ -1825,37 +2084,40 @@ function BucketTimeline({ date }) {
           >
             {expanded ? "Show recent only" : `Show all (${buckets.length})`}
           </button>
-        )}
+          )}
+          <button
+            type="button"
+            className="ghost xsmall"
+            onClick={() => setOpen(false)}
+          >
+            Collapse
+          </button>
+        </div>
       </div>
       <div className="bucket-timeline-list">
         {visible.map((b) => {
           // Sort apps by minutes desc within each bucket for visual weight.
-          const sorted = [...b.apps].sort((a, z) => z.minutes - a.minutes);
+          const sorted = [...(b.apps || [])].sort((a, z) => z.minutes - a.minutes);
+          const top = sorted[0] || null;
           return (
             <div key={b.startMin} className="bucket-row">
               <div className="bucket-time">
                 <code>{fmtTime(b.startMin)}</code>
-                <small className="muted">{fmtTime(b.endMin)}</small>
+                <small className="muted">{b.totalMinutes || 0}m</small>
               </div>
-              <div className="bucket-bar">
+              <div
+                className="bucket-bar"
+                aria-label={`${fmtTime(b.startMin)}-${fmtTime(b.endMin)} activity`}
+              >
                 {sorted.map((a, i) => {
                   const cat = (a.category || "other").toLowerCase();
-                  // A 1-min slice is too small to render any label — just
-                  // show the colour band so the eye picks up the pattern.
-                  const showLabel = a.minutes >= 2;
                   return (
                     <span
                       key={i}
                       className={`bucket-seg cat-${cat}`}
                       style={{ flex: a.minutes }}
                       title={`${prettyAppName(a.app)} · ${a.minutes} min · ${cat}`}
-                    >
-                      {showLabel && (
-                        <span className="bucket-seg-label">
-                          {prettyAppName(a.app)}
-                        </span>
-                      )}
-                    </span>
+                    />
                   );
                 })}
                 {b.totalMinutes < 10 && (
@@ -1866,7 +2128,14 @@ function BucketTimeline({ date }) {
                   />
                 )}
               </div>
-              <small className="muted bucket-total">{b.totalMinutes}m</small>
+              <div className="bucket-row-summary">
+                <strong title={top?.app || "Idle"}>
+                  {top ? prettyAppName(top.app) : "Idle"}
+                </strong>
+                <small className="muted">
+                  {sorted.length > 1 ? `${sorted.length} apps` : fmtTime(b.endMin)}
+                </small>
+              </div>
             </div>
           );
         })}
@@ -1875,66 +2144,6 @@ function BucketTimeline({ date }) {
   );
 }
 
-function ActivitySyncMenu({ onSyncMobile, onSyncBattery }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-  return (
-    <div ref={ref} style={{ position: "relative", display: "inline-flex" }}>
-      <button
-        className="ghost small"
-        onClick={() => setOpen((v) => !v)}
-        title="Pull fresh activity data"
-      >
-        Sync ▾
-      </button>
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            right: 0,
-            background: "var(--bg-elev)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            padding: 4,
-            minWidth: 180,
-            zIndex: 10,
-            boxShadow: "var(--shadow-md)",
-          }}
-        >
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => { setOpen(false); onSyncMobile?.(); }}
-            style={{ display: "block", width: "100%", textAlign: "left" }}
-            title="Pull today's mobile usage via ADB"
-          >
-            Mobile (ADB)
-          </button>
-          {onSyncBattery && (
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => { setOpen(false); onSyncBattery(); }}
-              style={{ display: "block", width: "100%", textAlign: "left" }}
-              title="Import 14 days from Windows battery report"
-            >
-              Desktop (battery report)
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function OverflowMenu({ items }) {
   const [open, setOpen] = useState(false);
@@ -1975,6 +2184,314 @@ function OverflowMenu({ items }) {
       )}
     </div>
   );
+}
+
+function DashboardToolsCard({
+  selfCp,
+  cpHasAny,
+  onAsk,
+  onOpenSummary,
+  onOpenCp,
+  onRefreshCp,
+  onCopyBrief,
+}) {
+  const [refreshing, setRefreshing] = useState(false);
+  const cpLine = cpSnapshotLine(selfCp);
+  const solvedToday = cpSolvedTodayCount(selfCp);
+
+  return (
+    <section className="card dashboard-tools-card">
+      <div className="dashboard-tools-head">
+        <div>
+          <div className="card-title">Ask</div>
+        </div>
+        <button className="primary small" onClick={onAsk}>
+          Ask Apex
+        </button>
+      </div>
+
+      <div className="dashboard-tools-grid">
+        <div className="dashboard-tool-tile">
+          <div>
+            <strong>Chat with today loaded</strong>
+            <small className="muted">
+              Tasks, classes, activity, and notes — in context.
+            </small>
+          </div>
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            <button className="ghost small" onClick={onAsk}>Open chat</button>
+            <button className="ghost small" onClick={onCopyBrief}>Copy brief</button>
+          </div>
+        </div>
+
+        <div className="dashboard-tool-tile">
+          <div>
+            <strong>Day summary</strong>
+            <small className="muted">
+              Close reasons, tasks, objectives, focus blocks, and distractions.
+            </small>
+          </div>
+          <button className="ghost small" onClick={onOpenSummary}>
+            View log
+          </button>
+        </div>
+
+        <div className="dashboard-tool-tile">
+          <div>
+            <strong>CP snapshot</strong>
+            <small className="muted">
+              {cpHasAny ? `${cpLine}${solvedToday ? ` · ${solvedToday} solved today` : ""}` : "Connect handles in Settings, then refresh."}
+            </small>
+          </div>
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            <button
+              className="ghost small"
+              onClick={async () => {
+                setRefreshing(true);
+                try { await onRefreshCp?.(); } finally { setRefreshing(false); }
+              }}
+              disabled={refreshing}
+            >
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
+            <button className="ghost small" onClick={onOpenCp} disabled={!cpHasAny}>
+              Open snapshot
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function cpSnapshotLine(selfCp) {
+  if (!selfCp) return "No cached data";
+  const parts = [];
+  const lc = selfCp.leetcode;
+  const cf = selfCp.codeforces;
+  const cc = selfCp.codechef;
+  if (lc?.ok && lc.totalSolved != null) parts.push(`LC ${lc.totalSolved} solved`);
+  if (cf?.ok && cf.rating != null) parts.push(`CF ${cf.rating}`);
+  if (cc?.ok && cc.stars != null) parts.push(`CC ${cc.stars} stars`);
+  return parts.join(" · ") || "No cached data";
+}
+
+function cpSolvedTodayCount(selfCp) {
+  if (!selfCp) return 0;
+  const today = new Date().toISOString().slice(0, 10);
+  let count = 0;
+  for (const plat of ["leetcode", "codeforces", "codechef"]) {
+    const rows = selfCp?.[plat]?.submissions;
+    if (!Array.isArray(rows)) continue;
+    count += rows.filter((s) => (s.submitted_at || "").slice(0, 10) === today).length;
+  }
+  return count;
+}
+
+function DaySummaryModal({ onClose, onAsk }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [date, setDate] = useState(today);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    api.activity.daySummary(date)
+      .then((res) => {
+        if (!cancelled) setSummary(res || null);
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(e?.message || "Could not load summary.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [date]);
+
+  const totals = summary?.totals || {};
+  const tracked = CATEGORY_KEYS.reduce((s, k) => s + (totals[k] || 0), 0);
+  const closeReasons = (summary?.closeEvents || [])
+    .filter((e) => e.kind === "close_reason")
+    .slice(0, 6);
+  const routineDone = (summary?.routineEvents || [])
+    .filter((e) => /done$/.test(e.kind))
+    .slice(0, 8);
+  const taskEvents = (summary?.taskEvents || []).slice(0, 12);
+  const distractions = (summary?.distractions || []).slice(0, 8);
+  const focusBlocks = (summary?.focusBlocks || []).slice(0, 8);
+  const zenDrift = (summary?.zenSessions || [])
+    .flatMap((z) => z.violation_events || [])
+    .slice(0, 8);
+
+  return (
+    <div className="modal-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal wide day-summary-modal" style={{ width: 820 }}>
+        <div className="row between" style={{ alignItems: "flex-start" }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Day summary</h3>
+            <small className="muted">
+              Stored app exits, task changes, objectives, focus blocks, and distraction logs.
+            </small>
+          </div>
+          <div className="row" style={{ gap: 8 }}>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value || today)}
+              style={{ width: 150 }}
+            />
+            <button className="ghost" onClick={onClose}>Close</button>
+          </div>
+        </div>
+
+        {loading && <div className="muted" style={{ marginTop: 16 }}>Loading summary...</div>}
+        {err && <div className="error" style={{ marginTop: 16 }}>{err}</div>}
+        {!loading && summary && (
+          <>
+            <div className="day-summary-stats">
+              <SummaryStat label="Tracked" value={fmtMinutes(tracked)} />
+              <SummaryStat label="Focus" value={fmtMinutes(sumMinutes(focusBlocks))} />
+              <SummaryStat label="Distract" value={fmtMinutes(sumMinutes(distractions))} />
+              <SummaryStat label="Done" value={`${summary.completedTasks?.length || 0}`} />
+            </div>
+
+            <div className="day-summary-grid">
+              <SummarySection title="Close reasons" empty="No close reasons stored.">
+                {closeReasons.map((e) => (
+                  <SummaryEvent
+                    key={e.id}
+                    at={e.at}
+                    title={e.payload?.reason || "Close approved"}
+                    meta={[
+                      e.payload?.classification?.category || e.payload?.category,
+                      e.payload?.foreground?.app && prettyAppName(e.payload.foreground.app),
+                    ].filter(Boolean).join(" - ")}
+                  />
+                ))}
+              </SummarySection>
+
+              <SummarySection title="Tasks and objectives" empty="No task/objective events yet.">
+                {routineDone.map((e) => (
+                  <SummaryEvent
+                    key={`r-${e.id}`}
+                    at={e.at}
+                    title={labelRoutineEvent(e)}
+                    meta={e.payload?.objective || e.payload?.note || ""}
+                  />
+                ))}
+                {taskEvents.map((e) => (
+                  <SummaryEvent
+                    key={`t-${e.id}`}
+                    at={e.at}
+                    title={e.title || e.payload?.title || e.action}
+                    meta={labelTaskAction(e)}
+                  />
+                ))}
+              </SummarySection>
+
+              <SummarySection title="Focus blocks" empty="No task or Zen timers logged.">
+                {focusBlocks.map((b) => (
+                  <SummaryEvent
+                    key={`f-${b.id}`}
+                    at={b.started_at}
+                    title={b.title || "Focus"}
+                    meta={`${b.kind || "timer"} - ${fmtMinutes(b.minutes || 0)}`}
+                  />
+                ))}
+              </SummarySection>
+
+              <SummarySection title="Distractions" empty="No distraction sessions logged.">
+                {distractions.map((d) => (
+                  <SummaryEvent
+                    key={`d-${d.id}`}
+                    at={d.started_at}
+                    title={prettyAppName(d.app) || d.app || "App"}
+                    meta={`${fmtMinutes(d.minutes || 0)} - ${d.window_title || d.source || ""}`}
+                  />
+                ))}
+                {zenDrift.map((d, i) => (
+                  <SummaryEvent
+                    key={`z-${d.at}-${i}`}
+                    at={d.at}
+                    title={prettyAppName(d.app) || d.app || "Zen drift"}
+                    meta={`Zen ${d.reason || "drift"}`}
+                  />
+                ))}
+              </SummarySection>
+            </div>
+
+            <div className="day-summary-foot">
+              <div>
+                {summary.dayNoteSummary && (
+                  <small className="muted">Day note: {summary.dayNoteSummary}</small>
+                )}
+                {summary.burnoutReport?.payload?.summary && (
+                  <small className="muted">Burnout: {summary.burnoutReport.payload.summary}</small>
+                )}
+              </div>
+              <button className="primary small" onClick={onAsk}>
+                Ask Apex about this day
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SummaryStat({ label, value }) {
+  return (
+    <div className="day-summary-stat">
+      <small className="muted">{label}</small>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function SummarySection({ title, empty, children }) {
+  const hasChildren = React.Children.toArray(children).filter(Boolean).length > 0;
+  return (
+    <section className="day-summary-section">
+      <div className="section-label" style={{ marginTop: 0 }}>{title}</div>
+      {hasChildren ? children : <small className="muted">{empty}</small>}
+    </section>
+  );
+}
+
+function SummaryEvent({ at, title, meta }) {
+  return (
+    <div className="day-summary-event">
+      <code>{at ? shortTime(at) : "--:--"}</code>
+      <div>
+        <strong>{title}</strong>
+        {meta && <small className="muted">{meta}</small>}
+      </div>
+    </div>
+  );
+}
+
+function labelRoutineEvent(e) {
+  if (e.kind === "objective_done") return "Objective done";
+  if (e.kind === "wake_done") return "Wake routine done";
+  if (e.kind === "sleep_done") return "Sleep wind-down done";
+  return e.kind || "Routine event";
+}
+
+function labelTaskAction(e) {
+  const action = String(e.action || "").replace(/_/g, " ");
+  if (e.action === "goal_progress") {
+    return `goal progress ${e.payload?.progress ?? "?"}/${e.payload?.target ?? "?"}`;
+  }
+  if (e.action?.startsWith("goal_")) return action;
+  const changed = Array.isArray(e.payload?.changed) && e.payload.changed.length
+    ? ` - ${e.payload.changed.join(", ")}`
+    : "";
+  return `${action}${changed}`;
 }
 
 // ─── InsightsChip ────────────────────────────────────────────────────────
@@ -2269,7 +2786,7 @@ function BurnoutChip({
         className="ghost small"
         disabled={loading}
         onClick={onRerun}
-        title="Run a quick burnout read on the day"
+        title="Run a quick vibe read on the day"
       >
         {loading ? "Analysing…" : "Burnout check"}
       </button>
@@ -2298,7 +2815,7 @@ function BurnoutChip({
         <div className="burnout-popover">
           <div className="burnout-popover-head">
             <div>
-              <strong>Burnout read · {risk}/10</strong>
+              <strong>Vibe read · {risk}/10</strong>
               {report?.generated_at && (
                 <small className="muted" style={{ marginLeft: 8 }}>
                   {new Date(report.generated_at).toLocaleString()}
@@ -3079,6 +3596,8 @@ function AppRow({ app: a, appTotal, source, isToday }) {
   const showSrc = source === "all" && !!srcKind;
   const hideCat =
     (catLabel === "mobile" && srcKind === "mobile") || catLabel === "other";
+  const visual = appVisual(a.app);
+  const displayName = prettyAppName(a.app);
 
   // Override is supported for both desktop exes AND android packages —
   // the override is just a setting + a retroactive activity_sessions
@@ -3099,32 +3618,46 @@ function AppRow({ app: a, appTotal, source, isToday }) {
   }
 
   return (
-    <div className={`app-row cat-${catLabel}`}>
+    <div
+      className={`app-row cat-${catLabel}`}
+      style={{ "--app-color": visual.color }}
+    >
       <div className="app-row-main">
-        <span className={`cat-dot cat-${catLabel}`} title={catLabel} />
-        <strong className="top-app-name" title={a.app}>
-          {prettyAppName(a.app)}
-        </strong>
-        <div className="app-row-tags">
-          {!hideCat && (
-            <button
-              type="button"
-              className={`cat-tag cat-${catLabel}` + (canEdit ? " editable" : "")}
-              disabled={!canEdit}
-              onClick={() => canEdit && setEditing((e) => !e)}
-              title={canEdit ? "Click to recategorise" : catLabel}
-            >
-              {catLabel}
-            </button>
-          )}
-          {showSrc && (
-            <span
-              className={"src-tag " + srcKind}
-              title={`source: ${srcs}`}
-            >
-              {srcKind}
-            </span>
-          )}
+        <span
+          className={`app-icon cat-${catLabel}`}
+          title={`${displayName} · ${catLabel}`}
+          aria-hidden="true"
+        >
+          {visual.label}
+        </span>
+        <div className="app-row-copy">
+          <div className="app-row-titleline">
+            <strong className="top-app-name" title={a.app}>
+              {displayName}
+            </strong>
+            <span className={`cat-dot cat-${catLabel}`} title={catLabel} />
+          </div>
+          <div className="app-row-tags">
+            {!hideCat && (
+              <button
+                type="button"
+                className={`cat-tag cat-${catLabel}` + (canEdit ? " editable" : "")}
+                disabled={!canEdit}
+                onClick={() => canEdit && setEditing((e) => !e)}
+                title={canEdit ? "Click to recategorise" : catLabel}
+              >
+                {catLabel}
+              </button>
+            )}
+            {showSrc && (
+              <span
+                className={"src-tag " + srcKind}
+                title={`source: ${srcs}`}
+              >
+                {srcKind}
+              </span>
+            )}
+          </div>
         </div>
         <span className="app-row-time">
           <strong>{fmtMinutes(a.minutes)}</strong>
@@ -3182,6 +3715,29 @@ function sumBySource(apps, src) {
     const sources = (a.sources || a.source || "").toString();
     return sources.includes(src) ? s + (a.minutes || 0) : s;
   }, 0);
+}
+
+function appVisual(raw) {
+  const display = prettyAppName(raw || "");
+  const haystack = `${raw || ""} ${display}`.toLowerCase();
+  const known = APP_VISUALS.find((v) => v.match.test(haystack));
+  if (known) return known;
+  const words = display
+    .replace(/[^a-z0-9 ]/gi, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const label = (
+    words.length >= 2
+      ? `${words[0][0]}${words[1][0]}`
+      : (words[0] || "AP").slice(0, 2)
+  ).toUpperCase();
+  let hash = 0;
+  for (const ch of haystack || label) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return {
+    label,
+    color: APP_FALLBACK_COLORS[hash % APP_FALLBACK_COLORS.length],
+  };
 }
 
 function weekdayShort(iso) {
@@ -3314,7 +3870,7 @@ function BurnoutReadCard({
               ? `Checked ${new Date(generatedAt).toLocaleString([], { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}`
               : hasReport
                 ? "Latest read"
-                : "No burnout read yet — log a vibe or run a check."}
+                : "No vibe read yet — log a vibe or run a check."}
           </small>
         </div>
         <div className="burnout-head-actions">
@@ -3363,7 +3919,7 @@ function BurnoutReadCard({
             <p className="burnout-summary">{report.summary}</p>
           ) : vibeAvg ? (
             <p className="burnout-summary muted">
-              Run a check to turn this vibe into a burnout read.
+              Run a check to turn this into a daily read.
             </p>
           ) : (
             <p className="burnout-summary muted">
@@ -3418,7 +3974,7 @@ function BurnoutReadCard({
               Quick vibe check
             </div>
             <small className="muted">
-              1–10 · save to feed the next burnout read
+              1–10 · save to feed the next vibe read
             </small>
           </div>
           <div className="vibe-grid">
@@ -3873,15 +4429,8 @@ function DayNoteCard({ model, ollamaOk }) {
       >
         <div>
           <div className="card-title" style={{ margin: 0 }}>
-            Day note{" "}
-            <span className="pill gray" style={{ marginLeft: 8, fontSize: 10 }}>
-              private
-            </span>
+            Day note
           </div>
-          <small className="muted">
-            A short entry for future-you. Summarise to feed Ask Apex on this
-            date (opt-in).
-          </small>
           {!lockState.locked && writeStreak > 0 && (
             <small className="muted" style={{ display: "block", marginTop: 2 }}>
               {writeStreak}-day writing streak
@@ -3973,7 +4522,7 @@ function DayNoteCard({ model, ollamaOk }) {
                   ? "Summarising…"
                   : hasSummary
                     ? "Re-summarise"
-                    : "Summarise (opt-in)"}
+                    : "Summarise"}
               </button>
               <button
                 className="primary small"
@@ -4259,9 +4808,14 @@ function BackfillActivity({ todayIso }) {
 // Small inline passcode prompt for gating today's note. If no passcode has
 // been configured yet, this offers to set one right here.
 function DayNoteUnlockModal({ onClose, onUnlocked }) {
-  const [phase, setPhase] = useState("loading"); // loading | setup | unlock
+  const [phase, setPhase] = useState("loading"); // loading | setup | unlock | recovery
   const [pass, setPass] = useState("");
   const [pass2, setPass2] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [showRecoveryReset, setShowRecoveryReset] = useState(false);
+  const [recoveryInput, setRecoveryInput] = useState("");
+  const [newPass, setNewPass] = useState("");
+  const [newPass2, setNewPass2] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   // Bumps after a reset so the setup form remounts with brand-new <input>
@@ -4290,9 +4844,10 @@ function DayNoteUnlockModal({ onClose, onUnlocked }) {
     const res = await api.dayNotes.setPasscode(pass);
     setBusy(false);
     if (res?.ok) {
+      setRecoveryCode(res.recoveryCode || "");
       setPass("");
       setPass2("");
-      onUnlocked?.();
+      setPhase("recovery");
     } else setErr(res?.error || "Could not save passcode.");
   }
   async function doUnlock() {
@@ -4305,6 +4860,34 @@ function DayNoteUnlockModal({ onClose, onUnlocked }) {
       onUnlocked?.();
     } else setErr(res?.error || "Incorrect passcode.");
   }
+  async function doRecoveryReset() {
+    setErr("");
+    if (!recoveryInput.trim()) {
+      setErr("Enter your recovery code.");
+      return;
+    }
+    if (newPass.length < 4) {
+      setErr("New passcode must be at least 4 characters.");
+      return;
+    }
+    if (newPass !== newPass2) {
+      setErr("The two new passcodes don't match.");
+      return;
+    }
+    setBusy(true);
+    const res = await api.dayNotes.resetWithRecovery(recoveryInput, newPass);
+    setBusy(false);
+    if (res?.ok) {
+      setRecoveryCode(res.recoveryCode || "");
+      setPass("");
+      setPass2("");
+      setRecoveryInput("");
+      setNewPass("");
+      setNewPass2("");
+      setShowRecoveryReset(false);
+      setPhase("recovery");
+    } else setErr(res?.error || "Could not reset passcode.");
+  }
 
   return (
     <div
@@ -4316,7 +4899,9 @@ function DayNoteUnlockModal({ onClose, onUnlocked }) {
           <div>
             <h3 style={{ margin: 0 }}>Day notes</h3>
             <small className="muted">
-              {phase === "setup"
+              {phase === "recovery"
+                ? "Save this recovery code before continuing."
+                : phase === "setup"
                 ? "Set a passcode to keep your notes private."
                 : "Enter your passcode to unlock. Auto-locks after 15 min idle."}
             </small>
@@ -4365,6 +4950,29 @@ function DayNoteUnlockModal({ onClose, onUnlocked }) {
           </div>
         )}
 
+        {phase === "recovery" && (
+          <div>
+            <p className="muted small">
+              If you forget your passcode, this code resets it without deleting
+              your day notes. It is shown only once.
+            </p>
+            <div
+              className="day-note-readonly"
+              style={{ fontFamily: "var(--font-mono)", letterSpacing: 1.4 }}
+            >
+              {recoveryCode || "Recovery code unavailable"}
+            </div>
+            <div
+              className="row"
+              style={{ justifyContent: "flex-end", gap: 6, marginTop: 12 }}
+            >
+              <button className="primary" onClick={() => onUnlocked?.()}>
+                I saved it
+              </button>
+            </div>
+          </div>
+        )}
+
         {phase === "unlock" && (
           <div>
             <div className="form-row">
@@ -4378,6 +4986,83 @@ function DayNoteUnlockModal({ onClose, onUnlocked }) {
               />
             </div>
             {err && <div className="error">{err}</div>}
+            {showRecoveryReset && (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  background: "var(--bg-elev-2)",
+                }}
+              >
+                <div className="form-row">
+                  <label>Recovery code</label>
+                  <input
+                    value={recoveryInput}
+                    onChange={(e) => setRecoveryInput(e.target.value)}
+                    placeholder="XXXX-XXXX-XXXX-XXXX"
+                    disabled={busy}
+                  />
+                </div>
+                <div className="form-row">
+                  <label>New passcode</label>
+                  <input
+                    type="password"
+                    value={newPass}
+                    onChange={(e) => setNewPass(e.target.value)}
+                    disabled={busy}
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Confirm new passcode</label>
+                  <input
+                    type="password"
+                    value={newPass2}
+                    onChange={(e) => setNewPass2(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && doRecoveryReset()}
+                    disabled={busy}
+                  />
+                </div>
+                <div className="row between" style={{ gap: 6 }}>
+                  <button
+                    className="ghost xsmall"
+                    onClick={async () => {
+                      const sure = confirm(
+                        "Emergency wipe?\n\nThis deletes every saved day note and clears the passcode. Use this only if both the passcode and recovery code are lost.",
+                      );
+                      if (!sure) return;
+                      const sure2 = confirm("Delete all day notes now?");
+                      if (!sure2) return;
+                      setBusy(true);
+                      const r = await api.dayNotes.resetPasscode();
+                      setBusy(false);
+                      if (r?.ok) {
+                        setErr("");
+                        setPass("");
+                        setPass2("");
+                        setRecoveryInput("");
+                        setNewPass("");
+                        setNewPass2("");
+                        setShowRecoveryReset(false);
+                        setFormKey((k) => k + 1);
+                        setPhase("setup");
+                      } else setErr(r?.error || "Reset failed.");
+                    }}
+                    style={{ color: "#ff8577", borderColor: "rgba(239,107,90,0.40)" }}
+                  >
+                    Emergency wipe
+                  </button>
+                  <button
+                    className="primary"
+                    onClick={doRecoveryReset}
+                    disabled={busy || !recoveryInput || !newPass}
+                  >
+                    Reset safely
+                  </button>
+                </div>
+              </div>
+            )}
             <div
               className="row between"
               style={{ marginTop: 10, alignItems: "center" }}
@@ -4385,42 +5070,13 @@ function DayNoteUnlockModal({ onClose, onUnlocked }) {
               <button
                 type="button"
                 className="ghost xsmall"
-                onClick={async () => {
-                  // Two-step confirmation — wiping notes is irreversible.
-                  const sure = confirm(
-                    "Reset passcode?\n\n" +
-                      "Day notes are encrypted by the passcode and CAN'T be " +
-                      "recovered without it. This will DELETE every saved note " +
-                      "and clear the passcode so you can set a new one.\n\n" +
-                      "Continue?",
-                  );
-                  if (!sure) return;
-                  const sure2 = confirm(
-                    "Last chance. Type the word DELETE in your head and click OK to confirm.",
-                  );
-                  if (!sure2) return;
-                  setBusy(true);
-                  const r = await api.dayNotes.resetPasscode();
-                  setBusy(false);
-                  if (r?.ok) {
-                    // Hard-reset all form state AND bump the form key so
-                    // React unmounts the old controlled inputs (which were
-                    // bound to the unlock-phase value). Without this the
-                    // inputs in the setup phase look right but won't take
-                    // keystrokes — same DOM element, stale internal state.
-                    setErr("");
-                    setPass("");
-                    setPass2("");
-                    setFormKey((k) => k + 1);
-                    setPhase("setup");
-                  } else {
-                    setErr(r?.error || "Reset failed.");
-                  }
+                onClick={() => {
+                  setErr("");
+                  setShowRecoveryReset((v) => !v);
                 }}
-                title="Forgot the passcode — wipe notes and start over"
-                style={{ color: "#ff8577", borderColor: "rgba(239,107,90,0.40)" }}
+                title="Reset passcode with the recovery code"
               >
-                Forgot? Reset (wipes notes)
+                Forgot? Use recovery code
               </button>
               <div className="row" style={{ gap: 6 }}>
                 <button className="ghost" onClick={onClose}>
@@ -4447,11 +5103,16 @@ function DayNoteUnlockModal({ onClose, onUnlocked }) {
 // (so a casual onlooker can't see past entries). After unlock, entries stay
 // accessible for ~15 minutes, then re-lock automatically.
 function DayNoteHistoryModal({ onClose, todayIso }) {
-  // Lifecycle: loading → needsSetup | needsUnlock | unlocked
+  // Lifecycle: loading → needsSetup | needsUnlock | needsRecoverySave | unlocked
   const [phase, setPhase] = useState("loading");
   const [err, setErr] = useState("");
   const [pass, setPass] = useState("");
   const [pass2, setPass2] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [showRecoveryReset, setShowRecoveryReset] = useState(false);
+  const [recoveryInput, setRecoveryInput] = useState("");
+  const [newPass, setNewPass] = useState("");
+  const [newPass2, setNewPass2] = useState("");
   const [dates, setDates] = useState([]);
   const [selected, setSelected] = useState(null);
   const [selectedNote, setSelectedNote] = useState(null);
@@ -4492,10 +5153,10 @@ function DayNoteHistoryModal({ onClose, todayIso }) {
     const res = await api.dayNotes.setPasscode(pass);
     setBusy(false);
     if (res?.ok) {
-      setPhase("unlocked");
+      setRecoveryCode(res.recoveryCode || "");
       setPass("");
       setPass2("");
-      await loadList();
+      setPhase("needsRecoverySave");
     } else setErr(res?.error || "Could not save passcode.");
   }
   async function doUnlock() {
@@ -4508,6 +5169,38 @@ function DayNoteHistoryModal({ onClose, todayIso }) {
       setPass("");
       await loadList();
     } else setErr(res?.error || "Incorrect passcode.");
+  }
+  async function doRecoveryReset() {
+    setErr("");
+    if (!recoveryInput.trim()) {
+      setErr("Enter your recovery code.");
+      return;
+    }
+    if (newPass.length < 4) {
+      setErr("New passcode must be at least 4 characters.");
+      return;
+    }
+    if (newPass !== newPass2) {
+      setErr("The two new passcodes don't match.");
+      return;
+    }
+    setBusy(true);
+    const res = await api.dayNotes.resetWithRecovery(recoveryInput, newPass);
+    setBusy(false);
+    if (res?.ok) {
+      setRecoveryCode(res.recoveryCode || "");
+      setPass("");
+      setPass2("");
+      setRecoveryInput("");
+      setNewPass("");
+      setNewPass2("");
+      setShowRecoveryReset(false);
+      setPhase("needsRecoverySave");
+    } else setErr(res?.error || "Could not reset passcode.");
+  }
+  async function finishRecoverySave() {
+    setPhase("unlocked");
+    await loadList();
   }
   async function openDate(iso) {
     setSelected(iso);
@@ -4562,7 +5255,8 @@ function DayNoteHistoryModal({ onClose, todayIso }) {
           <div>
             <p className="muted small">
               Set a passcode the first time. You'll need it to open day notes
-              (past AND today) — auto-locks after 15 min idle.
+              (past AND today). Apex will also give you a recovery code so you
+              can reset the passcode later without deleting notes.
             </p>
             <div className="form-row">
               <label>New passcode</label>
@@ -4597,10 +5291,34 @@ function DayNoteHistoryModal({ onClose, todayIso }) {
           </div>
         )}
 
+        {phase === "needsRecoverySave" && (
+          <div>
+            <p className="muted small">
+              Save this recovery code somewhere safe. It resets the passcode
+              without deleting your day notes and is shown only once.
+            </p>
+            <div
+              className="day-note-readonly"
+              style={{ fontFamily: "var(--font-mono)", letterSpacing: 1.4 }}
+            >
+              {recoveryCode || "Recovery code unavailable"}
+            </div>
+            <div
+              className="row"
+              style={{ justifyContent: "flex-end", gap: 6, marginTop: 12 }}
+            >
+              <button className="primary" onClick={finishRecoverySave}>
+                I saved it
+              </button>
+            </div>
+          </div>
+        )}
+
         {phase === "needsUnlock" && (
           <div>
             <p className="muted small">
-              Enter your passcode to view past entries.
+              Enter your passcode to view past entries, or reset it with your
+              recovery code.
             </p>
             <div className="form-row">
               <label>Passcode</label>
@@ -4613,20 +5331,80 @@ function DayNoteHistoryModal({ onClose, todayIso }) {
               />
             </div>
             {err && <div className="error">{err}</div>}
-            <div
-              className="row"
-              style={{ justifyContent: "flex-end", gap: 6, marginTop: 8 }}
-            >
-              <button className="ghost" onClick={onClose}>
-                Cancel
-              </button>
-              <button
-                className="primary"
-                onClick={doUnlock}
-                disabled={busy || !pass}
+            {showRecoveryReset && (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  background: "var(--bg-elev-2)",
+                }}
               >
-                Unlock
+                <div className="form-row">
+                  <label>Recovery code</label>
+                  <input
+                    value={recoveryInput}
+                    onChange={(e) => setRecoveryInput(e.target.value)}
+                    placeholder="XXXX-XXXX-XXXX-XXXX"
+                    disabled={busy}
+                  />
+                </div>
+                <div className="form-row">
+                  <label>New passcode</label>
+                  <input
+                    type="password"
+                    value={newPass}
+                    onChange={(e) => setNewPass(e.target.value)}
+                    disabled={busy}
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Confirm new passcode</label>
+                  <input
+                    type="password"
+                    value={newPass2}
+                    onChange={(e) => setNewPass2(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && doRecoveryReset()}
+                    disabled={busy}
+                  />
+                </div>
+                <div className="row" style={{ justifyContent: "flex-end", gap: 6 }}>
+                  <button
+                    className="primary"
+                    onClick={doRecoveryReset}
+                    disabled={busy || !recoveryInput || !newPass}
+                  >
+                    Reset safely
+                  </button>
+                </div>
+              </div>
+            )}
+            <div
+              className="row between"
+              style={{ gap: 6, marginTop: 8, alignItems: "center" }}
+            >
+              <button
+                className="ghost xsmall"
+                onClick={() => {
+                  setErr("");
+                  setShowRecoveryReset((v) => !v);
+                }}
+              >
+                Forgot? Use recovery code
               </button>
+              <div className="row" style={{ gap: 6 }}>
+                <button className="ghost" onClick={onClose}>
+                  Cancel
+                </button>
+                <button
+                  className="primary"
+                  onClick={doUnlock}
+                  disabled={busy || !pass}
+                >
+                  Unlock
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -4727,12 +5505,19 @@ function AskApexDrawer({
   burnoutReport,
 }) {
   const [q, setQ] = useState("");
-  const [a, setA] = useState(null);
-  const [loading, setLoading] = useState(false);
+  // Conversation transcript: {id, role:'user'|'assistant', content, sendContent?, streaming?, error?}
+  const [messages, setMessages] = useState([]);
+  const [streaming, setStreaming] = useState(false);
   const [err, setErr] = useState(null);
+  const streamIdRef = useRef(null);
+  const transcriptRef = useRef(null);
+  const uid = () => `m_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const [includeContext, setIncludeContext] = useState(true);
   const [includeDayNote, setIncludeDayNote] = useState(false);
+  const [includeCourseContext, setIncludeCourseContext] = useState(true);
   const [dayNoteSummary, setDayNoteSummary] = useState(null);
+  const [courseContext, setCourseContext] = useState(null);
+  const [daySummary, setDaySummary] = useState(null);
   // Attached-file context (PDF/image extracted text → optionally turned
   // into tasks). Lives as long as the drawer is open.
   const [attached, setAttached] = useState(null); // {name, kind, text}
@@ -4794,6 +5579,7 @@ function AskApexDrawer({
         await api.tasks.create({
           title: t.title || "Untitled",
           description: t.description || null,
+          source: "ask-apex-file",
           category: t.category || "Academics",
           priority: t.priority || 3,
           deadline: t.deadline || null,
@@ -4815,8 +5601,14 @@ function AskApexDrawer({
     (async () => {
       try {
         const today = new Date().toISOString().slice(0, 10);
-        const n = await api.dayNotes.get(today);
+        const [n, cm, ds] = await Promise.all([
+          api.dayNotes.get(today).catch(() => null),
+          api.courseMaterials?.context?.({ maxChars: 6000 }).catch(() => null),
+          api.activity?.daySummary?.(today).catch(() => null),
+        ]);
         if (n?.summary) setDayNoteSummary(n.summary);
+        if (cm) setCourseContext(cm);
+        if (ds) setDaySummary(ds);
       } catch {}
     })();
   }, []);
@@ -4834,6 +5626,8 @@ function AskApexDrawer({
         checkin,
         burnoutReport,
         dayNoteSummary: includeDayNote ? dayNoteSummary : null,
+        courseContext: includeCourseContext ? courseContext : null,
+        daySummary,
       }),
     [
       tasks,
@@ -4847,66 +5641,217 @@ function AskApexDrawer({
       burnoutReport,
       dayNoteSummary,
       includeDayNote,
+      courseContext,
+      includeCourseContext,
+      daySummary,
     ],
   );
 
-  async function ask() {
-    if (!q.trim() || !ollamaOk || !model) return;
-    setLoading(true);
-    setErr(null);
-    setA(null);
-    const system = [
-      `You are Apex, a calm, precise assistant for Yashasvi (CS student at SRM).`,
-      `Format your responses in clean markdown: short paragraphs, compact bullets when listing steps, fenced code blocks for code. Bold the key actionable phrase.`,
-      `Be concrete. Avoid pep talk. Avoid restating the question. For plans, give a 3-step list + one sentence of reasoning. For code, one short example plus one caveat.`,
-      `Do NOT invent times or facts the user didn't provide; if you reference their schedule or workload, use only the context block.`,
-    ].join(" ");
-    // If the user attached a file, fold its extracted text into the
-    // prompt context so the answer can reference it.
-    const fileBlock = attached?.text
-      ? `\n\n# Attached file (${attached.name})\n${attached.text.slice(0, 8000)}`
-      : "";
-    const user = includeContext
-      ? `# Context\n${ctx.blockText}${fileBlock}\n\n# Question\n${q.trim()}`
-      : q.trim() + fileBlock;
-    const res = await api.ollama.chat({ model, system, user });
-    setLoading(false);
-    if (!res.ok) setErr(res.error || "Ollama error");
-    else setA(res.content);
+  const ASK_SYSTEM = [
+    `You are Apex, a calm, precise assistant for Yashasvi (CS student at SRM).`,
+    `Format responses in clean markdown: short paragraphs, compact bullets for steps, fenced code blocks for code. Bold the key actionable phrase.`,
+    `Be concrete. Avoid pep talk. Avoid restating the question. This is a continuing conversation — use earlier turns for context and answer follow-ups directly.`,
+    `Do NOT invent times or facts the user didn't provide; if you reference their schedule or workload, use only the provided context block.`,
+  ].join(" ");
+
+  // Keep the transcript pinned to the newest tokens while streaming.
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
+  // Abort any in-flight stream when the drawer unmounts.
+  useEffect(() => () => { if (streamIdRef.current) { try { api.ollama.chatStreamAbort(streamIdRef.current); } catch {} } }, []);
+
+  // Stream one assistant turn for the given full history (ending in a user msg).
+  async function runTurn(history) {
+    const asstMsg = { id: uid(), role: "assistant", content: "", streaming: true };
+    setMessages([...history, asstMsg]);
+    setStreaming(true);
+    const streamId =
+      (window.crypto && window.crypto.randomUUID && window.crypto.randomUUID()) ||
+      `s_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    streamIdRef.current = streamId;
+    const apiMessages = history.map((m) => ({ role: m.role, content: m.sendContent || m.content }));
+    let res;
+    try {
+      res = await api.ollama.chatStream(
+        { streamId, model, system: ASK_SYSTEM, messages: apiMessages, temperature: 0.4 },
+        (msg) => {
+          if (msg && msg.delta) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === asstMsg.id ? { ...m, content: m.content + msg.delta } : m)),
+            );
+          }
+        },
+      );
+    } catch (e) {
+      res = { ok: false, error: e.message };
+    }
+    streamIdRef.current = null;
+    setStreaming(false);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === asstMsg.id
+          ? {
+              ...m,
+              streaming: false,
+              content: m.content || (res && res.content) || "",
+              error: res && res.ok ? null : (res && res.error) || "Ollama error",
+            }
+          : m,
+      ),
+    );
+    if (res && !res.ok) setErr(res.error || "Ollama error");
   }
+
+  async function send(overrideText) {
+    const text = (overrideText ?? q).trim();
+    if ((!text && !attached?.text) || !ollamaOk || !model || streaming) return;
+    setErr(null);
+    const isFirst = messages.filter((m) => m.role === "user").length === 0;
+    // Fold attached-file text + the live context block into the FIRST turn only.
+    const fileBlock =
+      isFirst && attached?.text
+        ? `\n\n# Attached file (${attached.name})\n${attached.text.slice(0, 8000)}`
+        : "";
+    const displayText = text || (attached ? `Tell me about ${attached.name}` : "");
+    const sendContent =
+      isFirst && includeContext
+        ? `# Context\n${ctx.blockText}${fileBlock}\n\n# Question\n${text || "Summarise the attached file."}`
+        : text + fileBlock;
+    const userMsg = { id: uid(), role: "user", content: displayText, sendContent };
+    setQ("");
+    runTurn([...messages, userMsg]);
+  }
+
+  function stop() {
+    const id = streamIdRef.current;
+    if (id) { try { api.ollama.chatStreamAbort(id); } catch {} }
+  }
+
+  function clearChat() {
+    if (streaming) stop();
+    setMessages([]);
+    setErr(null);
+  }
+
+  // Drop the last assistant answer and re-ask the last user turn.
+  function regenerate() {
+    if (streaming) return;
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") { lastUserIdx = i; break; }
+    }
+    if (lastUserIdx < 0) return;
+    setErr(null);
+    runTurn(messages.slice(0, lastUserIdx + 1));
+  }
+
+  function copyText(t) {
+    try { navigator.clipboard.writeText(t || ""); } catch {}
+  }
+
+  const hasChat = messages.length > 0;
 
   return (
     <div
       className="modal-scrim"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="modal wide" style={{ width: 720 }}>
-        <div className="row between">
-          <h3 style={{ margin: 0 }}>Ask Apex</h3>
-          <button className="ghost" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <p className="muted" style={{ margin: "4px 0 10px" }}>
-          Freeform chat with your local Ollama. Design tradeoffs, a weird bug, a
-          study plan.
-        </p>
-
-        {/* Context block — user sees exactly what Apex gets */}
-        {includeContext && (
-          <div className="ask-apex-context">
-            <div className="row between" style={{ marginBottom: 4 }}>
-              <strong>Apex will see:</strong>
-              <small className="muted">{ctx.summary}</small>
-            </div>
-            {ctx.rows.map((r, i) => (
-              <div key={i} className="ctx-row">
-                <span>{r.label}</span>
-                <span className="muted">{r.value}</span>
-              </div>
-            ))}
+      <div className="modal wide ask-apex-modal" style={{ width: 760 }}>
+        <div className="row between ask-apex-header">
+          <div>
+            <h3 style={{ margin: 0 }}>Ask Apex</h3>
+            <small className="muted">
+              {model ? `Local chat · ${model}` : "Local Ollama chat"}
+            </small>
           </div>
-        )}
+          <div className="row" style={{ gap: 6 }}>
+            {hasChat && (
+              <button
+                className="ghost small"
+                onClick={clearChat}
+                title="Clear and start a new conversation"
+              >
+                New chat
+              </button>
+            )}
+            <button className="ghost" onClick={onClose} aria-label="Close">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Scrolling conversation transcript */}
+        <div className="ask-apex-transcript" ref={transcriptRef}>
+          {!hasChat && (
+            <div className="ask-apex-empty">
+              <p className="muted" style={{ margin: "0 0 10px" }}>
+                Freeform chat with your local Ollama — design tradeoffs, a weird
+                bug, a study plan. Follow-ups keep the conversation in context.
+              </p>
+              <div className="ask-apex-prompts">
+                {ASK_APEX_PROMPTS.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    className="ghost small"
+                    onClick={() => send(prompt)}
+                    disabled={!ollamaOk || !model}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+
+              {/* Context preview — user sees exactly what the first turn sends */}
+              {includeContext && (
+                <div className="ask-apex-context">
+                  <div className="row between" style={{ marginBottom: 4 }}>
+                    <strong>Apex will see:</strong>
+                    <small className="muted">{ctx.summary}</small>
+                  </div>
+                  {ctx.rows.map((r, i) => (
+                    <div key={i} className="ctx-row">
+                      <span>{r.label}</span>
+                      <span className="muted">{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {messages.map((m) => (
+            <div key={m.id} className={`ask-apex-msg ${m.role}`}>
+              <div className="ask-apex-msg-role">
+                {m.role === "user" ? "You" : "Apex"}
+              </div>
+              <div className="ask-apex-msg-body">
+                {m.role === "assistant" ? (
+                  m.content ? (
+                    <MarkdownBlock text={m.content} className="ask-apex-response" />
+                  ) : m.streaming ? (
+                    <span className="ask-apex-typing"><i /><i /><i /></span>
+                  ) : null
+                ) : (
+                  <div className="ask-apex-user-text">{m.content}</div>
+                )}
+                {m.error && (
+                  <div className="error" style={{ marginTop: 6 }}>{m.error}</div>
+                )}
+                {m.role === "assistant" && !m.streaming && m.content && (
+                  <div className="ask-apex-msg-actions">
+                    <button className="ghost xsmall" onClick={() => copyText(m.content)}>
+                      Copy
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
 
         {/* Attached file panel — appears when the user picks a PDF/image
             and we've extracted text from it. The user can then turn that
@@ -4977,80 +5922,126 @@ function AskApexDrawer({
           </div>
         )}
 
-        <textarea
-          rows={4}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={attached
-            ? "Optional · tell Apex what to focus on in the attached file…"
-            : "e.g. Given today's schedule, what's a realistic evening plan?"}
-          onKeyDown={(e) => {
-            if (e.ctrlKey && e.key === "Enter") ask();
-          }}
-        />
-
-        <div
-          className="row between"
-          style={{ marginTop: 10, flexWrap: "wrap", gap: 8 }}
-        >
-          <div
-            className="row"
-            style={{ gap: 12, flexWrap: "wrap", fontSize: 12 }}
-          >
-            <label className="row" style={{ gap: 6, cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={includeContext}
-                onChange={(e) => setIncludeContext(e.target.checked)}
-                style={{ width: "auto" }}
-              />
-              include my context
-            </label>
-            <label
-              className="row"
-              style={{
-                gap: 6,
-                cursor: dayNoteSummary ? "pointer" : "not-allowed",
-                opacity: dayNoteSummary ? 1 : 0.5,
-              }}
-              title={
-                dayNoteSummary
-                  ? "Include your opt-in day-note summary"
-                  : "No summary for today — open Day note and tap Summarise"
+        <div className="ask-apex-composer">
+          <textarea
+            rows={2}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={
+              hasChat
+                ? "Ask a follow-up…  (Enter to send · Shift+Enter for newline)"
+                : attached
+                  ? "Optional · what should Apex focus on in the attached file?"
+                  : "e.g. Given today's schedule, what's a realistic evening plan?"
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
               }
-            >
-              <input
-                type="checkbox"
-                checked={includeDayNote}
-                disabled={!dayNoteSummary}
-                onChange={(e) => setIncludeDayNote(e.target.checked)}
-                style={{ width: "auto" }}
-              />
-              include day-note summary
-            </label>
-          </div>
-          <div className="row" style={{ gap: 8 }}>
-            {err && <span className="error">{err}</span>}
-            <button
-              type="button"
-              className="ghost"
-              onClick={pickFile}
-              disabled={extracting}
-              title="Attach a PDF, image, or text file — Apex will extract its content"
-            >
-              {extracting ? "Reading file…" : "Attach file"}
-            </button>
-            <button
-              className="primary"
-              onClick={ask}
-              disabled={!ollamaOk || !model || loading || !q.trim()}
-            >
-              {loading ? "Thinking…" : "Ask (Ctrl+Enter)"}
-            </button>
+            }}
+          />
+
+          <div className="row between ask-apex-composer-foot">
+            {/* Context toggles only matter for the first turn — they're folded
+                into the opening message, not re-sent on follow-ups. */}
+            {!hasChat ? (
+              <div className="row" style={{ gap: 12, flexWrap: "wrap", fontSize: 12 }}>
+                <label className="row" style={{ gap: 6, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={includeContext}
+                    onChange={(e) => setIncludeContext(e.target.checked)}
+                    style={{ width: "auto" }}
+                  />
+                  include my context
+                </label>
+                <label
+                  className="row"
+                  style={{
+                    gap: 6,
+                    cursor: dayNoteSummary ? "pointer" : "not-allowed",
+                    opacity: dayNoteSummary ? 1 : 0.5,
+                  }}
+                  title={
+                    dayNoteSummary
+                      ? "Include your opt-in day-note summary"
+                      : "No summary for today — open Day note and tap Summarise"
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    checked={includeDayNote}
+                    disabled={!dayNoteSummary}
+                    onChange={(e) => setIncludeDayNote(e.target.checked)}
+                    style={{ width: "auto" }}
+                  />
+                  day-note
+                </label>
+                <label
+                  className="row"
+                  style={{
+                    gap: 6,
+                    cursor: courseContext?.included ? "pointer" : "not-allowed",
+                    opacity: courseContext?.included ? 1 : 0.5,
+                  }}
+                  title={
+                    courseContext?.included
+                      ? "Include syllabus/unit-plan context from Settings"
+                      : "No course materials are marked Include in AI"
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    checked={includeCourseContext}
+                    disabled={!courseContext?.included}
+                    onChange={(e) => setIncludeCourseContext(e.target.checked)}
+                    style={{ width: "auto" }}
+                  />
+                  syllabus
+                </label>
+              </div>
+            ) : (
+              <small className="muted">{messages.filter((m) => m.role === "user").length} turn{messages.filter((m) => m.role === "user").length === 1 ? "" : "s"} · context held</small>
+            )}
+
+            <div className="row" style={{ gap: 8 }}>
+              {err && !streaming && <span className="error">{err}</span>}
+              <button
+                type="button"
+                className="ghost"
+                onClick={pickFile}
+                disabled={extracting || streaming}
+                title="Attach a PDF, image, or text file — Apex will extract its content"
+              >
+                {extracting ? "Reading…" : "Attach"}
+              </button>
+              {hasChat && !streaming && (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={regenerate}
+                  title="Regenerate the last answer"
+                >
+                  ↻ Retry
+                </button>
+              )}
+              {streaming ? (
+                <button type="button" className="ghost danger" onClick={stop}>
+                  ◼ Stop
+                </button>
+              ) : (
+                <button
+                  className="primary"
+                  onClick={() => send()}
+                  disabled={!ollamaOk || !model || (!q.trim() && !attached?.text)}
+                >
+                  Send
+                </button>
+              )}
+            </div>
           </div>
         </div>
-
-        {a && <MarkdownBlock text={a} className="ask-apex-response" />}
       </div>
     </div>
   );
@@ -5070,6 +6061,8 @@ function buildAskApexContext({
   checkin,
   burnoutReport,
   dayNoteSummary,
+  courseContext,
+  daySummary,
 }) {
   const now = new Date();
   const date = now.toLocaleDateString(undefined, {
@@ -5170,10 +6163,68 @@ function buildAskApexContext({
   if (dayNoteSummary) {
     rows.push({ label: "Day-note summary", value: dayNoteSummary });
   }
+  if (courseContext?.included) {
+    const included = (courseContext.items || [])
+      .filter((x) => x.include_in_ai)
+      .slice(0, 5)
+      .map((x) => `${x.course_code || "General"} ${x.title || x.kind}`)
+      .join("; ");
+    rows.push({
+      label: "Course materials",
+      value: `${courseContext.included}/${courseContext.total} included${included ? ` (${included})` : ""}`,
+    });
+  }
+  if (daySummary) {
+    rows.push({
+      label: "Stored day log",
+      value: [
+        `${daySummary.closeEvents?.filter((e) => e.kind === "close_reason").length || 0} close reasons`,
+        `${daySummary.taskEvents?.length || 0} task events`,
+        `${daySummary.distractions?.length || 0} distraction logs`,
+        `${daySummary.focusBlocks?.length || 0} focus blocks`,
+      ].join(" · "),
+    });
+  }
 
-  const blockText = rows.map((r) => `- **${r.label}:** ${r.value}`).join("\n");
+  const extraBlocks = [];
+  if (courseContext?.block) {
+    extraBlocks.push(`# Course Materials\n${courseContext.block.slice(0, 6000)}`);
+  }
+  if (daySummary) {
+    extraBlocks.push(`# Stored Day Log\n${formatDaySummaryForContext(daySummary)}`);
+  }
+  const blockText = [
+    rows.map((r) => `- **${r.label}:** ${r.value}`).join("\n"),
+    ...extraBlocks,
+  ].filter(Boolean).join("\n\n");
   const summary = `${openTasks.length} open · ${fmtMinutes(todayMins)} today · vibe e${checkin?.energy ?? "?"}`;
   return { rows, blockText, summary };
+}
+
+function formatDaySummaryForContext(summary) {
+  const closeReasons = (summary.closeEvents || [])
+    .filter((e) => e.kind === "close_reason")
+    .slice(0, 5)
+    .map((e) => `${shortTime(e.at)} ${e.payload?.classification?.category || e.payload?.category || "close"}: ${e.payload?.reason || ""}`)
+    .join("\n");
+  const tasks = (summary.taskEvents || [])
+    .slice(0, 8)
+    .map((e) => `${shortTime(e.at)} ${e.action}: ${e.title || e.payload?.title || ""}`)
+    .join("\n");
+  const distractions = (summary.distractions || [])
+    .slice(0, 8)
+    .map((d) => `${prettyAppName(d.app) || d.app} ${fmtMinutes(d.minutes || 0)}${d.window_title ? ` - ${d.window_title}` : ""}`)
+    .join("\n");
+  const focus = (summary.focusBlocks || [])
+    .slice(0, 8)
+    .map((b) => `${b.title || "Focus"} ${fmtMinutes(b.minutes || 0)}`)
+    .join("\n");
+  return [
+    closeReasons ? `Close reasons:\n${closeReasons}` : "",
+    tasks ? `Task/objective events:\n${tasks}` : "",
+    focus ? `Focus blocks:\n${focus}` : "",
+    distractions ? `Distractions:\n${distractions}` : "",
+  ].filter(Boolean).join("\n\n") || "No stored day events yet.";
 }
 
 // MarkdownBlock lives in src/lib/markdown.jsx — imported above.
@@ -5184,6 +6235,18 @@ function fmtMinutes(m) {
   const h = Math.floor(m / 60);
   const mn = m % 60;
   return h ? `${h}h ${mn}m` : `${mn}m`;
+}
+
+function sumMinutes(rows) {
+  return (rows || []).reduce((s, r) => s + (r.minutes || 0), 0);
+}
+
+function shortTime(iso) {
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
 }
 
 // Copy today's plan as plain-text so the user can paste it into notes /
@@ -5279,3 +6342,4 @@ function tryParse(raw) {
     return null;
   }
 }
+

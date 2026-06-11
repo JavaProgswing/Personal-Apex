@@ -40,7 +40,7 @@ export default function ScheduleEditor() {
         </div>
       </div>
       <small className="hint">
-        Direct edits — re-syncing from AcademiaScraper will wipe changes. Use Add to insert things the scraper missed.
+        Direct edits - re-syncing from AcademiaScraper will wipe changes. Keep course codes accurate; Ask Apex and Brain dump use them to match syllabus context.
       </small>
 
       {[1, 2, 3, 4, 5].map((d) => (
@@ -54,7 +54,7 @@ export default function ScheduleEditor() {
                 <div style={{ flex: 1 }}>
                   <div className="title">{r.subject}</div>
                   <div className="sub muted">
-                    {r.code || "—"}{r.slot ? ` · slot ${r.slot}` : ""}{r.room ? ` · ${r.room}` : ""}{r.faculty ? ` · ${r.faculty}` : ""}
+                    {r.code || "-"}{r.slot ? ` · slot ${r.slot}` : ""}{r.room ? ` · ${r.room}` : ""}{r.faculty ? ` · ${r.faculty}` : ""}
                   </div>
                 </div>
                 <span className="pill">{r.kind}</span>
@@ -78,7 +78,7 @@ export default function ScheduleEditor() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// ImageImportModal — pick one or more timetable images, run local vision-OCR
+// ImageImportModal - pick one or more timetable images, run local vision-OCR
 // through Ollama, preview the extracted rows, and commit them to the DB.
 // ────────────────────────────────────────────────────────────────────────────
 function ImageImportModal({ onClose, onImported }) {
@@ -246,7 +246,7 @@ function ImageImportModal({ onClose, onImported }) {
           <label>
             Hint{" "}
             <small className="muted">
-              (optional — e.g. "Day orders 1-3 are in the first image")
+              (optional - e.g. "Day orders 1-3 are in the first image")
             </small>
           </label>
           <input
@@ -286,7 +286,7 @@ function ImageImportModal({ onClose, onImported }) {
         {rows.length > 0 && (
           <div style={{ marginTop: 14, maxHeight: 320, overflow: "auto" }}>
             <div className="muted small" style={{ marginBottom: 6 }}>
-              Preview — review before committing. Commit replaces ALL existing classes.
+              Preview - review before committing. Commit replaces ALL existing classes.
             </div>
             {[1, 2, 3, 4, 5].map((d) => {
               const list = byDay.get(d) || [];

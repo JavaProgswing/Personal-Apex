@@ -1,6 +1,6 @@
 # Apex
 
-> A local-first personal productivity OS for a CS undergraduate — timetable, tasks, focus tracking, mobile + desktop screentime, an offline Ollama planner, a private journal, and a classmate radar that surfaces what the people around you are building.
+> A local-first personal productivity OS for a CS undergraduate - timetable, tasks, focus tracking, mobile + desktop screentime, an offline Ollama planner, a private journal, and a classmate radar that surfaces what the people around you are building.
 
 Apex is an Electron + React + SQLite desktop app. Everything lives on your machine: the database is a single SQLite file under `Documents/Apex/apex.sqlite`, the AI runs locally through Ollama, and the passcode-gated journal never leaves the device.
 
@@ -30,12 +30,12 @@ The goal is a page you can open at 8 AM and know exactly what the day looks like
 
 **Activity tracking.** Three sources feed the same `activity_sessions` table:
 - **Desktop**: PowerShell-polled foreground window title on Windows (30-s ticks), with 45-min nudges. Distraction vs focus vs neutral is set per app with manual override support.
-- **Mobile**: ADB-backed digital-wellbeing pull — usage stats and top apps per day. Package names are rendered through a `prettyAppName()` helper that strips `com.example.` prefixes and splits concatenated lowercase runs ("bloonstdbattles2" → "Bloons TD Battles 2").
+- **Mobile**: ADB-backed digital-wellbeing pull - usage stats and top apps per day. Package names are rendered through a `prettyAppName()` helper that strips `com.example.` prefixes and splits concatenated lowercase runs ("bloonstdbattles2" → "Bloons TD Battles 2").
 - **Battery report**: `powercfg /batteryreport` parsed with cheerio, giving you per-day active + standby minutes without needing any tracker running. One-click "Sync desktop" pushes the last 14 days into the activity stream.
 
 **Day note (private journal).** One entry per day, stored locally, optionally passcode-gated. The passcode uses `scryptSync` + `timingSafeEqual`; when you set one, both today's note AND the history modal require unlock (15-min in-memory TTL). Previous days are read-only once unlocked. An "Summarise" action hands the entry to Ollama for a gentle end-of-day reflection.
 
-**Burnout.** Compact check-in tied to a work-history rollup — sleep, clarity, dread, energy. Ollama produces a short read of your current state using the last week of check-ins + activity + task completion.
+**Burnout.** Compact check-in tied to a work-history rollup - sleep, clarity, dread, energy. Ollama produces a short read of your current state using the last week of check-ins + activity + task completion.
 
 **Ask Apex.** A chat panel that forwards your question to Ollama with your personal profile (name, college, major, year, interests, goals, tone) auto-prepended. Replies render as markdown.
 
@@ -52,8 +52,8 @@ The goal is a page you can open at 8 AM and know exactly what the day looks like
 ```
 Apex/
 ├── electron/
-│   ├── main.cjs            — app bootstrap, IPC routing, dialogs, protocol handlers
-│   ├── preload.cjs         — the typed `window.apex.*` bridge surface
+│   ├── main.cjs            - app bootstrap, IPC routing, dialogs, protocol handlers
+│   ├── preload.cjs         - the typed `window.apex.*` bridge surface
 │   └── services/
 │       ├── db.cjs            better-sqlite3 wrapper + migrations
 │       ├── timetable.cjs     day-order math, JSON & image import
@@ -69,9 +69,9 @@ Apex/
 │       ├── ollama.cjs        chat, plan, burnout, evening-review, OCR, auto-start
 │       └── backup.cjs        export/import
 ├── db/
-│   └── schema.sql          — applied on first boot
+│   └── schema.sql          - applied on first boot
 ├── src/
-│   ├── App.jsx             — router & providers
+│   ├── App.jsx             - router & providers
 │   ├── main.jsx
 │   ├── components/
 │   │   ├── Sidebar.jsx
@@ -92,8 +92,8 @@ Apex/
 │   │       ├── Planner.jsx
 │   │       └── Settings.jsx
 │   ├── lib/
-│   │   ├── appName.js      — prettyAppName(raw) for desktop + Android
-│   │   └── markdown.jsx    — MarkdownBlock renderer used by Ask Apex
+│   │   ├── appName.js      - prettyAppName(raw) for desktop + Android
+│   │   └── markdown.jsx    - MarkdownBlock renderer used by Ask Apex
 │   └── styles/
 └── package.json
 ```
@@ -117,9 +117,9 @@ Groups exposed: `settings`, `tasks`, `checkins`, `dayNotes`, `streak`, `goals`, 
 `electron/services/ollama.cjs` is the single entry point for anything LLM-shaped.
 
 - **Auto-start on launch.** On `app.whenReady()` (when `ollama.autoStart` is on), `ensureRunning()` pings `/api/tags`; if that fails on Windows it tries, in order, `%LOCALAPPDATA%\Programs\Ollama\ollama app.exe`, `Ollama.exe`, `ollama.exe`, and finally the Start-Menu `Ollama.lnk` via `powershell.exe Start-Process`. On macOS/Linux it spawns `ollama serve`. Then it polls `ping()` every 750 ms up to 15 s.
-- **Auto-pick best model.** `autoPickBest()` walks a ranked list — `gpt-oss:120b-cloud > gpt-oss:20b-cloud > llama3.* > qwen2.5 > mistral > phi3 > gemma` — and returns the highest-ranked installed model. Your pinned setting (`ollama.model`) always wins.
+- **Auto-pick best model.** `autoPickBest()` walks a ranked list - `gpt-oss:120b-cloud > gpt-oss:20b-cloud > llama3.* > qwen2.5 > mistral > phi3 > gemma` - and returns the highest-ranked installed model. Your pinned setting (`ollama.model`) always wins.
 - **Personal context.** `personalContext()` reads `user.profile` (JSON: name, college, major, year, interests, goals, tone) and `user.extraContext` from settings, with sensible defaults. `buildSystem(rolePrompt)` prefixes every system prompt with a USER PROFILE + HOUSE RULES block so replies are in your voice and about your life.
-- **Specialised flows.** `planDay`, `burnoutSuggest`, `burnoutCheck`, `eveningReview`, `summarizeRepo`, `ocrTimetable` — each builds its system prompt through `buildSystem()` and enforces JSON output where expected.
+- **Specialised flows.** `planDay`, `burnoutSuggest`, `burnoutCheck`, `eveningReview`, `summarizeRepo`, `ocrTimetable` - each builds its system prompt through `buildSystem()` and enforces JSON output where expected.
 
 ### Activity tracker (Windows)
 
@@ -148,13 +148,13 @@ npm run dist
 
 ### Optional integrations
 
-**Ollama** — install from [ollama.com](https://ollama.com) and pull at least one model, e.g. `ollama pull llama3` or `ollama pull gpt-oss:20b-cloud`. For timetable-from-image OCR, pull a vision-capable model such as `llava` or `minicpm-v`. Apex will auto-start the Ollama service if it isn't running.
+**Ollama** - install from [ollama.com](https://ollama.com) and pull at least one model, e.g. `ollama pull llama3` or `ollama pull gpt-oss:20b-cloud`. For timetable-from-image OCR, pull a vision-capable model such as `llava` or `minicpm-v`. Apex will auto-start the Ollama service if it isn't running.
 
-**AcademiaScraper** — point the timetable folder setting at your SRM AcademiaScraper clone (contains `data/timetable.json` and `calendar.html`). "Re-sync from Academia" will rebuild the classes table from `timetable.json`.
+**AcademiaScraper** - point the timetable folder setting at your SRM AcademiaScraper clone (contains `data/timetable.json` and `calendar.html`). "Re-sync from Academia" will rebuild the classes table from `timetable.json`.
 
-**ADB (Android digital wellbeing)** — connect your phone with USB debugging; the Settings tab exposes a "Sync now" button that shells out to `adb shell dumpsys usagestats`.
+**ADB (Android digital wellbeing)** - connect your phone with USB debugging; the Settings tab exposes a "Sync now" button that shells out to `adb shell dumpsys usagestats`.
 
-**GitHub** — set a GitHub token in Settings to raise the rate limit and allow private-repo lookups; otherwise unauthenticated public access works for most flows.
+**GitHub** - set a GitHub token in Settings to raise the rate limit and allow private-repo lookups; otherwise unauthenticated public access works for most flows.
 
 ### Personal context
 
@@ -164,19 +164,19 @@ Open **Settings → Ollama** and fill in the Personal context card: name, colleg
 
 ## Keyboard shortcuts
 
-- **⌘K / Ctrl+K** — open the command palette (quick task add, navigation).
-- **⌘/** — focus the Ask Apex chat box on the Dashboard.
-- **Esc** — close any modal.
+- **⌘K / Ctrl+K** - open the command palette (quick task add, navigation).
+- **⌘/** - focus the Ask Apex chat box on the Dashboard.
+- **Esc** - close any modal.
 
 ---
 
 ## Privacy
 
-Everything is local. The SQLite file, the battery-report parse, the activity data, the day notes — none of it leaves your machine. The only outbound calls are:
+Everything is local. The SQLite file, the battery-report parse, the activity data, the day notes - none of it leaves your machine. The only outbound calls are:
 - GitHub API (only when you trigger a sync),
 - LeetCode / Codeforces / CodeChef (only when you trigger a sync),
 - NextTechLab website (only when you trigger a scrape),
-- Ollama on `localhost:11434` (always local, even for `*-cloud` models — those tokens go Ollama → cloud, not Apex → cloud).
+- Ollama on `localhost:11434` (always local, even for `*-cloud` models - those tokens go Ollama → cloud, not Apex → cloud).
 
 The day-note passcode uses `scryptSync` (N = 2^15, r = 8, p = 1) and `timingSafeEqual`. Unlocking is held in the main process only; it expires automatically after 15 minutes of inactivity.
 
@@ -192,4 +192,4 @@ The day-note passcode uses `scryptSync` (N = 2^15, r = 8, p = 1) and `timingSafe
 
 ## Project status
 
-Apex is a single-user project — mine. It's not packaged for distribution or reused by anyone else; it's a living tool that evolves as my college workflow does. If you're reading this as a fork, expect paths, course codes, and the NTL scraper to be SRM-specific.
+Apex is a single-user project - mine. It's not packaged for distribution or reused by anyone else; it's a living tool that evolves as my college workflow does. If you're reading this as a fork, expect paths, course codes, and the NTL scraper to be SRM-specific.

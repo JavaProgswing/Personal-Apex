@@ -9,3 +9,10 @@ userdata/
 *.sqlite-journal
 .env
 .env.local
+mobile_android/build/
+mobile_android/app/build/
+mobile_android/.gradle/
+mobile_android/.idea/
+mobile_android/local.properties
+tools/__pycache__/
+build/

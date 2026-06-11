@@ -12,24 +12,99 @@
 // Windows-only setup: user installs adb (platform-tools) and adds it to PATH.
 // The path to adb can be overridden via settings key 'wellbeing.adbPath'.
 
-const { exec } = require("node:child_process");
+const { execFile } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
 const db = require("./db.cjs");
+const routine = require("./routine.cjs");
 
-function adbCmd() {
-  return db.getSetting("wellbeing.adbPath") || "adb";
+const ADB_CANDIDATES = [
+  "%LOCALAPPDATA%\\Android\\Sdk\\platform-tools\\adb.exe",
+  "C:\\Program Files (x86)\\Minimal ADB and Fastboot\\adb.exe",
+  "C:\\Program Files\\Android\\platform-tools\\adb.exe",
+  "C:\\platform-tools\\adb.exe",
+];
+
+function expandEnv(input) {
+  return String(input || "").replace(/%([^%]+)%/g, (_m, name) => process.env[name] || "");
 }
 
-function run(cmd, timeoutMs = 20_000) {
+function stripOuterQuotes(input) {
+  let value = String(input || "").trim();
+  while (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1).trim();
+  }
+  return value;
+}
+
+function candidateFiles(raw) {
+  const value = stripOuterQuotes(expandEnv(raw));
+  if (!value) return [];
+  const list = [value];
+  const looksLikeDir =
+    /[\\/]$/.test(value) ||
+    !/\.(exe|cmd|bat)$/i.test(path.basename(value));
+  if (looksLikeDir) {
+    list.push(path.join(value, "adb.exe"));
+    list.push(path.join(value, "platform-tools", "adb.exe"));
+  }
+  return list;
+}
+
+function resolveAdb() {
+  const configuredRaw = String(db.getSetting("wellbeing.adbPath") || "").trim();
+  const attempted = [];
+  const add = (value, source) => {
+    for (const file of candidateFiles(value)) {
+      if (!file || attempted.some((x) => x.path === file)) continue;
+      attempted.push({ path: file, source, exists: fs.existsSync(file) });
+    }
+  };
+
+  if (configuredRaw) add(configuredRaw, "configured");
+  if (process.env.ADB_PATH) add(process.env.ADB_PATH, "ADB_PATH");
+  if (process.env.ANDROID_HOME) add(path.join(process.env.ANDROID_HOME, "platform-tools", "adb.exe"), "ANDROID_HOME");
+  if (process.env.ANDROID_SDK_ROOT) add(path.join(process.env.ANDROID_SDK_ROOT, "platform-tools", "adb.exe"), "ANDROID_SDK_ROOT");
+  for (const candidate of ADB_CANDIDATES) add(candidate, "auto");
+
+  const found = attempted.find((item) => item.exists);
+  if (found) {
+    return {
+      command: found.path,
+      source: found.source,
+      configured: configuredRaw,
+      attempted,
+      viaPath: false,
+    };
+  }
+
+  return {
+    command: "adb",
+    source: configuredRaw ? "path-fallback-after-configured-miss" : "PATH",
+    configured: configuredRaw,
+    attempted,
+    viaPath: true,
+  };
+}
+
+function runAdb(args, timeoutMs = 20_000) {
+  const adb = resolveAdb();
   return new Promise((resolve, reject) => {
-    exec(
-      cmd,
+    execFile(
+      adb.command,
+      args,
       { windowsHide: true, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024 },
       (err, stdout, stderr) => {
         if (err) {
           err.stderr = stderr;
+          err.stdout = stdout;
+          err.adb = adb;
           return reject(err);
         }
-        resolve(stdout);
+        resolve({ stdout, stderr, adb });
       },
     );
   });
@@ -37,8 +112,8 @@ function run(cmd, timeoutMs = 20_000) {
 
 async function devices() {
   try {
-    const out = await run(`"${adbCmd()}" devices`);
-    const lines = out
+    const { stdout } = await runAdb(["devices"]);
+    const lines = stdout
       .split(/\r?\n/)
       .filter((l) => l && !l.startsWith("List of"));
     return lines
@@ -48,9 +123,51 @@ async function devices() {
       })
       .filter((d) => d.serial && d.state === "device");
   } catch (err) {
-    console.log(err);
+    console.log("[wellbeing] adb devices failed:", err.message);
     return [];
   }
+}
+
+async function diagnose() {
+  const adb = resolveAdb();
+  try {
+    const { stdout, stderr } = await runAdb(["devices", "-l"], 12_000);
+    const rows = parseDevices(stdout);
+    return {
+      ok: true,
+      adb,
+      stdout,
+      stderr,
+      devices: rows,
+      authorized: rows.filter((d) => d.state === "device"),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      adb: err.adb || adb,
+      error: err.stderr || err.message,
+      stdout: err.stdout || "",
+      devices: [],
+      authorized: [],
+    };
+  }
+}
+
+function parseDevices(out) {
+  return out
+    .split(/\r?\n/)
+    .filter((l) => l && !l.startsWith("List of"))
+    .map((l) => {
+      const parts = l.trim().split(/\s+/);
+      const serial = parts.shift();
+      const state = parts.shift();
+      return {
+        serial,
+        state,
+        detail: parts.join(" "),
+      };
+    })
+    .filter((d) => d.serial);
 }
 
 // Parse the "Usage stats for user 0" section of `dumpsys usagestats`.
@@ -151,6 +268,8 @@ function humanizePackage(pkg) {
     "com.discord": "Discord",
     "org.telegram.messenger": "Telegram",
     "in.startv.hotstar": "Hotstar",
+    "com.amazon.avod.thirdpartyclient": "Prime Video",
+    "com.instagram.barcelona": "Threads",
   };
   if (map[pkg]) return map[pkg];
   const tail = pkg.split(".").pop();
@@ -170,7 +289,7 @@ function inferCategory(pkg) {
   const legacy = db.getSetting("wellbeing.overrides." + pkg);
   if (legacy) return legacy;
   const distractions =
-    /whatsapp|instagram|twitter|reddit|tiktok|snapchat|youtube|netflix|hotstar|discord|telegram|facebook/i;
+    /whatsapp|instagram|twitter|reddit|tiktok|snapchat|youtube|netflix|hotstar|discord|telegram|facebook|avod|primevideo|disney|jiocinema|crunchyroll|barcelona/i;
   if (distractions.test(pkg)) return "distraction";
   const leisure = /spotify|music|audible|kindle|books|podcast/i;
   if (leisure.test(pkg)) return "leisure";
@@ -222,11 +341,13 @@ async function syncNow() {
   }
   let dump;
   try {
-    dump = await run(`"${adbCmd()}" shell dumpsys usagestats`);
+    const result = await runAdb(["shell", "dumpsys", "usagestats"]);
+    dump = result.stdout;
   } catch (err) {
     return {
       ok: false,
       error: "adb dumpsys failed: " + (err.stderr || err.message),
+      adb: err.adb || resolveAdb(),
     };
   }
 
@@ -326,4 +447,278 @@ async function syncNow() {
   };
 }
 
-module.exports = { syncNow, devices };
+// ────────────────────────────────────────────────────────────────────────────
+// Cloud pull — the "no USB needed" path. The Android app pushes its Digital
+// Wellbeing usage to the shared sync API; the desktop pulls it back here and
+// writes the same activity_sessions(source='mobile') rows the ADB importer
+// produces. Credentials (apiBase + device token) are shared with the routine
+// guard, so a single desktop pairing covers both.
+// ────────────────────────────────────────────────────────────────────────────
+function _isoDateToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function cloudConfigured() {
+  const cfg = routine.getConfig();
+  return {
+    paired: !!(cfg.apiBase && cfg.deviceToken),
+    apiBase: cfg.apiBase || "",
+    auto: db.getSetting("wellbeing.cloud.auto") === "1",
+    lastSyncAt: db.getSetting("wellbeing.cloud.lastSyncAt") || null,
+    lastError: db.getSetting("wellbeing.cloud.lastError") || null,
+  };
+}
+
+async function pullFromCloud({ since } = {}) {
+  const cfg = routine.getConfig();
+  const base = String(cfg.apiBase || "").trim().replace(/\/+$/, "");
+  const token = String(cfg.deviceToken || "").trim();
+  if (!base || !token) return { ok: false, error: "cloud-not-paired" };
+
+  let body;
+  try {
+    const url = new URL(base + "/sync/pull");
+    if (since) url.searchParams.set("since", since);
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || body.error || `HTTP ${res.status}`);
+  } catch (err) {
+    db.setSetting("wellbeing.cloud.lastError", err.message);
+    return { ok: false, error: err.message };
+  }
+
+  // ── Task round-trip ───────────────────────────────────────────────────
+  // The phone can complete desktop tasks and quick-add its own. Cloud ids:
+  //   desktop-task-<n>  → completion flows back onto local task n
+  //   anything else     → phone-created; imported once (mapping kept in
+  //                       settings key cloudtask.map.<cloudId>)
+  const taskStats = { completed: 0, imported: 0 };
+  try {
+    for (const t of Array.isArray(body.tasks) ? body.tasks : []) {
+      if (!t || !t.id || !t.title) continue;
+      const desktopMatch = /^desktop-task-(\d+)$/.exec(t.id);
+      if (desktopMatch) {
+        if (t.status === "done") {
+          const local = db._db()
+            .prepare("SELECT id, completed FROM tasks WHERE id = ?")
+            .get(Number(desktopMatch[1]));
+          if (local && !local.completed) {
+            db.toggleTask(local.id);
+            taskStats.completed += 1;
+          }
+        }
+        continue;
+      }
+      if (t.source !== "mobile") continue; // ignore other agents' rows
+      const mapKey = "cloudtask.map." + t.id;
+      const mappedId = db.getSetting(mapKey);
+      if (!mappedId) {
+        const row = db.createTask({
+          title: t.title,
+          deadline: t.due_at || null,
+          category: t.payload?.category || "Personal",
+          priority: t.payload?.priority || 3,
+          tags: ["mobile"],
+          kind: "task",
+          source: "mobile",
+        });
+        db.setSetting(mapKey, String(row.id));
+        taskStats.imported += 1;
+        if (t.status === "done") db.toggleTask(row.id);
+      } else if (t.status === "done") {
+        const local = db._db()
+          .prepare("SELECT id, completed FROM tasks WHERE id = ?")
+          .get(Number(mappedId));
+        if (local && !local.completed) {
+          db.toggleTask(local.id);
+          taskStats.completed += 1;
+        }
+      }
+    }
+  } catch { /* task import is best-effort; usage import continues */ }
+
+  // ── Phone notes → desktop Day Notes ───────────────────────────────────
+  // Phone capture should land where the desktop already reviews the day. We
+  // append once per cloud note using a marker so repeated sync pulls are safe.
+  const noteStats = { imported: 0 };
+  try {
+    for (const n of Array.isArray(body.notes) ? body.notes : []) {
+      if (!n || !n.id || !n.date || !String(n.body || "").trim()) continue;
+      if (n.source && n.source !== "mobile") continue;
+      const mapKey = "cloudnote.map." + n.id;
+      if (db.getSetting(mapKey)) continue;
+
+      const date = String(n.date).slice(0, 10);
+      const marker = `<!-- apex-mobile-note:${n.id} -->`;
+      const existing = db.getDayNote(date);
+      const existingBody = String(existing?.body || "");
+      if (existingBody.includes(marker)) {
+        db.setSetting(mapKey, date);
+        continue;
+      }
+
+      const title = String(n.title || "Phone note").trim().slice(0, 120);
+      const at = String(n.updated_at || n.created_at || "").slice(11, 16);
+      const header = at ? `[Phone ${at}] ${title}` : `[Phone] ${title}`;
+      const addition = `${marker}\n${header}\n${String(n.body || "").trim()}`;
+      db.upsertDayNote({
+        date,
+        body: existingBody.trim()
+          ? `${existingBody.trimEnd()}\n\n${addition}`
+          : addition,
+        isPrivate: existing?.private !== 0,
+      });
+      db.setSetting(mapKey, date);
+      noteStats.imported += 1;
+    }
+  } catch { /* note import is best-effort; usage import continues */ }
+
+  // ── Routine adoption ──────────────────────────────────────────────────
+  // The phone can edit wake/sleep with its clock pickers. Those edits are
+  // tagged lastEditedBy:'mobile'; adopt them into the desktop config so the
+  // desktop's next push doesn't overwrite them.
+  try {
+    const r = await fetch(base + "/routine/today", {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then((res) => (res.ok ? res.json() : null)).catch(() => null);
+    const pl = r?.payload || {};
+    if (pl.lastEditedBy === "mobile" && pl.editedAt) {
+      const applied = db.getSetting("routine.mobileEditApplied") || "";
+      if (pl.editedAt > applied && (r.wake_time || r.sleep_time)) {
+        routine.saveConfig({
+          ...(r.wake_time ? { wakeTime: r.wake_time } : {}),
+          ...(r.sleep_time ? { sleepTime: r.sleep_time } : {}),
+        });
+        db.setSetting("routine.mobileEditApplied", pl.editedAt);
+      }
+    }
+  } catch { /* best-effort */ }
+
+  // ── Routine-event adoption ────────────────────────────────────────────
+  // "I'm awake ✓" / "Going to bed ✓" pressed on the phone's alarm become
+  // local routine_events, which silences the desktop's own nudges. The first
+  // wake_done import of the day is surfaced so main can fire a morning brief.
+  let wokeUp = false;
+  try {
+    const todayIso = _isoDateToday();
+    for (const ev of Array.isArray(body.events) ? body.events : []) {
+      if (ev?.kind !== "wake_done" && ev?.kind !== "sleep_done") continue;
+      const evDate = ev.date ? ev.date : (ev.at ? _isoDateLocal(new Date(ev.at).getTime()) : todayIso);
+      if (evDate !== todayIso) continue;
+      const seenKey = `routine.phoneEvent.${ev.kind}.${todayIso}`;
+      if (db.getSetting(seenKey)) continue;
+      db.setSetting(seenKey, ev.at || new Date().toISOString());
+      const already = db
+        ._db()
+        .prepare(`SELECT 1 FROM routine_events WHERE date = ? AND kind = ? LIMIT 1`)
+        .get(todayIso, ev.kind);
+      if (!already) routine.logEvent(ev.kind, { source: "mobile", at: ev.at, date: todayIso });
+      if (ev.kind === "wake_done") wokeUp = true;
+    }
+  } catch { /* best-effort */ }
+
+  // OS plumbing the phone may have synced before it learned to filter:
+  // launchers, system UI, IMEs, OEM service shims. Never count these.
+  // NB: com.amazon.avod.thirdpartyclient is Prime Video — looks like a
+  // service shim but is a real streaming app; keep it.
+  const JUNK_PKG_RX = /^(android|com\.android\.systemui)$|launcher|trichrome|webview|inputmethod|packageinstaller|permissioncontroller|com\.(oplus|coloros|heytap|miui)\./i;
+
+  const wellbeing = Array.isArray(body.wellbeing) ? body.wellbeing : [];
+  // Group by date → package, keeping the MAX minutes per (date, package).
+  // The phone reports a running daily total each sync, so taking the max
+  // (rather than summing) is correct even if the same day was pushed twice.
+  const byDate = new Map();
+  for (const w of wellbeing) {
+    const date = w.date;
+    if (!date) continue;
+    const pkg = w.package_name || w.window_title || "unknown";
+    if (JUNK_PKG_RX.test(pkg)) continue; // drops "android 1h 57m" & friends
+    const minutes = Math.round(Number(w.minutes) || 0);
+    if (minutes <= 0) continue;
+    if (!byDate.has(date)) byDate.set(date, new Map());
+    const m = byDate.get(date);
+    const prev = m.get(pkg);
+    if (!prev || minutes > prev.minutes) {
+      m.set(pkg, {
+        minutes,
+        appName: w.app_name || humanizePackage(pkg),
+        phoneCategory: w.category || null,
+        started_at: w.started_at || null,
+        ended_at: w.ended_at || null,
+      });
+    }
+  }
+
+  if (byDate.size === 0) {
+    db.setSetting("wellbeing.cloud.lastSyncAt", new Date().toISOString());
+    db.setSetting("wellbeing.cloud.lastError", "");
+    return { ok: true, days: [], daysWritten: 0, count: 0, total_minutes: 0, top: [], tasks: taskStats, notes: noteStats, note: "no-mobile-data" };
+  }
+
+  const dbh = db._db();
+  const wipe = dbh.prepare(
+    `DELETE FROM activity_sessions WHERE date = ? AND source = 'mobile'`,
+  );
+  const days = [];
+  const tx = dbh.transaction((entries) => {
+    for (const [date, pkgs] of entries) {
+      wipe.run(date);
+      let total = 0;
+      for (const [pkg, info] of pkgs) {
+        // Honour a user override first; else the desktop pattern; else the
+        // category the phone inferred; else the generic 'mobile' bucket.
+        const hasOverride = !!db.getSetting("activity.overrides." + pkg.toLowerCase());
+        const desktopCat = inferCategory(pkg);
+        const category = hasOverride
+          ? desktopCat
+          : desktopCat !== "mobile"
+            ? desktopCat
+            : info.phoneCategory || "mobile";
+        db.addActivitySession({
+          date,
+          source: "mobile",
+          app: info.appName,
+          window_title: pkg,
+          category,
+          started_at: info.started_at,
+          ended_at: info.ended_at,
+          minutes: info.minutes,
+        });
+        total += info.minutes;
+      }
+      days.push({ date, count: pkgs.size, total_minutes: total });
+    }
+  });
+  tx([...byDate.entries()]);
+  db.setSetting("wellbeing.cloud.lastSyncAt", new Date().toISOString());
+  db.setSetting("wellbeing.cloud.lastError", "");
+  // Mirror legacy ADB key too so existing "last sync" displays update.
+  db.setSetting("wellbeing.lastSyncAt", new Date().toISOString());
+
+  const todayIso = _isoDateToday();
+  const today = byDate.get(todayIso);
+  const todayPkgs = today
+    ? [...today.entries()].map(([pkg, info]) => ({
+        app: info.appName,
+        minutes: info.minutes,
+        category: inferCategory(pkg) !== "mobile" ? inferCategory(pkg) : info.phoneCategory || "mobile",
+      }))
+    : [];
+  return {
+    ok: true,
+    source: "cloud",
+    tasks: taskStats,
+    notes: noteStats,
+    wokeUp,
+    days,
+    daysWritten: days.length,
+    count: todayPkgs.length,
+    total_minutes: todayPkgs.reduce((s, p) => s + p.minutes, 0),
+    top: todayPkgs.sort((a, b) => b.minutes - a.minutes).slice(0, 10),
+  };
+}
+
+module.exports = { syncNow, devices, diagnose, pullFromCloud, cloudConfigured };

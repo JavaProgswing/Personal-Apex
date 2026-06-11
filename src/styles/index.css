@@ -1,5 +1,5 @@
-/* Apex typography — unified across all themes.
-   One UI sans + one mono. No per-theme font swaps — they made the app
+/* Apex typography - unified across all themes.
+   One UI sans + one mono. No per-theme font swaps - they made the app
    read as inconsistent. Inter is the canonical modern UI sans; JetBrains
    Mono is the canonical code/numbers face. Both load with display=swap
    so first paint is never blocked. System fallbacks at the end so
@@ -26,7 +26,7 @@
    this on mount from settings. All other CSS targets the var() tokens so
    no rules below need to change for new themes. */
 
-/* ─── DEFAULT-DARK — the neutral foundation ─────────────────────────────
+/* ─── DEFAULT-DARK - the neutral foundation ─────────────────────────────
    Used as the fallback for anyone who hasn't picked a theme yet. Modern
    neutral dark, Inter font, soft blue accent. Coolors-style cohesion:
    bg ramp on a 12-step neutral scale, single accent hue, categoricals
@@ -72,7 +72,7 @@
   color-scheme: dark;
 }
 
-/* ─── DEFAULT-LIGHT — neutral foundation, light ─────────────────────────
+/* ─── DEFAULT-LIGHT - neutral foundation, light ─────────────────────────
    Clean off-white surface, same accent family as default-dark so users
    can switch without losing brand. Tinted toward warm-grey for less
    eye strain than pure white. */
@@ -117,7 +117,50 @@
   color-scheme: light;
 }
 
-/* Library — warm coffee + honey amber. Default. Ramp tightened, categories
+/* Apex Focus - the new workhorse palette for lock-in sessions. Neutral
+   graphite base, teal focus accent, coral drift, amber leisure, blue rest. */
+[data-theme="apex-focus"] {
+  --bg: #0b0d12;
+  --bg-elev: #121720;
+  --bg-elev-2: #1b2330;
+  --border: #293241;
+
+  --text: #f3f7fb;
+  --text-dim: #a9b5c4;
+  --text-faint: #667385;
+
+  --accent: #38d8c4;
+  --accent-soft: rgba(56, 216, 196, 0.16);
+  --accent-strong: #71eadc;
+
+  --productive: #66d38f;
+  --productive-soft: rgba(102, 211, 143, 0.15);
+  --distraction: #ff6b7a;
+  --distraction-soft: rgba(255, 107, 122, 0.15);
+  --leisure: #f5b84b;
+  --leisure-soft: rgba(245, 184, 75, 0.15);
+  --rest: #7db7ff;
+  --rest-soft: rgba(125, 183, 255, 0.15);
+  --neutral: #a9b5c4;
+  --neutral-soft: rgba(169, 181, 196, 0.14);
+  --mobile: #b69cff;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: var(--leisure);
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(135deg, #38d8c4, #7db7ff);
+  --grad-card: linear-gradient(135deg, rgba(56,216,196,0.05), transparent 62%);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.48);
+
+  color-scheme: dark;
+}
+
+/* Library - warm coffee + honey amber. Default. Ramp tightened, categories
    share a warm undertone so they feel related to the amber accent. */
 :root,
 [data-theme="library"] {
@@ -161,7 +204,7 @@
   color-scheme: dark;
 }
 
-/* Slate — modern cool palette inspired by Linear / Vercel. Softer
+/* Slate - modern cool palette inspired by Linear / Vercel. Softer
    neutrals, more accessible accent, cohesive cool-blue undertone. */
 [data-theme="slate"] {
   --bg: #0d1117;
@@ -204,7 +247,7 @@
   color-scheme: dark;
 }
 
-/* Paper — light cream parchment. Day mode. */
+/* Paper - light cream parchment. Day mode. */
 [data-theme="paper"] {
   --bg: #f4ecd8;
   --bg-elev: #faf3e0;
@@ -246,7 +289,7 @@
   color-scheme: light;
 }
 
-/* Mono — high-contrast greyscale + single accent. Minimalist. */
+/* Mono - high-contrast greyscale + single accent. Minimalist. */
 [data-theme="mono"] {
   --bg: #0a0a0a;
   --bg-elev: #161616;
@@ -288,7 +331,7 @@
   color-scheme: dark;
 }
 
-/* Dracula — purple/pink dev classic. */
+/* Dracula - purple/pink dev classic. */
 [data-theme="dracula"] {
   --bg: #282a36;
   --bg-elev: #313442;
@@ -330,7 +373,7 @@
   color-scheme: dark;
 }
 
-/* Nord — cool blue, popular dev theme. */
+/* Nord - cool blue, popular dev theme. */
 [data-theme="nord"] {
   --bg: #2e3440;
   --bg-elev: #3b4252;
@@ -372,7 +415,7 @@
   color-scheme: dark;
 }
 
-/* Solarized Dark — the canonical low-contrast dark. */
+/* Solarized Dark - the canonical low-contrast dark. */
 [data-theme="solarized-dark"] {
   --bg: #002b36;
   --bg-elev: #073642;
@@ -414,7 +457,7 @@
   color-scheme: dark;
 }
 
-/* Solarized Light — the light counterpart. */
+/* Solarized Light - the light counterpart. */
 [data-theme="solarized-light"] {
   --bg: #fdf6e3;
   --bg-elev: #f5eedc;
@@ -456,7 +499,7 @@
   color-scheme: light;
 }
 
-/* Midnight — deep blue/black, OLED-friendly. Heightened contrast with
+/* Midnight - deep blue/black, OLED-friendly. Heightened contrast with
    electric indigo, near-black ramp, vivid categoricals that share the
    same indigo-violet undertone. */
 [data-theme="midnight"] {
@@ -500,7 +543,7 @@
   color-scheme: dark;
 }
 
-/* Forest — deep green, calm. Smoother bg ramp with a hint of forest blue
+/* Forest - deep green, calm. Smoother bg ramp with a hint of forest blue
    in the shadows; categories share a warm-mossy undertone. */
 [data-theme="forest"] {
   --bg: #0d1a14;
@@ -543,7 +586,7 @@
   color-scheme: dark;
 }
 
-/* Sunset — orange/purple gradient vibe. Tighter bg ramp transitioning
+/* Sunset - orange/purple gradient vibe. Tighter bg ramp transitioning
    from plum to dusk; categoricals all live on the warm-magenta gradient. */
 [data-theme="sunset"] {
   --bg: #170a1c;
@@ -586,7 +629,7 @@
   color-scheme: dark;
 }
 
-/* Synthwave — neon pink + cyan over deep purple. Vaporwave aesthetic. */
+/* Synthwave - neon pink + cyan over deep purple. Vaporwave aesthetic. */
 [data-theme="synthwave"] {
   --bg: #1a0b2e;
   --bg-elev: #241246;
@@ -628,7 +671,7 @@
   color-scheme: dark;
 }
 
-/* Cyberpunk — yellow + cyan on near-black. High-contrast neon. */
+/* Cyberpunk - yellow + cyan on near-black. High-contrast neon. */
 [data-theme="cyberpunk"] {
   --bg: #0a0a0a;
   --bg-elev: #14141a;
@@ -670,7 +713,7 @@
   color-scheme: dark;
 }
 
-/* Matrix — pure green-on-black. Hacker-movie aesthetic. */
+/* Matrix - pure green-on-black. Hacker-movie aesthetic. */
 [data-theme="matrix"] {
   --bg: #000000;
   --bg-elev: #0a0f0a;
@@ -712,7 +755,7 @@
   color-scheme: dark;
 }
 
-/* Tokyo Night — canonical values from the upstream theme. Pastels +
+/* Tokyo Night - canonical values from the upstream theme. Pastels +
    indigo midnight; one of the cleanest dark themes anywhere. */
 [data-theme="tokyo-night"] {
   --bg: #1a1b26;
@@ -755,7 +798,7 @@
   color-scheme: dark;
 }
 
-/* Catppuccin Mocha — internet-darling pastel night palette. */
+/* Catppuccin Mocha - internet-darling pastel night palette. */
 [data-theme="catppuccin"] {
   --bg: #1e1e2e;
   --bg-elev: #313244;
@@ -797,7 +840,7 @@
   color-scheme: dark;
 }
 
-/* Gruvbox Dark — retro-grove warm dev theme. */
+/* Gruvbox Dark - retro-grove warm dev theme. */
 [data-theme="gruvbox"] {
   --bg: #282828;
   --bg-elev: #3c3836;
@@ -839,7 +882,7 @@
   color-scheme: dark;
 }
 
-/* Rosé Pine — soft burgundy + warm pastels. Cozy night. */
+/* Rosé Pine - soft burgundy + warm pastels. Cozy night. */
 [data-theme="rose-pine"] {
   --bg: #191724;
   --bg-elev: #1f1d2e;
@@ -881,7 +924,7 @@
   color-scheme: dark;
 }
 
-/* One Dark — Atom's classic. Slate blue + warm orange. */
+/* One Dark - Atom's classic. Slate blue + warm orange. */
 [data-theme="one-dark"] {
   --bg: #282c34;
   --bg-elev: #21252b;
@@ -923,7 +966,7 @@
   color-scheme: dark;
 }
 
-/* Crimson — deep oxblood + gold. Bold, editorial. Smoother bg ramp,
+/* Crimson - deep oxblood + gold. Bold, editorial. Smoother bg ramp,
    warm-tinted categoricals so everything reads as one editorial palette. */
 [data-theme="crimson"] {
   --bg: #170808;
@@ -966,7 +1009,7 @@
   color-scheme: dark;
 }
 
-/* Ocean — deep teal + coral. Cool tropical-night blend. Smoother teal
+/* Ocean - deep teal + coral. Cool tropical-night blend. Smoother teal
    ramp with a touch of cyan in the highlights; categoricals follow the
    complementary teal/coral split so everything reads as a single mood. */
 [data-theme="ocean"] {
@@ -1010,7 +1053,7 @@
   color-scheme: dark;
 }
 
-/* Latte — Catppuccin Latte light variant. Soft cream + lavender. */
+/* Latte - Catppuccin Latte light variant. Soft cream + lavender. */
 [data-theme="latte"] {
   --bg: #eff1f5;
   --bg-elev: #e6e9ef;
@@ -1059,7 +1102,7 @@
    stay legible against the deep black surfaces.
    ───────────────────────────────────────────────────────────────────────── */
 
-/* Obsidian — pure void black + electric cyan. The OLED-optimised one.
+/* Obsidian - pure void black + electric cyan. The OLED-optimised one.
    Every surface is near-perfectly black (so OLED pixels actually switch
    off), text is bright white, accent glows. */
 [data-theme="obsidian"] {
@@ -1103,7 +1146,7 @@
   color-scheme: dark;
 }
 
-/* Carbon — charcoal industrial + neon-lime. Stark, technical, high
+/* Carbon - charcoal industrial + neon-lime. Stark, technical, high
    contrast. Everything reads with a slight industrial edge. */
 [data-theme="carbon"] {
   --bg: #0a0c0e;
@@ -1146,7 +1189,7 @@
   color-scheme: dark;
 }
 
-/* Aurora — coolors-inspired arctic palette: deep indigo night base
+/* Aurora - coolors-inspired arctic palette: deep indigo night base
    with an accent gradient running teal → emerald → magenta.
    Coolors-style cohesion via shared cool undertone in every category. */
 [data-theme="aurora"] {
@@ -1190,8 +1233,8 @@
   color-scheme: dark;
 }
 
-/* Vercel — pure-black surface, white-90 text, a single electric accent.
-   Inspired by vercel.com — radically minimal, almost monochromatic. */
+/* Vercel - pure-black surface, white-90 text, a single electric accent.
+   Inspired by vercel.com - radically minimal, almost monochromatic. */
 [data-theme="vercel"] {
   --bg: #000000;
   --bg-elev: #0a0a0a;
@@ -1233,8 +1276,8 @@
   color-scheme: dark;
 }
 
-/* Stripe — clean cool slate with electric purple. Inspired by the
-   Stripe dashboard — calm, professional, very legible. */
+/* Stripe - clean cool slate with electric purple. Inspired by the
+   Stripe dashboard - calm, professional, very legible. */
 [data-theme="stripe"] {
   --bg: #0a0e1f;
   --bg-elev: #14182d;
@@ -1276,7 +1319,7 @@
   color-scheme: dark;
 }
 
-/* Eclipse — pitch-black with deep violet accent. The mysterious one.
+/* Eclipse - pitch-black with deep violet accent. The mysterious one.
    Almost-black surfaces, royal violet glow, vibrant saturated categoricals
    that all lean cool/violet. */
 [data-theme="eclipse"] {
@@ -1326,7 +1369,7 @@
    for code/numbers. All chains end in system fallbacks so an offline
    render still looks intentional. */
 
-/* Per-theme font overrides removed — fonts were swapping wildly between
+/* Per-theme font overrides removed - fonts were swapping wildly between
    palettes (serif / mono / Orbitron etc.) and the app read as schizophrenic.
    Inter is now used app-wide for every theme. The display title uses the
    same family at heavier weight. JetBrains Mono is used for code/numbers
@@ -1348,7 +1391,7 @@ body,
 }
 
 body {
-  /* Flat background — let cards do the surface lifting. Letter-spacing
+  /* Flat background - let cards do the surface lifting. Letter-spacing
      -0.01em tightens body copy slightly to feel modern; line-height 1.55
      gives the text breathing room (φ-ish ratio against 14px). */
   background: var(--bg);
@@ -1361,7 +1404,7 @@ body {
   text-rendering: optimizeLegibility;
   overflow: hidden;
   letter-spacing: -0.01em;
-  font-feature-settings: "ss01", "cv11", "cv09"; /* Inter stylistic sets — harmless on other fonts */
+  font-feature-settings: "ss01", "cv11", "cv09"; /* Inter stylistic sets - harmless on other fonts */
 }
 
 /* Form elements inherit the body font instead of falling back to the
@@ -1512,12 +1555,14 @@ html[data-sidebar="collapsed"] .sidebar .nav-item {
   border-bottom: 1px solid var(--border);
   margin-bottom: 10px;
 }
-.sidebar .brand-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--grad-accent, var(--accent));
-  box-shadow: 0 0 6px var(--accent-soft);
+.sidebar .brand-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent),
+    0 8px 18px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .sidebar .nav-list {
   display: flex;
@@ -1701,7 +1746,7 @@ h1.page-title {
   font-size: 12px;
 }
 
-/* Pills — all variants resolve through theme tokens so they recolour
+/* Pills - all variants resolve through theme tokens so they recolour
    correctly across every palette. The fixed hex pairs (#3a2e14 / #ffc48a)
    etc. were the single biggest source of "themes look off across the
    app" since pills are sprinkled everywhere. */
@@ -1973,7 +2018,7 @@ h1.page-title {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Plan card — timeline-style list of today's plan.
+   Plan card - timeline-style list of today's plan.
    ═══════════════════════════════════════════════════════════════════ */
 .plan-card .plan-sub {
   display: block;
@@ -2001,7 +2046,7 @@ h1.page-title {
   font-size: 13.5px;
 }
 
-/* Vertical timeline — a thin accent line runs down the left edge,
+/* Vertical timeline - a thin accent line runs down the left edge,
    each block has a dot marker that sits on the line. */
 .plan-timeline {
   position: relative;
@@ -2158,7 +2203,7 @@ hr.soft {
 
 /* ─── v0.3 modern refresh ────────────────────────────────────────────── */
 
-/* Token overrides — match the warm "study desk" palette set up in :root.
+/* Token overrides - match the warm "study desk" palette set up in :root.
    The original draft of this block used a purple/lavender accent; these
    are the warm-amber replacements. Don't add gradients back here. */
 :root {
@@ -2168,13 +2213,16 @@ hr.soft {
   --ring-accent: 0 0 0 2px rgba(232, 162, 58, 0.22);
 }
 
+/* Translucent card surface — matches the airy look of the focus/Zen heroes
+   so every dashboard card reads as one family. */
 .card {
-  background: var(--bg-elev);
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow 160ms ease, border-color 160ms ease;
+  background: color-mix(in srgb, var(--bg-elev) 55%, transparent);
+  box-shadow: none;
+  transition: box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
 }
 .card:hover {
-  box-shadow: var(--shadow-md);
+  background: color-mix(in srgb, var(--bg-elev) 75%, transparent);
+  box-shadow: var(--shadow-sm);
 }
 .card.clickable { cursor: pointer; }
 .card.clickable:hover {
@@ -2182,7 +2230,7 @@ hr.soft {
 }
 
 button.primary {
-  /* Solid accent — no gradient. Cleaner, more "designed" feel.
+  /* Solid accent - no gradient. Cleaner, more "designed" feel.
      Ink colour resolves to --bg so it stays readable on any theme. */
   background: var(--accent);
   color: var(--bg);
@@ -2200,7 +2248,7 @@ button.primary:disabled {
 }
 button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 
-/* Pills — risk-score indicators. All resolve through theme tokens so
+/* Pills - risk-score indicators. All resolve through theme tokens so
    they pick up the active palette's productive/leisure/distraction hues. */
 .pill.risk-low    { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
 .pill.risk-mid    { background: var(--leisure-soft); color: var(--leisure); border-color: transparent; }
@@ -2216,19 +2264,45 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 .pager { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 .pager .page-num { color: var(--text-dim); font-size: 12px; padding: 0 8px; }
 
-/* Repo cards (People page + dashboard) */
+/* Repo cards (People page + dashboard) — flex column so the meta line is
+   pinned to the footer and every card in a row lines up. */
 .repo-card {
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 10px 12px;
-  background: var(--bg-elev-2);
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--bg-elev-2) 70%, transparent);
   cursor: pointer;
-  transition: border-color 120ms, transform 120ms;
+  transition: border-color 120ms, transform 120ms, background 120ms;
 }
-.repo-card:hover { border-color: var(--accent-soft); transform: translateY(-1px); }
+.repo-card:hover {
+  border-color: var(--accent-soft);
+  background: var(--bg-elev-2);
+  transform: translateY(-1px);
+}
 .repo-card .name { font-weight: 600; }
 .repo-card .desc { color: var(--text-dim); font-size: 12.5px; margin-top: 2px; line-height: 1.35; }
 .repo-card .meta { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
+.repo-card .repo-desc {
+  color: var(--text-dim);
+  font-size: 12.5px;
+  margin-top: 4px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.repo-card .repo-meta {
+  margin-top: auto !important;
+  padding-top: 8px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 
 /* Compact burnout pill (Dashboard header) */
 .burnout-chip {
@@ -2249,7 +2323,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 .burnout-chip .dot.mid { background: var(--warn); }
 .burnout-chip .dot.high { background: var(--bad); }
 
-/* Activity trail — tiny stacked bars showing today vs 7d avg */
+/* Activity trail - tiny stacked bars showing today vs 7d avg */
 .trail {
   display: flex;
   align-items: center;
@@ -2271,7 +2345,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 .trail .leg.leisure     { color: #ffc087; }
 .trail .leg.mobile      { color: #9aa8ff; }
 
-/* Modal — wider version for repo detail */
+/* Modal - wider version for repo detail */
 .modal.wide { width: min(880px, calc(100vw - 64px)); max-height: 85vh; overflow-y: auto; }
 
 /* "Now" live usage strip shown above dashboard cards */
@@ -2410,7 +2484,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   transition: width 240ms ease;
 }
 
-/* Default sizing — gives the centre file viewer φ-share of width.
+/* Default sizing - gives the centre file viewer φ-share of width.
    Tree stays compact, code viewer gets the most space, AI side ~equal
    to tree. Below 1100px we stack the AI panel under the code. */
 .repo-walkthrough-grid {
@@ -2550,7 +2624,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 }
 .repo-walk-ask input:focus { outline: none; border-color: var(--accent); }
 
-/* ─── Spinner — used everywhere we wait on the network or a model.
+/* ─── Spinner - used everywhere we wait on the network or a model.
    Two sizes: 16px (inline) and 26px (block). Pure CSS, theme-tinted. */
 .spinner {
   display: inline-block;
@@ -2699,7 +2773,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   white-space: nowrap;
 }
 
-/* Each candidate row inside a merge group — radio | name+meta | (nothing) */
+/* Each candidate row inside a merge group - radio | name+meta | (nothing) */
 .merge-row {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
@@ -2766,11 +2840,11 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   gap: 6px;
 }
 
-/* ─── Settings — vertical rail + single-column content ───────────── */
+/* ─── Settings - vertical rail + single-column content ───────────── */
 .settings-layout {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 28px;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 40px;
   align-items: flex-start;
   min-height: calc(100vh - 100px);
 }
@@ -2793,7 +2867,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   margin: 0 0 4px 0;
   letter-spacing: -0.02em;
   color: var(--text);
-  /* Disable the global page-title gradient — this is a sub-title now. */
+  /* Disable the global page-title gradient - this is a sub-title now. */
   background: none;
   -webkit-text-fill-color: var(--text);
   color: var(--text);
@@ -2807,10 +2881,11 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   all: unset;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
-  border-radius: 8px;
+  gap: 3px;
+  padding: 11px 14px;
+  border-radius: 10px;
   cursor: pointer;
+  transition: background 0.12s ease;
   border-left: 2px solid transparent;
   transition: background 140ms ease, border-color 140ms ease;
 }
@@ -2833,11 +2908,12 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 }
 
 .settings-content {
-  max-width: 740px;
+  max-width: 820px;
+  padding-bottom: 48px;
 }
 .settings-content-head {
-  margin-bottom: 18px;
-  padding-bottom: 14px;
+  margin-bottom: 26px;
+  padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
 }
 .settings-content-title {
@@ -2848,7 +2924,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   color: var(--text);
 }
 
-/* ─── Settings scope — soften every card chrome inside a tab so they
+/* ─── Settings scope - soften every card chrome inside a tab so they
    read as grouped form-rows rather than 8 standalone "cards" stacked
    on top of each other. Each sub-tab keeps using <div className="card">
    in JSX, but the visual weight is dialled way down here.
@@ -2859,12 +2935,12 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   background: transparent;
   border: 0;
   border-radius: 0;
-  padding: 18px 0;
+  padding: 22px 0;
   margin: 0;
 }
 .settings-content .card + .card {
   border-top: 1px solid var(--border);
-  padding-top: 22px;
+  padding-top: 28px;
 }
 .settings-content .card::before { display: none; }
 .settings-content .card .card-title {
@@ -2879,11 +2955,11 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   gap: 8px;
 }
 .settings-content .card .card-title::before {
-  /* Drop the accent leading bar inside settings — it made every section
+  /* Drop the accent leading bar inside settings - it made every section
      look like a major heading. The uppercase tracker is the visual cue. */
   display: none;
 }
-/* Section headers (SectionHeader component) — match the same style */
+/* Section headers (SectionHeader component) - match the same style */
 .settings-content > div > .section-label,
 .settings-content > div > div[style*="letterSpacing: 1.4"] {
   margin-top: 22px;
@@ -2908,7 +2984,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 .settings-content textarea:focus {
   background: var(--bg);
 }
-/* The collapsibles still get their own surface — they're not "cards"
+/* The collapsibles still get their own surface - they're not "cards"
    in the same sense. Restore the bg-elev background, no border-top
    from above. */
 .settings-content details.settings-collapse {
@@ -2923,14 +2999,14 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 }
 .settings-content .danger-zone { border-top: 1px solid var(--border); padding-top: 18px; }
 
-/* SectionHeader — sits between merged sub-tabs (Activity tracking +
+/* SectionHeader - sits between merged sub-tabs (Activity tracking +
    Mobile wellbeing, Backup + Danger zone + Seed, etc.). Quiet uppercase
    tracker so it reads as a section divider, not a card heading. */
 .settings-section-header {
   margin: 28px 0 12px;
 }
 /* When it's the very first child of the content pane, drop the top
-   margin — the page title already provides breathing space above. */
+   margin - the page title already provides breathing space above. */
 .settings-content > .settings-section-header:first-child {
   margin-top: 0;
 }
@@ -2953,7 +3029,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   max-width: 60ch;
 }
 
-/* Quiet hairline divider — replaces inline <hr class="soft"> usages
+/* Quiet hairline divider - replaces inline <hr class="soft"> usages
    inside settings cards. Tighter spacing, theme-aware. */
 .settings-divider {
   height: 1px;
@@ -2962,7 +3038,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   opacity: 0.6;
 }
 
-/* ─── ToggleRow — uniform switch pattern for boolean settings.
+/* ─── ToggleRow - uniform switch pattern for boolean settings.
    Label / sublabel on the left, custom switch on the right. Used for
    "Auto-sync on startup", contrast, etc. Replaces ad-hoc <label> blocks
    that wrapped a default browser checkbox + free-text. */
@@ -2990,7 +3066,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   max-width: 50ch;
 }
 
-/* Custom switch — pure-CSS macOS-style toggle. The native <input> is
+/* Custom switch - pure-CSS macOS-style toggle. The native <input> is
    visually hidden but keyboard-focusable; the track + thumb spans
    render the look. Track is 36×20, thumb 16×16 with a 2px inset. */
 .settings-switch {
@@ -3042,7 +3118,166 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   outline-offset: 2px;
 }
 
-/* ─── Categorization overrides — clean rows + tinted category pills */
+/* System startup card */
+.settings-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.settings-card-head .hint {
+  display: block;
+  max-width: 54ch;
+  line-height: 1.45;
+}
+.app-identity-card {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 16% 24%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 34%),
+    var(--bg-elev);
+}
+.app-identity-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent),
+    0 12px 28px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.app-identity-copy {
+  min-width: 0;
+}
+.app-identity-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.app-identity-badges span {
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+.startup-health {
+  flex-shrink: 0;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: var(--bg-elev);
+}
+.startup-health.ok {
+  color: var(--productive);
+  border-color: color-mix(in srgb, var(--productive) 35%, var(--border));
+  background: color-mix(in srgb, var(--productive) 10%, transparent);
+}
+.startup-health.warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 35%, var(--border));
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+.startup-status-panel {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elev) 62%, transparent);
+}
+.startup-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.startup-status-pill {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg-elev-2);
+}
+.startup-status-pill small,
+.startup-status-pill strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.startup-status-pill small {
+  color: var(--text-faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 3px;
+}
+.startup-status-pill strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.startup-status-pill.ok { border-color: color-mix(in srgb, var(--productive) 30%, var(--border)); }
+.startup-status-pill.info { border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+.startup-status-pill.warn { border-color: color-mix(in srgb, var(--warn) 35%, var(--border)); }
+.startup-note {
+  display: block;
+  margin-top: 10px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+.startup-note.warn { color: var(--warn); }
+.startup-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.startup-actions button[disabled] {
+  opacity: 0.65;
+  cursor: wait;
+}
+@media (max-width: 720px) {
+  .settings-card-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .startup-health {
+    align-self: flex-start;
+  }
+  .startup-status-grid {
+    grid-template-columns: 1fr;
+  }
+  .app-identity-card {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+  .app-identity-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+  }
+  .app-identity-badges {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+/* ─── Categorization overrides - clean rows + tinted category pills */
 .cat-overrides-form {
   display: flex;
   gap: 8px;
@@ -3104,7 +3339,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 .cat-overrides-pill {
   text-transform: capitalize;
 }
-/* Pill colour per category — uses theme tokens already, but make sure
+/* Pill colour per category - uses theme tokens already, but make sure
    they read correctly here too. */
 .cat-overrides-pill.cat-productive  { background: var(--productive-soft); color: var(--productive); }
 .cat-overrides-pill.cat-neutral     { background: var(--neutral-soft); color: var(--neutral); }
@@ -3152,14 +3387,602 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 }
 .settings-collapse-body > .card {
   /* When a CourseMaterialsCard etc. nests inside the collapse, drop its
-     own card chrome — the collapse already provides the surface. */
+     own card chrome - the collapse already provides the surface. */
   background: transparent;
   border: 0;
   padding: 0;
   margin: 0;
 }
 
-/* ─── Activity hero — big-number headline + actions ─────────────── */
+/* Digital Wellbeing - calm sync/setup surface inside Settings. */
+.wellbeing-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  letter-spacing: 0;
+}
+.wellbeing-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 190px);
+  align-items: stretch;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 11%, transparent), transparent 52%),
+    color-mix(in srgb, var(--bg-elev) 78%, transparent);
+}
+.wellbeing-hero.is-ready {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--productive) 10%, transparent), transparent 52%),
+    color-mix(in srgb, var(--bg-elev) 78%, transparent);
+}
+.wellbeing-hero-copy {
+  min-width: 0;
+}
+.wellbeing-kicker {
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.wellbeing-hero h3 {
+  margin: 0 0 3px;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 750;
+  line-height: 1.15;
+}
+.wellbeing-hero small {
+  display: block;
+  max-width: 48ch;
+  line-height: 1.4;
+}
+.wellbeing-status-card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 12px 12px 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 54%, transparent);
+}
+.wellbeing-status-card::before {
+  content: "";
+  position: absolute;
+  inset: 10px auto 10px 8px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--warn);
+}
+.wellbeing-status-card.ok::before {
+  background: var(--productive);
+}
+.wellbeing-status-card strong,
+.wellbeing-status-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wellbeing-status-card strong {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 800;
+}
+.wellbeing-status-card small {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.wellbeing-status-dot {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 12%, transparent);
+}
+.wellbeing-status-card.ok .wellbeing-status-dot {
+  background: var(--productive);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--productive) 12%, transparent);
+}
+.wellbeing-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.wellbeing-metric {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elev) 72%, transparent);
+}
+.wellbeing-metric small,
+.wellbeing-metric strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wellbeing-metric small {
+  margin-bottom: 3px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.wellbeing-metric strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.wellbeing-panel {
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elev) 58%, transparent);
+}
+.wellbeing-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.wellbeing-panel-head strong,
+.wellbeing-panel-head small {
+  display: block;
+}
+.wellbeing-panel-head > div:first-child {
+  min-width: 0;
+}
+.wellbeing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.wellbeing-actions button,
+.wellbeing-path-row button {
+  min-height: 34px;
+  border-radius: 8px;
+}
+.wellbeing-actions button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+.wellbeing-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(240px, 0.92fr);
+  gap: 10px;
+}
+.wellbeing-tile {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 38%, transparent);
+}
+.wellbeing-tile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.wellbeing-tile-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wellbeing-tile-head .pill {
+  flex-shrink: 0;
+}
+.wellbeing-path-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.wellbeing-path-row input {
+  min-width: 0;
+  height: 34px;
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.wellbeing-path-resolved {
+  display: grid;
+  gap: 4px;
+  margin-top: 9px;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 34%, transparent);
+}
+.wellbeing-path-resolved small,
+.wellbeing-path-resolved code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wellbeing-path-resolved code {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.wellbeing-diagnostic {
+  display: grid;
+  gap: 3px;
+  margin-top: 9px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--danger, #e5484d) 38%, var(--border));
+  background: color-mix(in srgb, var(--danger, #e5484d) 8%, var(--bg));
+}
+.wellbeing-diagnostic strong,
+.wellbeing-diagnostic small {
+  display: block;
+}
+.wellbeing-diagnostic strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.wellbeing-diagnostic small {
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.wellbeing-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.wellbeing-device {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elev-2) 42%, transparent);
+}
+.wellbeing-device-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--productive);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--productive) 12%, transparent);
+}
+.wellbeing-device.warn {
+  border-color: color-mix(in srgb, var(--leisure) 28%, var(--border));
+}
+.wellbeing-device-dot.warn {
+  background: var(--leisure);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--leisure) 12%, transparent);
+}
+.wellbeing-device div {
+  min-width: 0;
+}
+.wellbeing-device strong,
+.wellbeing-device small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wellbeing-device strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.wellbeing-device .pill {
+  flex-shrink: 0;
+}
+.wellbeing-empty {
+  display: flex;
+  min-height: 48px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elev-2) 28%, transparent);
+}
+.wellbeing-empty strong {
+  color: var(--text);
+  font-size: 13px;
+}
+/* Person-card hover actions — hidden until the card is hovered so the grid
+   stays calm; the follow star stays always-visible. */
+.person-card-actions {
+  position: absolute;
+  top: 8px;
+  right: 36px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.person-card:hover .person-card-actions,
+.person-card-actions:focus-within {
+  opacity: 1;
+}
+
+/* SRM diagnose — reads as a separate troubleshooting tool, collapsed until
+   needed, amber-tinted so it doesn't blend into the settings card. */
+.srm-diag-panel {
+  border: 1px dashed color-mix(in srgb, var(--warn, #f5b84b) 45%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warn, #f5b84b) 4%, transparent);
+}
+.srm-diag-panel > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+}
+.srm-diag-panel > summary::-webkit-details-marker { display: none; }
+.srm-diag-badge {
+  color: var(--warn, #f5b84b);
+  font-size: 14px;
+}
+.srm-diag-body { padding: 0 14px 12px; }
+
+/* Pairing QR card — the QR renders inline so the phone can scan straight
+   off the desktop screen. */
+.pairing-qr-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--accent-soft) 40%, transparent);
+}
+.pairing-qr-img {
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px;
+  flex: 0 0 auto;
+}
+.pairing-qr-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.pairing-qr-code {
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 6px;
+  color: var(--accent);
+  margin: 2px 0;
+}
+
+/* Paired devices list (cloud panel) */
+.paired-devices {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.paired-devices-summary {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+}
+.wellbeing-note {
+  margin: 0 0 9px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.42;
+}
+.paired-device-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--bg) 36%, transparent);
+}
+.paired-device-icon {
+  font-size: 18px;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.paired-device-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.paired-device-info strong {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.paired-device-info small {
+  font-size: 11.5px;
+}
+.ghost.small.danger {
+  color: var(--danger, #e5484d);
+  border-color: color-mix(in srgb, var(--danger, #e5484d) 40%, var(--border));
+}
+
+.wellbeing-adb-help {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--bg) 36%, transparent);
+}
+.wellbeing-adb-help > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+.wellbeing-adb-help > summary::-webkit-details-marker { display: none; }
+.wellbeing-adb-help > summary::before {
+  content: "▸";
+  color: var(--text-faint);
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+.wellbeing-adb-help[open] > summary::before { transform: rotate(90deg); }
+.wellbeing-adb-help ol {
+  margin: 10px 0 8px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wellbeing-adb-help li {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.wellbeing-adb-help li b { color: var(--text); font-weight: 600; }
+.wellbeing-adb-help code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+}
+
+.wellbeing-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.wellbeing-steps li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 32%, transparent);
+}
+.wellbeing-steps li > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+}
+.wellbeing-steps li.done {
+  border-color: color-mix(in srgb, var(--productive) 34%, var(--border));
+}
+.wellbeing-steps li.done > span {
+  background: var(--productive-soft);
+  color: var(--productive);
+}
+.wellbeing-steps li.active {
+  border-color: color-mix(in srgb, var(--warn) 38%, var(--border));
+}
+.wellbeing-steps li.active > span {
+  background: var(--leisure-soft);
+  color: var(--leisure);
+}
+.wellbeing-steps strong,
+.wellbeing-steps small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wellbeing-steps strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.wellbeing-steps small {
+  font-size: 11px;
+}
+@media (max-width: 780px) {
+  .wellbeing-hero,
+  .wellbeing-grid {
+    grid-template-columns: 1fr;
+  }
+  .wellbeing-panel-head {
+    flex-direction: column;
+  }
+  .wellbeing-actions {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 560px) {
+  .wellbeing-metrics,
+  .wellbeing-steps {
+    grid-template-columns: 1fr;
+  }
+  .wellbeing-path-row {
+    grid-template-columns: 1fr;
+  }
+  .wellbeing-actions,
+  .wellbeing-actions button,
+  .wellbeing-path-row button {
+    width: 100%;
+  }
+}
+
+/* ─── Activity hero - big-number headline + actions ─────────────── */
 .activity-hero {
   display: flex;
   align-items: center;
@@ -3277,7 +4100,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   overflow: hidden;
   font-size: 10.5px;
 }
-/* Theme-tokenised category fills — bucket bars match every other
+/* Theme-tokenised category fills - bucket bars match every other
    activity surface (trail, top apps, stat pills). */
 .bucket-seg.cat-productive  { background: var(--productive); color: var(--bg); font-weight: 600; }
 .bucket-seg.cat-distraction { background: var(--distraction); color: var(--bg); font-weight: 600; }
@@ -3292,7 +4115,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   font-size: 11px;
 }
 
-/* ─── People page collapsibles — Browse repos / Recent activity ──── */
+/* ─── People page collapsibles - Browse repos / Recent activity ──── */
 .people-collapsible {
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -3440,7 +4263,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   line-height: 1.4;
 }
 
-/* ─── Sync menu — control-panel style ──────────────────────────────── */
+/* ─── Sync menu - control-panel style ──────────────────────────────── */
 .people-sync-menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -3498,7 +4321,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 
 /* === v0.3 addenda: wire new components to the refreshed CSS === */
 
-/* Burnout chip — when a risk is set, stain the whole pill (not just dot) */
+/* Burnout chip - when a risk is set, stain the whole pill (not just dot) */
 .burnout-chip.risk-low    { background: rgba(78, 205, 196, 0.10); border-color: rgba(121, 226, 218, 0.35); }
 .burnout-chip.risk-mid    { background: rgba(255, 166, 87, 0.10); border-color: rgba(255, 192, 135, 0.35); }
 .burnout-chip.risk-high   { background: rgba(239, 107, 90, 0.12); border-color: rgba(255, 142, 130, 0.4); }
@@ -3506,7 +4329,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
 .burnout-chip.risk-mid .dot  { background: var(--warn); }
 .burnout-chip.risk-high .dot { background: var(--bad); }
 
-/* Trail — stacked vertical columns. Outer .trail-day is the unclipped
+/* Trail - stacked vertical columns. Outer .trail-day is the unclipped
    container (so day labels below are visible); inner .trail-day-stack clips
    the colored legs into a nice rounded rect. */
 .trail { display: flex; align-items: flex-end; gap: 6px; min-height: 110px; padding: 4px 0 0; }
@@ -3514,7 +4337,7 @@ button:focus-visible { outline: none; box-shadow: var(--ring-accent); }
   display: flex; flex-direction: column; align-items: stretch;
   width: 34px;
   position: relative;
-  /* no overflow:hidden here — labels live outside the stack */
+  /* no overflow:hidden here - labels live outside the stack */
 }
 .trail-day-stack {
   display: flex; flex-direction: column-reverse; align-items: stretch;
@@ -3591,7 +4414,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.3.1 addenda — Dashboard 7-cat trail, suggestion list, top apps,
+   v0.3.1 addenda - Dashboard 7-cat trail, suggestion list, top apps,
    expandable ActivityFeed. Added to complete the UI wired up in
    Dashboard.jsx + ActivityFeed.jsx.
    ═══════════════════════════════════════════════════════════════════════ */
@@ -3600,7 +4423,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .trail-day .leg.neutral { background: #8b98a5; }
 .trail-day .leg.rest    { background: #5eead4; opacity: 0.75; }
 
-/* Selected day column — outline the stack, not the whole container */
+/* Selected day column - outline the stack, not the whole container */
 .trail-day {
   cursor: pointer;
   transition: transform 120ms ease;
@@ -3652,7 +4475,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .chip.legend-neutral::before { background: #8b98a5; }
 .chip.legend-rest::before    { background: #5eead4; }
 
-/* Chip "disabled" / toggled-off visual — for hiding categories */
+/* Chip "disabled" / toggled-off visual - for hiding categories */
 .chip.disabled {
   opacity: 0.4;
   text-decoration: line-through;
@@ -3687,7 +4510,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .suggestion-row .sg-pill.sg-nourish  { background: rgba(255, 166, 87, 0.10); border-color: rgba(255,192,135,0.35); color: #fed7aa; }
 .suggestion-row .sg-pill.sg-social   { background: rgba(192, 132, 252, 0.10); border-color: rgba(192,132,252,0.35); color: #e9d5ff; }
 
-/* Top Apps rows — used on Dashboard inside TopAppsCard */
+/* Top Apps rows - used on Dashboard inside TopAppsCard */
 .app-row {
   display: flex;
   flex-direction: column;
@@ -3729,7 +4552,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .app-row-time strong { font-size: 13px; color: var(--text); }
 .app-row-time small { font-size: 11px; opacity: 0.75; }
 
-/* Inline category pill — same shape as src-tag, coloured per category. */
+/* Inline category pill - same shape as src-tag, coloured per category. */
 .cat-tag {
   display: inline-flex;
   align-items: center;
@@ -3752,7 +4575,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .cat-tag.cat-mobile      { color: var(--mobile); background: rgba(232, 162, 58, 0.10); border-color: rgba(232, 162, 58, 0.22); }
 .cat-tag.cat-other       { color: var(--text-dim); background: var(--bg-elev); border-color: var(--border); }
 
-/* Slimmer bar for app rows — sits directly under the main row. */
+/* Slimmer bar for app rows - sits directly under the main row. */
 .app-row-bar {
   height: 4px;
   margin-left: 20px; /* align under the name, past the cat-dot */
@@ -3779,7 +4602,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 /* Centered row alignment util */
 .row.center { justify-content: center; }
 
-/* ─── ActivityFeed card — expandable push list ─────────────────────── */
+/* ─── ActivityFeed card - expandable push list ─────────────────────── */
 .feed-card .chip-row { display: inline-flex; gap: 4px; }
 .feed-filters select {
   background: var(--bg-elev-2);
@@ -3834,7 +4657,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   font-size: 14px;
 }
-/* Repo name — a button so the click target is unambiguous and doesn't
+/* Repo name - a button so the click target is unambiguous and doesn't
    depend on event bubbling. Styled to look like an inline link. */
 .push-repo {
   background: transparent;
@@ -3915,7 +4738,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.3.2 — unified Activity section (desktop + mobile)
+   v0.3.2 - unified Activity section (desktop + mobile)
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* Section card with a subtle gradient accent top-border */
@@ -3934,7 +4757,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   opacity: 0.75;
 }
 
-/* Stats strip — 4 colored pills */
+/* Stats strip - 4 colored pills */
 .stats-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -4010,7 +4833,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 /* Taller trail bars, weekday + day labels visible below each column */
 .trail-pane .trail {
   min-height: 172px;
-  align-items: flex-end;
+  align-items: stretch;
   padding: 6px 0 4px; /* label is part of .trail-day now, no extra padding needed */
 }
 .trail-pane .trail-day {
@@ -4018,6 +4841,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 .trail-pane .trail-day-stack {
   min-height: 132px;
+  flex: 1 1 auto;
 }
 .trail-pane .trail-day .day {
   font-size: 11px;
@@ -4038,7 +4862,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   color: var(--text);
 }
 
-/* Live "Now" banner — shown at top of Top apps pane when the tracker is on. */
+/* Live "Now" banner - shown at top of Top apps pane when the tracker is on. */
 .live-now {
   display: inline-flex;
   align-items: center;
@@ -4128,7 +4952,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .last-session strong { color: var(--text); }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Burnout "Today's read" card — v0.3.3
+   Burnout "Today's read" card - v0.3.3
    Gradient top-accent that shifts hue by risk band + inline vibe logger.
    ═══════════════════════════════════════════════════════════════════ */
 .burnout-read-card {
@@ -4170,7 +4994,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   font-size: 12px;
 }
 
-/* Risk hero — big score on the left, summary + meter on the right. */
+/* Risk hero - big score on the left, summary + meter on the right. */
 .risk-hero {
   display: grid;
   grid-template-columns: 96px minmax(0, 1fr);
@@ -4297,7 +5121,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 
 
 /* ═══════════════════════════════════════════════════════════════════
-   Source tag — text pill replacement for 💻/📱 emojis.
+   Source tag - text pill replacement for 💻/📱 emojis.
    ═══════════════════════════════════════════════════════════════════ */
 .src-tag {
   display: inline-flex;
@@ -4318,7 +5142,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .src-tag.both    { color: #5eead4; background: rgba(94,234,212,0.10); border-color: rgba(94,234,212,0.22); }
 
 /* ═══════════════════════════════════════════════════════════════════
-   DayNoteCard — private per-day journal.
+   DayNoteCard - private per-day journal.
    ═══════════════════════════════════════════════════════════════════ */
 .day-note-card {
   position: relative;
@@ -4352,7 +5176,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 .day-note-summary div { margin-top: 2px; }
 
-/* Day-note history modal — passcode-gated, read-only list of past entries */
+/* Day-note history modal - passcode-gated, read-only list of past entries */
 .day-note-history { max-height: 420px; overflow: auto; }
 .day-note-history-list {
   display: flex;
@@ -4390,7 +5214,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Ask Apex — drawer + rendered markdown styles.
+   Ask Apex - drawer + rendered markdown styles.
    ═══════════════════════════════════════════════════════════════════ */
 /* Attached file preview inside the Ask Apex drawer. */
 .ask-apex-attach {
@@ -4438,6 +5262,96 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   border-radius: 6px;
   font-size: 12px;
 }
+
+/* ── Interactive chat layout ─────────────────────────────────────────── */
+.ask-apex-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: 84vh;
+}
+.ask-apex-header {
+  align-items: flex-start;
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.ask-apex-header h3 { line-height: 1.2; }
+
+.ask-apex-transcript {
+  flex: 1 1 auto;
+  min-height: 200px;
+  overflow-y: auto;
+  padding: 12px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ask-apex-empty { padding: 4px 0; }
+
+.ask-apex-msg { display: flex; flex-direction: column; gap: 3px; }
+.ask-apex-msg.user { align-items: flex-end; }
+.ask-apex-msg-role {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  padding: 0 2px;
+}
+.ask-apex-msg-body { max-width: 92%; }
+.ask-apex-msg.user .ask-apex-msg-body { max-width: 80%; }
+.ask-apex-user-text {
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  color: var(--text);
+  border-radius: 12px 12px 4px 12px;
+  padding: 8px 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ask-apex-msg.assistant .ask-apex-response { margin-top: 0; }
+.ask-apex-msg-actions {
+  margin-top: 4px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.ask-apex-msg:hover .ask-apex-msg-actions { opacity: 1; }
+
+.ask-apex-typing { display: inline-flex; gap: 4px; padding: 8px 2px; }
+.ask-apex-typing i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-faint);
+  animation: askApexBlink 1.2s infinite ease-in-out;
+}
+.ask-apex-typing i:nth-child(2) { animation-delay: 0.18s; }
+.ask-apex-typing i:nth-child(3) { animation-delay: 0.36s; }
+@keyframes askApexBlink {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+
+.ask-apex-composer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  margin-top: 6px;
+}
+.ask-apex-composer textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 46px;
+  max-height: 160px;
+}
+.ask-apex-composer-foot {
+  margin-top: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.ghost.danger { color: var(--danger, #e5484d); border-color: color-mix(in srgb, var(--danger, #e5484d) 45%, var(--border)); }
 
 .ask-apex-response {
   margin-top: 14px;
@@ -4504,7 +5418,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═════════════════════════════════════════════════════════════════════
-   Tech-stack legend (dots under language bar) — repo detail modal
+   Tech-stack legend (dots under language bar) - repo detail modal
    ═════════════════════════════════════════════════════════════════════ */
 .lang-legend {
   display: flex;
@@ -4537,7 +5451,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .lang-dot small { color: var(--muted); font-size: 10px; }
 
 /* ═════════════════════════════════════════════════════════════════════
-   README markdown rendering — repo detail modal
+   README markdown rendering - repo detail modal
    ═════════════════════════════════════════════════════════════════════ */
 .readme-md {
   max-height: 360px;
@@ -4600,7 +5514,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .readme-md em { color: var(--text-dim); }
 
 /* ═════════════════════════════════════════════════════════════════════
-   PersonModal — tighter header, compact action row, LinkedIn-aware
+   PersonModal - tighter header, compact action row, LinkedIn-aware
    ═════════════════════════════════════════════════════════════════════ */
 .person-modal .person-modal-head {
   display: flex;
@@ -4661,7 +5575,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .muted.small { font-size: 11px; }
 
 /* ═════════════════════════════════════════════════════════════════════
-   Weekly goals editor — cleaner row layout, presets, completion styling
+   Weekly goals editor - cleaner row layout, presets, completion styling
    ═════════════════════════════════════════════════════════════════════ */
 .weekly-goals .wg-header { align-items: flex-start; margin-bottom: 12px; }
 .weekly-goals .card-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
@@ -4780,7 +5694,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   color: var(--text);
 }
 
-/* ── Mood trend rows — hover cue + section ──────────────────────── */
+/* ── Mood trend rows - hover cue + section ──────────────────────── */
 .mood-trend .mood-row:hover {
   background: var(--bg-elev);
 }
@@ -5018,7 +5932,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.9 — CP leaderboard per-person summary
+   v0.9 - CP leaderboard per-person summary
    ═══════════════════════════════════════════════════════════════════════ */
 .cp-leaderboard-row {
   display: flex;
@@ -5064,7 +5978,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.9 — RepoDetailModal: project chat tab
+   v0.9 - RepoDetailModal: project chat tab
    ═══════════════════════════════════════════════════════════════════════ */
 .repo-modal-tabs {
   display: inline-flex;
@@ -5184,7 +6098,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v1.1 — Header consolidation: Insights chip + Overflow menu
+   v1.1 - Header consolidation: Insights chip + Overflow menu
    ═══════════════════════════════════════════════════════════════════════ */
 .insights-chip-wrap { position: relative; }
 .insights-chip {
@@ -5370,7 +6284,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .overflow-menu-item:hover { background: var(--bg-elev-2); color: var(--accent); }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v1.2 — Backfill activity (Day-note card)
+   v1.2 - Backfill activity (Day-note card)
    ═══════════════════════════════════════════════════════════════════════ */
 .backfill-toggle {
   width: 100%;
@@ -5430,7 +6344,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .backfill-recent li::marker { color: var(--text-faint); }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v1.3 — Brain dump modal (Tasks page)
+   v1.3 - Brain dump modal (Tasks page)
    ═══════════════════════════════════════════════════════════════════════ */
 .brain-dump-modal {
   max-height: 88vh;
@@ -5534,7 +6448,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .brain-dump-links a:hover { text-decoration: underline; }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v1.2 — Course materials list (Settings → Schedule)
+   v1.2 - Course materials list (Settings → Schedule)
    ═══════════════════════════════════════════════════════════════════════ */
 .course-mat-group {
   border: 1px solid var(--border);
@@ -5627,7 +6541,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v1.1 — People card additions: Follow ★ + 14d heat-strip
+   v1.1 - People card additions: Follow ★ + 14d heat-strip
    ═══════════════════════════════════════════════════════════════════════ */
 .person-card.following {
   border-color: rgba(232, 162, 58, 0.45);
@@ -5681,7 +6595,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v1.1 — Quick capture modal (Cmd/Ctrl+Shift+N)
+   v1.1 - Quick capture modal (Cmd/Ctrl+Shift+N)
    ═══════════════════════════════════════════════════════════════════════ */
 .quick-capture-scrim {
   align-items: flex-start !important;
@@ -5752,7 +6666,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v1.0 — Habit streak badge
+   v1.0 - Habit streak badge
    ═══════════════════════════════════════════════════════════════════════ */
 .habit-streak-badge {
   display: inline-flex;
@@ -5769,7 +6683,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v1.0 — Evening review chip
+   v1.0 - Evening review chip
    ═══════════════════════════════════════════════════════════════════════ */
 .evening-chip-wrap { position: relative; }
 .evening-chip {
@@ -5866,7 +6780,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.9 — Recommendation chip ("What now?")
+   v0.9 - Recommendation chip ("What now?")
    ═══════════════════════════════════════════════════════════════════════ */
 .recommend-chip-wrap { position: relative; }
 .recommend-chip {
@@ -5991,9 +6905,9 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.9 — Upcoming: "Due this day" section
+   v0.9 - Upcoming: "Due this day" section
    ═══════════════════════════════════════════════════════════════════════ */
-/* Upcoming — per-day cards. Today gets prominent accent treatment; other
+/* Upcoming - per-day cards. Today gets prominent accent treatment; other
    days use a quiet baseline. Replaces the inline-styled day headers. */
 .upcoming-day {
   margin-bottom: 12px;
@@ -6147,7 +7061,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.8 — Push card expand panel (live commits + AI summary)
+   v0.8 - Push card expand panel (live commits + AI summary)
    ═══════════════════════════════════════════════════════════════════════ */
 .push-expanded-actions {
   display: flex;
@@ -6200,7 +7114,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .push-summary small { display: block; margin-top: 6px; }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.8 — Dashboard header actions + burnout popover
+   v0.8 - Dashboard header actions + burnout popover
    ═══════════════════════════════════════════════════════════════════════ */
 .dashboard-actions {
   display: flex;
@@ -6219,7 +7133,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   white-space: nowrap;
 }
 
-/* Burnout chip — now an interactive button that opens a popover. */
+/* Burnout chip - now an interactive button that opens a popover. */
 .burnout-chip-wrap {
   position: relative;
 }
@@ -6325,7 +7239,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.9 — Inline goal-add on Weekly goals card
+   v0.9 - Inline goal-add on Weekly goals card
    ═══════════════════════════════════════════════════════════════════════ */
 .goal-quick-add-toggle {
   width: 100%;
@@ -6378,7 +7292,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.8 — Weekly goals card breathing room
+   v0.8 - Weekly goals card breathing room
    ═══════════════════════════════════════════════════════════════════════ */
 .goal-list {
   display: flex;
@@ -6465,7 +7379,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .goal-bump:disabled { opacity: 0.35; cursor: default; }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.7 — Class row edit-for-today affordance
+   v0.7 - Class row edit-for-today affordance
    ═══════════════════════════════════════════════════════════════════════ */
 .class-row {
   position: relative;
@@ -6494,8 +7408,590 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .class-row.overridden:has(.pill.teal) { border-left-color: rgba(94,234,212,0.55); }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.7 — LiveTimer (universal "what am I doing now" timer)
+   v0.7 - LiveTimer (universal "what am I doing now" timer)
    ═══════════════════════════════════════════════════════════════════════ */
+/* Routine guard - wake/sleep/objective discipline surface. */
+.routine-panel {
+  margin-top: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 58%),
+    var(--bg-elev);
+  border-radius: var(--r-md);
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+}
+.routine-head,
+.routine-head-actions,
+.routine-strip,
+.routine-time-row,
+.routine-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.routine-head {
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.routine-kicker {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.routine-title {
+  margin: 1px 0 0;
+  font-size: 18px;
+  line-height: 1.15;
+}
+.routine-grid {
+  display: grid;
+  grid-template-columns:
+    minmax(264px, 0.9fr)
+    minmax(264px, 0.9fr)
+    minmax(280px, 1.35fr)
+    minmax(216px, 0.9fr);
+  gap: 12px;
+  align-items: end;
+}
+.routine-wake { grid-column: 1; }
+.routine-sleep { grid-column: 2; }
+.routine-objective { grid-column: 3; }
+.routine-task { grid-column: 4; }
+.routine-mini { grid-column: 1; }
+.routine-checks { grid-column: 2 / 5; }
+.routine-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.routine-field.time-mode {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--bg) 68%, var(--bg-elev));
+}
+.routine-field.time-mode.done {
+  border-color: color-mix(in srgb, var(--productive) 38%, var(--border));
+  background: color-mix(in srgb, var(--productive-soft) 42%, var(--bg));
+}
+.routine-field label {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+.routine-field input,
+.routine-field select,
+.routine-field textarea {
+  min-width: 0;
+}
+.routine-task select {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.routine-objective input {
+  font-weight: 600;
+}
+.routine-mini input {
+  max-width: 86px;
+}
+.routine-checks {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 10px 0 4px;
+}
+.routine-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+}
+.routine-switch input {
+  width: auto;
+  accent-color: var(--accent);
+}
+.routine-time-row input[type="time"] {
+  width: 104px;
+  flex-shrink: 0;
+}
+.routine-segment {
+  display: inline-flex;
+  flex: 1;
+  min-width: 128px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: var(--r-sm);
+  padding: 2px;
+  gap: 2px;
+}
+.routine-segment button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 6px 7px;
+  border-radius: calc(var(--r-sm) - 2px);
+  min-width: 60px;
+}
+.routine-segment button.active {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.routine-strip {
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.routine-status,
+.routine-linked,
+.routine-nudge {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: var(--text-dim);
+  font-size: 11px;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.routine-status.done {
+  border-color: color-mix(in srgb, var(--productive) 45%, var(--border));
+  background: var(--productive-soft);
+  color: var(--text);
+}
+.routine-linked {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.routine-nudge {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+  background: color-mix(in srgb, var(--warn) 12%, var(--bg));
+  color: var(--text);
+}
+.routine-spacer {
+  flex: 1;
+  min-width: 20px;
+}
+.routine-sync {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.routine-sync summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 700;
+}
+.routine-sync-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+.routine-inline input {
+  flex: 1;
+}
+.routine-sync-result {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+}
+.routine-sync-result img {
+  width: 96px;
+  height: 96px;
+  border-radius: var(--r-sm);
+  background: #fff;
+  padding: 4px;
+}
+.routine-close-scrim {
+  z-index: 80;
+}
+.routine-close-modal {
+  width: min(520px, calc(100vw - 32px));
+}
+.routine-close-meta {
+  margin-top: 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+@media (max-width: 1500px) {
+  .routine-grid {
+    grid-template-columns: repeat(2, minmax(264px, 1fr));
+  }
+  .routine-wake,
+  .routine-sleep,
+  .routine-objective,
+  .routine-task,
+  .routine-mini,
+  .routine-checks {
+    grid-column: auto;
+  }
+  .routine-objective {
+    grid-column: 1 / -1;
+  }
+  .routine-checks {
+    grid-column: 1 / -1;
+  }
+  .routine-sync-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .routine-head,
+  .routine-strip {
+    align-items: stretch;
+  }
+  .routine-head {
+    flex-direction: column;
+  }
+  .routine-head-actions,
+  .routine-time-row,
+  .routine-inline {
+    width: 100%;
+  }
+  .routine-grid,
+  .routine-sync-grid {
+    grid-template-columns: 1fr;
+  }
+  .routine-wake,
+  .routine-sleep,
+  .routine-objective,
+  .routine-task,
+  .routine-mini,
+  .routine-checks {
+    grid-column: auto;
+  }
+  .routine-time-row input[type="time"] {
+    width: 100%;
+  }
+  .routine-segment {
+    flex: 1;
+  }
+  .routine-segment button {
+    flex: 1;
+  }
+}
+
+/* Zen mode - focus lock surface on the dashboard. */
+.zen-panel {
+  position: relative;
+  overflow: hidden;
+  margin: 0 0 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+  border-radius: var(--r-md);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 44%),
+    var(--bg-elev);
+  box-shadow: var(--shadow-sm);
+}
+.zen-compose {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.zen-compose-head,
+.zen-active-main,
+.zen-active-bottom,
+.zen-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.zen-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.zen-title {
+  margin: 2px 0 0;
+  font-size: 18px;
+  line-height: 1.15;
+}
+.zen-segment,
+.zen-profile-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+}
+.zen-segment button,
+.zen-profile-row button {
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+.zen-segment button.active,
+.zen-profile-row button.active {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.zen-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(260px, 1fr);
+  gap: 10px 14px;
+}
+.zen-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+.zen-field.wide { grid-column: 1 / -1; }
+.zen-field label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.zen-field input[type="text"],
+.zen-field input:not([type]),
+.zen-field input[type="number"] {
+  min-height: 34px;
+}
+.zen-duration-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.zen-duration-row input {
+  width: 82px;
+}
+.zen-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.zen-check input {
+  width: auto;
+}
+.zen-suggestions {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.zen-suggestions button,
+.zen-app-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-dim);
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.zen-suggestions button.on,
+.zen-app-chip {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.zen-suggestions button.on.danger,
+.zen-app-chip.blocked {
+  border-color: color-mix(in srgb, var(--distraction) 36%, var(--border));
+  background: var(--distraction-soft);
+  color: var(--distraction);
+}
+.zen-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.zen-history {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.zen-start {
+  min-width: 110px;
+}
+.zen-panel.active {
+  padding: 14px;
+}
+.zen-meter {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--zen-progress);
+  max-width: 100%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 13%, transparent), transparent);
+  pointer-events: none;
+}
+.zen-active-main,
+.zen-active-bottom {
+  position: relative;
+  z-index: 1;
+}
+.zen-mode-pill {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.zen-mode-pill.strict {
+  color: var(--distraction);
+  background: var(--distraction-soft);
+  border-color: color-mix(in srgb, var(--distraction) 24%, var(--border));
+}
+.zen-mode-pill.relaxed {
+  color: var(--leisure);
+  background: var(--leisure-soft);
+  border-color: color-mix(in srgb, var(--leisure) 24%, var(--border));
+}
+.zen-mode-pill.locked {
+  color: var(--leisure);
+  background: color-mix(in srgb, var(--leisure) 14%, var(--bg));
+  border-color: color-mix(in srgb, var(--leisure) 32%, var(--border));
+}
+.zen-mode-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.zen-mode-note strong {
+  color: var(--text);
+}
+.zen-mode-note small {
+  color: var(--accent);
+  font-weight: 700;
+}
+.zen-mode-note.mode-locked {
+  border-color: color-mix(in srgb, var(--leisure) 30%, var(--border));
+  background: color-mix(in srgb, var(--leisure) 10%, var(--bg));
+}
+.zen-meta {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.zen-clock {
+  min-width: 116px;
+  text-align: right;
+}
+.zen-clock strong {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 28px;
+  line-height: 1;
+  color: var(--text);
+}
+.zen-apps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+.zen-actions {
+  flex-shrink: 0;
+}
+.zen-actions button:disabled,
+.zen-quick-minutes .chip:disabled,
+.zen-duration-row .chip:disabled,
+.live-timer-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+.zen-lock-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.64);
+  backdrop-filter: blur(10px);
+}
+.zen-lock-panel {
+  width: min(460px, 100%);
+  border: 1px solid color-mix(in srgb, var(--distraction) 35%, var(--border));
+  border-radius: var(--r-lg);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-md);
+  padding: 24px;
+  text-align: center;
+}
+.zen-lock-eyebrow {
+  color: var(--distraction);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.zen-lock-panel h3 {
+  margin: 6px 0 4px;
+  font-size: 24px;
+}
+@media (max-width: 880px) {
+  .zen-grid {
+    grid-template-columns: 1fr;
+  }
+  .zen-field.wide {
+    grid-column: auto;
+  }
+  .zen-compose-head,
+  .zen-active-main,
+  .zen-active-bottom,
+  .zen-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .zen-clock {
+    text-align: left;
+  }
+}
+
 .live-timer {
   display: flex;
   align-items: center;
@@ -6513,7 +8009,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .live-timer.idle {
   justify-content: space-between;
 }
-/* Slim idle variant — much quieter than the old card. */
+/* Slim idle variant - much quieter than the old card. */
 .live-timer.idle-slim {
   display: flex;
   align-items: center;
@@ -6529,7 +8025,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   font-size: 13px;
 }
 
-/* Leisure-mode strip — tinted with the leisure category token so it
+/* Leisure-mode strip - tinted with the leisure category token so it
    reads as "you are not working right now". */
 .live-timer.leisure-strip {
   display: flex;
@@ -6579,7 +8075,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   color: var(--text);
 }
 
-/* Category tinting — soft left-edge band + matching ring colour. */
+/* Category tinting - soft left-edge band + matching ring colour. */
 .live-timer.running.cat-productive  { border-color: rgba(78,205,196,0.45); }
 .live-timer.running.cat-distraction { border-color: rgba(239,107,90,0.45); }
 .live-timer.running.cat-leisure     { border-color: rgba(255,166,87,0.45); }
@@ -6709,7 +8205,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   height: 26px;
 }
 
-/* Break-suggest banner — appears above the idle LiveTimer right after a
+/* Break-suggest banner - appears above the idle LiveTimer right after a
    productive timer auto-finishes. One-click takes a break. */
 .break-suggest {
   display: flex;
@@ -6734,7 +8230,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 .break-suggest .primary.small:hover { filter: brightness(1.1); }
 
-/* Break preset chips — only render when kind=break/rest in the start
+/* Break preset chips - only render when kind=break/rest in the start
    modal. Each chip prefills title / description / duration when clicked. */
 .break-presets {
   display: grid;
@@ -6766,7 +8262,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .break-preset-label { font-weight: 500; }
 .break-preset small { font-size: 10px; }
 
-/* Start-timer modal — kind picker grid + duration chips. */
+/* Start-timer modal - kind picker grid + duration chips. */
 .kind-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
@@ -6807,7 +8303,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.6 — Dashboard refactor (TodayCard tabs, top-row 3-col)
+   v0.6 - Dashboard refactor (TodayCard tabs, top-row 3-col)
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* Top row: Today / Classes / Weekly goals.
@@ -6829,7 +8325,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   .dashboard-top-row.grid-3 > .today-card { grid-column: auto; }
 }
 
-/* TodayCard — combines Plan + Tasks behind two tabs. */
+/* TodayCard - combines Plan + Tasks behind two tabs. */
 .today-card .today-head {
   margin-bottom: 12px;
 }
@@ -6865,7 +8361,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   font-weight: 600;
 }
 
-/* Compact task list inside TodayCard — denser than full Tasks-page rows. */
+/* Compact task list inside TodayCard - denser than full Tasks-page rows. */
 .today-task-list {
   display: flex;
   flex-direction: column;
@@ -6944,7 +8440,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.5 — Tasks page rows (overlap fix + breathing room)
+   v0.5 - Tasks page rows (overlap fix + breathing room)
    ═══════════════════════════════════════════════════════════════════════ */
 .task-row {
   display: grid;
@@ -7016,7 +8512,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   word-break: break-word;
 }
 
-/* Right cluster — priority pill + buttons. Wraps below content on
+/* Right cluster - priority pill + buttons. Wraps below content on
    narrow widths so nothing overlaps. */
 .task-row-actions {
   display: flex;
@@ -7052,7 +8548,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   border-color: var(--accent) !important;
 }
 
-/* Compact horizontal priority control replacing the old vertical stack —
+/* Compact horizontal priority control replacing the old vertical stack -
    the arrows no longer collide with the chip. */
 .task-priority-pill {
   display: inline-flex;
@@ -7107,7 +8603,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.4 — AI summary in RepoDetailModal
+   v0.4 - AI summary in RepoDetailModal
    ═══════════════════════════════════════════════════════════════════════ */
 .ai-summary {
   display: flex;
@@ -7133,11 +8629,47 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 .ai-summary-lead {
   margin: 0;
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 500;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--text);
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
 }
+.ai-summary-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.ai-summary-empty strong { font-size: 13.5px; }
+
+/* CP stat chips — replaces the run-on "rating 1431 · solved 316 · …" line */
+.cp-stat-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.cp-stat-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 40%, transparent);
+}
+.cp-stat-chip small {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+.cp-stat-chip strong { font-size: 13px; }
 .ai-summary-block {
   display: flex;
   flex-direction: column;
@@ -7178,7 +8710,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.5 — Top apps polish (rows, inline categorise, hover lift)
+   v0.5 - Top apps polish (rows, inline categorise, hover lift)
    ═══════════════════════════════════════════════════════════════════════ */
 .apps-pane .app-rows {
   display: flex;
@@ -7269,7 +8801,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 .cat-edit-cancel:hover { color: var(--accent); border-color: var(--accent); }
 
-/* The category-strip sits at the top of the pane — make sure each segment
+/* The category-strip sits at the top of the pane - make sure each segment
    has a tiny radius so adjacent ones look distinct, not glued. */
 .cat-strip { border-radius: 999px; }
 .cat-strip-seg + .cat-strip-seg { border-left: 1px solid rgba(0,0,0,0.25); }
@@ -7280,15 +8812,186 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 }
 .cat-strip-legend-item { gap: 4px; }
 
-/* Total + delta header line — give the delta arrow a tiny pill. */
+/* Total + delta header line - give the delta arrow a tiny pill. */
 .apps-pane .row.between small.muted {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
+/* v0.8 - App tracker visual system.
+   Category = meaning, app colour = identity. Rows stay compact but now read
+   like recognisable app cards instead of raw log lines. */
+.activity-section {
+  background:
+    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--productive) 8%, transparent), transparent 34%),
+    radial-gradient(circle at 82% 0%, color-mix(in srgb, var(--mobile) 8%, transparent), transparent 32%),
+    var(--bg-elev);
+}
+.activity-spectrum {
+  display: flex;
+  height: 8px;
+  margin: 10px 0 14px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  border-radius: 999px;
+  background: var(--bg);
+}
+.activity-spectrum-seg {
+  min-width: 3px;
+  height: 100%;
+}
+.activity-spectrum-seg + .activity-spectrum-seg {
+  border-left: 1px solid color-mix(in srgb, var(--bg) 72%, transparent);
+}
+.activity-spectrum-seg.cat-productive  { background: var(--productive); }
+.activity-spectrum-seg.cat-distraction { background: var(--distraction); }
+.activity-spectrum-seg.cat-neutral     { background: var(--neutral); }
+.activity-spectrum-seg.cat-rest        { background: var(--rest); }
+.activity-spectrum-seg.cat-leisure     { background: var(--leisure); }
+.activity-spectrum-seg.cat-mobile      { background: var(--mobile); }
+.activity-spectrum-seg.cat-other       { background: var(--text-faint); }
+
+.apps-pane .app-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.apps-pane .app-row {
+  --app-color: var(--accent);
+  isolation: isolate;
+  padding: 10px 11px 9px;
+  border-color: color-mix(in srgb, var(--app-color) 14%, var(--border));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-color) 9%, transparent), transparent 48%),
+    color-mix(in srgb, var(--bg-elev-2) 88%, var(--bg));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
+}
+.apps-pane .app-row:hover {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-color) 13%, transparent), transparent 52%),
+    color-mix(in srgb, var(--bg-elev-2) 96%, var(--bg));
+  border-color: color-mix(in srgb, var(--app-color) 30%, var(--border));
+  transform: translateY(-1px);
+}
+.apps-pane .app-row::after {
+  content: "";
+  position: absolute;
+  inset: 8px auto 8px 8px;
+  width: 34px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--app-color) 20%, transparent);
+  filter: blur(12px);
+  opacity: 0.28;
+  z-index: -1;
+}
+.apps-pane .app-row::before {
+  top: 10px;
+  bottom: 10px;
+  opacity: 0.85;
+}
+.apps-pane .app-row.cat-productive::before  { background: var(--productive); }
+.apps-pane .app-row.cat-distraction::before { background: var(--distraction); }
+.apps-pane .app-row.cat-neutral::before     { background: var(--neutral); }
+.apps-pane .app-row.cat-rest::before        { background: var(--rest); }
+.apps-pane .app-row.cat-leisure::before     { background: var(--leisure); }
+.apps-pane .app-row.cat-mobile::before      { background: var(--mobile); }
+.apps-pane .app-row.cat-other::before       { background: var(--text-faint); }
+.apps-pane .app-row-main {
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px;
+}
+.app-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid color-mix(in srgb, var(--app-color) 36%, var(--border));
+  border-radius: 10px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--app-color) 30%, var(--bg-elev)), color-mix(in srgb, var(--app-color) 9%, var(--bg)));
+  color: color-mix(in srgb, var(--app-color) 82%, white);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
+    0 4px 12px color-mix(in srgb, var(--app-color) 12%, transparent);
+}
+.app-row-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.app-row-titleline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.apps-pane .app-row-main .cat-dot {
+  width: 7px;
+  height: 7px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 10%, transparent);
+}
+.apps-pane .top-app-name {
+  font-size: 13.5px;
+  letter-spacing: 0;
+}
+.apps-pane .app-row-tags {
+  min-width: 0;
+}
+.apps-pane .cat-tag {
+  border-radius: 999px;
+  padding: 1px 7px;
+  letter-spacing: 0;
+}
+.apps-pane .src-tag {
+  border-radius: 999px;
+}
+.apps-pane .app-row-time {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  min-width: 58px;
+}
+.apps-pane .app-row-time strong {
+  font-size: 14px;
+}
+.apps-pane .app-row-bar {
+  height: 5px;
+  margin-left: 44px;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 45%, transparent);
+}
+.apps-pane .bar-fill {
+  box-shadow: 0 0 14px color-mix(in srgb, var(--app-color) 18%, transparent);
+}
+.apps-pane .cat-edit-row {
+  margin-left: 44px;
+}
+@media (max-width: 640px) {
+  .apps-pane .app-row-main {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+  .apps-pane .app-row-time {
+    grid-column: 2;
+    align-items: flex-start;
+    flex-direction: row;
+    gap: 6px;
+  }
+  .apps-pane .app-row-bar,
+  .apps-pane .cat-edit-row {
+    margin-left: 42px;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
-   v0.4 — push-card overview vs. external GH affordance
+   v0.4 - push-card overview vs. external GH affordance
    ═══════════════════════════════════════════════════════════════════════ */
 /* Click anywhere on push-card → in-app overview. The little ↗ next to the
    repo name is the only way to jump to GitHub directly. */
@@ -7317,7 +9020,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   border-radius: 8px;
 }
 /* ═══════════════════════════════════════════════════════════════════════
-   v1.4 — Theme picker + Spotify chip + NowPlaying popover
+   v1.4 - Theme picker + Spotify chip + NowPlaying popover
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* ─── theme grid (Settings → Appearance) ───────────────────────────────── */
@@ -7398,7 +9101,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 
 /* Vinyl-style rotation for the album art when a song is playing. The
    wrap holds the rotation transform so the underlying <img> stays
-   normalised — we don't restart the animation on every poll. The pause
+   normalised - we don't restart the animation on every poll. The pause
    state keeps the angle frozen (animation-play-state) for that real
    "vinyl on the platter" feel. */
 .np-vinyl-wrap {
@@ -7408,7 +9111,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   height: 22px;
   flex-shrink: 0;
 }
-/* Spin only when playing. Paused state is fully static — no animation
+/* Spin only when playing. Paused state is fully static - no animation
    running in the background, no transform pinned, just a still disc. */
 .np-vinyl-wrap[data-playing="1"] .np-vinyl {
   animation: np-spin 4.4s linear infinite;
@@ -7556,7 +9259,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   text-align: center;
 }
 
-/* ─── Spotify settings — playlist grid ────────────────────────────────── */
+/* ─── Spotify settings - playlist grid ────────────────────────────────── */
 .spotify-playlist-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
@@ -7635,7 +9338,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   /* the private pill is rendered inline already; this is just a hook */
 }
 
-/* Now-playing extra controls — make active toggles glow with the accent. */
+/* Now-playing extra controls - make active toggles glow with the accent. */
 .np-controls button.active {
   color: var(--accent-strong);
   background: var(--accent-soft);
@@ -7800,7 +9503,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 /* ═════════════════════════════════════════════════════════════════════════
    GOLDEN-RATIO DESIGN LAYER  (φ ≈ 1.618, even-pixel rounded)
    Applied LAST so it cleanly overrides earlier defaults without removing
-   them — every rule below is a targeted, intentional refinement.
+   them - every rule below is a targeted, intentional refinement.
    Spacing scale (each step ~×1.618, all even):
      --s-1  4    --s-2  6    --s-3 10    --s-4 16
      --s-5 26    --s-6 42    --s-7 68    --s-8 110
@@ -7868,7 +9571,7 @@ h1.page-title {
   margin: 0 0 var(--s-3) 0;
 }
 
-/* ─── Card — the workhorse ───────────────────────────────────────────── */
+/* ─── Card - the workhorse ───────────────────────────────────────────── */
 .card {
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -7878,7 +9581,7 @@ h1.page-title {
   transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 .card::before {
-  /* subtle accent gradient at the top edge — a φ-thin highlight */
+  /* subtle accent gradient at the top edge - a φ-thin highlight */
   content: "";
   position: absolute;
   inset: 0 0 auto 0;
@@ -7904,7 +9607,7 @@ h1.page-title {
   gap: var(--s-3);
 }
 .card .card-title::before {
-  /* small leading bar — uses the active accent so it auto-themes */
+  /* small leading bar - uses the active accent so it auto-themes */
   content: "";
   width: 4px;
   height: 14px;
@@ -7912,7 +9615,7 @@ h1.page-title {
   background: var(--accent);
   flex-shrink: 0;
 }
-/* If a card-title is wrapped in another flex container, kill the bar — it
+/* If a card-title is wrapped in another flex container, kill the bar - it
    only makes visual sense as the leading element of the card. */
 .row .card-title::before { display: none; }
 
@@ -7948,7 +9651,7 @@ h1.page-title {
   flex-wrap: wrap;
 }
 
-/* Live timer + now strip — give them breathing room and a clear edge. */
+/* Live timer + now strip - give them breathing room and a clear edge. */
 .now-strip {
   margin-top: var(--s-3);
   padding: var(--s-3) var(--s-4);
@@ -8003,7 +9706,7 @@ h1.page-title {
   overflow: hidden;
 }
 .person-card::after {
-  /* subtle accent glow on hover — emerges from the bottom */
+  /* subtle accent glow on hover - emerges from the bottom */
   content: "";
   position: absolute;
   inset: auto 0 0 0;
@@ -8047,7 +9750,7 @@ h1.page-title {
   margin-top: var(--s-1);
 }
 
-/* Filters / search bar — make the inputs match each other and breathe. */
+/* Filters / search bar - make the inputs match each other and breathe. */
 .page-people-controls {
   display: flex;
   flex-wrap: wrap;
@@ -8055,7 +9758,7 @@ h1.page-title {
   margin-bottom: var(--s-3);
 }
 
-/* People modal — golden-ratio split between header and body. */
+/* People modal - golden-ratio split between header and body. */
 .person-modal-head {
   display: grid;
   grid-template-columns: 68px 1fr auto; /* avatar : meta : actions */
@@ -8071,7 +9774,7 @@ h1.page-title {
   letter-spacing: -0.2px;
 }
 
-/* ─── Burnout chip and its popover — tighter type and rhythm ─────────── */
+/* ─── Burnout chip and its popover - tighter type and rhythm ─────────── */
 .burnout-chip {
   font-size: var(--fs-sm);
   border-radius: 100px;
@@ -8085,13 +9788,13 @@ h1.page-title {
   margin-bottom: var(--s-4);
 }
 
-/* ─── Modal scrim & dialog — golden-ratio padding ────────────────────── */
+/* ─── Modal scrim & dialog - golden-ratio padding ────────────────────── */
 .modal {
   border-radius: var(--r-xl);
   padding: var(--s-5);
 }
 
-/* ─── Buttons (primary / ghost) — hover lift, even sizing ────────────── */
+/* ─── Buttons (primary / ghost) - hover lift, even sizing ────────────── */
 button.primary,
 button.ghost,
 button:not([class]) {
@@ -8118,7 +9821,7 @@ button.xsmall {
   border-radius: var(--r-sm);
 }
 
-/* ─── Pills — round-pill, even pixels ────────────────────────────────── */
+/* ─── Pills - round-pill, even pixels ────────────────────────────────── */
 .pill {
   border-radius: 100px;
   padding: 2px 10px;
@@ -8137,7 +9840,7 @@ textarea:focus-visible,
   outline-offset: 2px;
 }
 
-/* ─── Theme cards in Appearance — give them a φ-shaped silhouette ────── */
+/* ─── Theme cards in Appearance - give them a φ-shaped silhouette ────── */
 .theme-card {
   border-radius: var(--r-md);
   padding: var(--s-3) var(--s-4);
@@ -8153,7 +9856,7 @@ textarea:focus-visible,
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
-/* ─── Dashboard "Ask Apex" + insights chip — match the header ────────── */
+/* ─── Dashboard "Ask Apex" + insights chip - match the header ────────── */
 .dashboard-actions button.primary.small {
   padding: var(--s-2) var(--s-4);
   font-size: var(--fs-sm);
@@ -8168,7 +9871,7 @@ textarea:focus-visible,
    for all 22 palettes (and any custom one the user makes).
    ═════════════════════════════════════════════════════════════════════════ */
 
-/* Trail bars — each day's stacked legs */
+/* Trail bars - each day's stacked legs */
 .trail-day .leg.productive  { background: var(--productive); }
 .trail-day .leg.distraction { background: var(--distraction); }
 .trail-day .leg.leisure     { background: var(--leisure); }
@@ -8195,7 +9898,7 @@ textarea:focus-visible,
 .cat-tag.cat-mobile      { color: var(--mobile); background: color-mix(in srgb, var(--mobile) 14%, transparent); border-color: var(--mobile); }
 .cat-tag.cat-other       { color: var(--text-dim); background: var(--bg-elev); border-color: var(--border); }
 
-/* Bar fills — gradient from token to a slightly lighter sibling */
+/* Bar fills - gradient from token to a slightly lighter sibling */
 .bar-fill.cat-productive   { background: linear-gradient(90deg, var(--productive), color-mix(in srgb, var(--productive) 75%, white)); }
 .bar-fill.cat-distraction  { background: linear-gradient(90deg, var(--distraction), color-mix(in srgb, var(--distraction) 75%, white)); }
 .bar-fill.cat-neutral      { background: linear-gradient(90deg, var(--neutral), color-mix(in srgb, var(--neutral) 75%, white)); }
@@ -8223,7 +9926,7 @@ textarea:focus-visible,
 .stat-pill.cat-mobile      { background: linear-gradient(135deg, color-mix(in srgb, var(--mobile) 12%, transparent), transparent 70%); border-color: color-mix(in srgb, var(--mobile) 35%, var(--border)); }
 .stat-pill.cat-other       { background: var(--bg-elev-2); }
 
-/* Activity-section top stripe — repaint with the theme's category palette */
+/* Activity-section top stripe - repaint with the theme's category palette */
 .activity-section::before {
   background: linear-gradient(
     90deg,
@@ -8235,7 +9938,7 @@ textarea:focus-visible,
   opacity: 0.85;
 }
 
-/* Language segs — use accent + categorical tokens, no hardcoded RGB */
+/* Language segs - use accent + categorical tokens, no hardcoded RGB */
 .lang-seg.seg-0 { background: var(--accent); }
 .lang-seg.seg-1 { background: var(--productive); }
 .lang-seg.seg-2 { background: var(--leisure); }
@@ -8244,7 +9947,7 @@ textarea:focus-visible,
 .lang-seg.seg-5 { background: var(--neutral); }
 
 /* ═════════════════════════════════════════════════════════════════════════
-   CARD HEIGHT CAPS — Today, Today's classes, Weekly goals
+   CARD HEIGHT CAPS - Today, Today's classes, Weekly goals
    The dashboard top row was sprawling. Each of the three cards now caps at
    ~26 × φ³ ≈ 110×φ ≈ 178px / row × 3 rows + chrome ≈ 460px and scrolls
    internally. Header and footer (action row) are pinned outside the scroll.
@@ -8260,7 +9963,7 @@ textarea:focus-visible,
 .dashboard-top-row > .card > * + * {
   flex-shrink: 0;
 }
-/* The scrollable middle region — anything that's NOT the title row, action
+/* The scrollable middle region - anything that's NOT the title row, action
    row, or footer becomes scrollable. We mark it implicitly: the grow-flex
    wraps the variable content. */
 .dashboard-top-row > .card .scroll-body {
@@ -8288,7 +9991,7 @@ textarea:focus-visible,
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
-   PEOPLE PAGE — section structure, breathing room, controls polish
+   PEOPLE PAGE - section structure, breathing room, controls polish
    ═════════════════════════════════════════════════════════════════════════ */
 
 .people-section {
@@ -8329,8 +10032,75 @@ textarea:focus-visible,
   border-radius: 100px;
   font-variant-numeric: tabular-nums;
 }
+.people-empty-state {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 128px;
+  margin-top: 10px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 58%),
+    var(--bg-elev);
+}
+.people-empty-state strong {
+  display: block;
+  font-size: 16px;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+.people-empty-state p {
+  margin: 0;
+  max-width: 62ch;
+}
+.people-empty-mark {
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  background: var(--bg);
+  display: grid;
+  place-items: center;
+  position: relative;
+  overflow: hidden;
+}
+.people-empty-mark::before,
+.people-empty-mark::after,
+.people-empty-mark span {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 18px var(--accent-soft);
+}
+.people-empty-mark::before {
+  left: 10px;
+  top: 12px;
+}
+.people-empty-mark span {
+  right: 10px;
+  top: 12px;
+  opacity: 0.72;
+}
+.people-empty-mark::after {
+  left: 20px;
+  bottom: 10px;
+  opacity: 0.48;
+}
+.people-empty-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 
-/* Search/filter row — even-pixel inputs, clean alignment */
+/* Search/filter row - even-pixel inputs, clean alignment */
 .page-people-controls {
   display: flex;
   flex-direction: column;
@@ -8359,10 +10129,10 @@ textarea:focus-visible,
   padding: 0 var(--s-3, 10px);
 }
 
-/* People controls — one tidy row. Search is the leading element, chip
+/* People controls - one tidy row. Search is the leading element, chip
    strip sits flush next to it (single row, can scroll-x on small viewports
    rather than wrap), and the right cluster (Advanced + Leaderboard) is
-   pinned. No tinted card — keep the surface flat so the cards below own
+   pinned. No tinted card - keep the surface flat so the cards below own
    the visual weight. */
 .people-controls-primary {
   display: flex;
@@ -8412,14 +10182,20 @@ textarea:focus-visible,
 }
 .people-controls-primary > .ghost { flex-shrink: 0; }
 
-/* Stack on small viewports — search on its own row, chips below. */
+/* Stack on small viewports - search on its own row, chips below. */
 @media (max-width: 900px) {
   .people-controls-primary { flex-wrap: wrap; }
   .people-controls-search { flex: 1 1 100%; }
   .people-scope-chips { flex: 1 1 100%; overflow-x: auto; }
+  .people-empty-state {
+    grid-template-columns: 1fr;
+  }
+  .people-empty-actions {
+    justify-content: flex-start;
+  }
 }
 
-/* Advanced filter drawer — appears below the primary row when expanded.
+/* Advanced filter drawer - appears below the primary row when expanded.
    Uses a soft inset card so it reads as a secondary surface. */
 .people-controls-advanced {
   display: flex;
@@ -8445,7 +10221,7 @@ textarea:focus-visible,
   color: var(--text-faint);
 }
 
-/* Activity feed — give it a subtle frame so it reads as a distinct section */
+/* Activity feed - give it a subtle frame so it reads as a distinct section */
 .feed-card {
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -8464,7 +10240,7 @@ textarea:focus-visible,
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
-   HIGH-CONTRAST AMP MODE  — `[data-contrast="high"]`
+   HIGH-CONTRAST AMP MODE  - `[data-contrast="high"]`
    Toggleable from Appearance → boosts saturation of accent + categories,
    pushes text closer to pure white/black, sharpens borders.
    ═════════════════════════════════════════════════════════════════════════ */
@@ -8499,4 +10275,1565 @@ textarea:focus-visible,
 [data-contrast="high"] button.primary {
   outline: 1px solid color-mix(in srgb, var(--accent) 65%, transparent);
   outline-offset: -1px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Spotify Manager page  (.spm-*)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.spm-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+.spm-loading {
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+/* ── Not-connected screen ───────────────────────────────────────────────── */
+.spm-not-connected {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 12px;
+  text-align: center;
+  padding: 40px 24px;
+}
+.spm-big-icon { font-size: 56px; line-height: 1; opacity: 0.35; }
+.spm-not-connected h2 { margin: 0; font-size: 22px; }
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.spm-header {
+  padding: 16px 20px 0;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-elev) 55%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.spm-header h2 { font-size: 17px; }
+.spm-logo { font-size: 22px; opacity: 0.7; }
+
+/* Now-playing strip inside header */
+.spm-np-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0 10px;
+  border-top: 1px solid var(--border);
+}
+.spm-np-art {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.spm-np-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.spm-np-track  { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spm-np-artist { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spm-np-controls { display: flex; gap: 4px; }
+.spm-np-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex-shrink: 0;
+}
+.spm-np-dot.playing {
+  background: var(--productive);
+  animation: np-pulse 1.6s ease-in-out infinite;
+}
+
+/* ── Tabs ───────────────────────────────────────────────────────────────── */
+.spm-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 20px;
+  background: color-mix(in srgb, var(--bg-elev) 55%, transparent);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.spm-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 140ms, border-color 140ms;
+  margin-bottom: -1px;
+}
+.spm-tab:hover  { color: var(--text); }
+.spm-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.spm-tab-icon   { font-size: 14px; }
+
+/* Scope hint */
+.spm-scope-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 20px 0;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--accent-soft) 50%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  flex-shrink: 0;
+}
+
+/* ── Tab content wrapper ────────────────────────────────────────────────── */
+.spm-tab-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Section cards ──────────────────────────────────────────────────────── */
+.spm-section { display: flex; flex-direction: column; gap: 10px; }
+.spm-section-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 4px;
+}
+.spm-section-icon {
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0.6;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+/* ── Progress ────────────────────────────────────────────────────────────── */
+.spm-progress-wrap {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.spm-progress-track {
+  height: 4px;
+  background: var(--bg-elev-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.spm-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 250ms ease;
+}
+.spm-progress-fill.indeterminate {
+  width: 40%;
+  animation: spm-slide 1.4s ease-in-out infinite;
+}
+@keyframes spm-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.spm-progress-msg { font-size: 12px; color: var(--text-dim); }
+
+/* ── Result banner ──────────────────────────────────────────────────────── */
+.spm-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+}
+.spm-banner.ok  { background: color-mix(in srgb, var(--productive) 12%, var(--bg-elev)); border: 1px solid color-mix(in srgb, var(--productive) 30%, var(--border)); color: var(--text); }
+.spm-banner.err { background: color-mix(in srgb, var(--distraction) 12%, var(--bg-elev)); border: 1px solid color-mix(in srgb, var(--distraction) 30%, var(--border)); color: var(--text); }
+
+/* ── Playlist picker ────────────────────────────────────────────────────── */
+.spm-pl-picker { display: flex; flex-direction: column; gap: 6px; }
+.spm-search {
+  flex: 1;
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--text);
+  outline: none;
+}
+.spm-search:focus { border-color: var(--accent); }
+.spm-pl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.spm-pl-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  transition: all 120ms ease;
+  position: relative;
+}
+.spm-pl-card:hover   { border-color: var(--accent); background: var(--bg-elev-2); }
+.spm-pl-card.selected{ border-color: var(--accent); background: var(--accent-soft); }
+.spm-pl-card.liked   { background: color-mix(in srgb, #aa2bd4 10%, var(--bg-elev)); border-color: color-mix(in srgb, #aa2bd4 30%, var(--border)); }
+.spm-pl-art { width: 38px; height: 38px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+.spm-pl-fallback { background: var(--bg-elev-2); display: flex; align-items: center; justify-content: center; font-size: 16px; color: var(--text-faint); }
+.spm-pl-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.spm-pl-meta strong { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spm-pl-meta small  { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spm-pl-check { font-size: 13px; color: var(--accent); flex-shrink: 0; }
+.spm-selected-pl { padding: 10px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--r-md); }
+
+/* ── Export & Sync header ───────────────────────────────────────────────── */
+.spm-export-header { margin-bottom: 12px; }
+
+/* ── Segmented order picker ─────────────────────────────────────────────── */
+.spm-seg-wrap { display: flex; }
+.spm-seg {
+  display: inline-flex;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 3px;
+  gap: 2px;
+}
+.spm-seg-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 16px;
+  border-radius: calc(var(--r-lg) - 3px);
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease;
+  white-space: nowrap;
+}
+.spm-seg-btn:hover { color: var(--text); }
+.spm-seg-btn.active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.spm-seg-tag {
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+/* ── Export description box ─────────────────────────────────────────────── */
+.spm-export-desc-box {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+}
+.spm-export-desc-box strong { color: var(--text); }
+.spm-rec-badge {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  padding: 1px 7px;
+  border-radius: 10px;
+  vertical-align: middle;
+  margin-left: 4px;
+  letter-spacing: 0.02em;
+}
+
+/* ── Time Machine ───────────────────────────────────────────────────────── */
+.spm-tm-range {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.spm-tm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 110px;
+}
+.spm-tm-lbl {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+.spm-tm-sep {
+  font-size: 16px;
+  color: var(--text-faint);
+  padding-bottom: 8px;
+  flex-shrink: 0;
+}
+.spm-tm-name-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+/* ── Sort chips ─────────────────────────────────────────────────────────── */
+.spm-sort-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.spm-sort-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 120ms ease;
+  user-select: none;
+}
+.spm-sort-chip input { display: none; }
+.spm-sort-chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+
+/* ── Arc cards ──────────────────────────────────────────────────────────── */
+.spm-arc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+@media (max-width: 700px) { .spm-arc-grid { grid-template-columns: repeat(2, 1fr); } }
+.spm-arc-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 10px;
+  background: var(--bg-elev);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-lg);
+  cursor: pointer;
+  text-align: center;
+  color: var(--text);
+  transition: all 140ms ease;
+}
+.spm-arc-card:hover    { border-color: var(--accent); background: var(--bg-elev-2); }
+.spm-arc-card.selected { border-color: var(--accent); background: var(--accent-soft); }
+.spm-arc-icon { font-size: 22px; }
+.spm-arc-card strong { font-size: 13px; }
+.spm-arc-card small  { font-size: 11px; line-height: 1.4; }
+
+/* ── Duplicate rows ─────────────────────────────────────────────────────── */
+.spm-dupe-results { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.spm-dupe-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+}
+.spm-dupe-row.exact { background: color-mix(in srgb, var(--distraction) 8%, var(--bg-elev)); border: 1px solid color-mix(in srgb, var(--distraction) 20%, var(--border)); }
+.spm-dupe-row.fuzzy { background: color-mix(in srgb, var(--leisure) 8%, var(--bg-elev));     border: 1px solid color-mix(in srgb, var(--leisure) 20%, var(--border)); }
+
+/* ── Filter form ────────────────────────────────────────────────────────── */
+.spm-filter-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
+.spm-filter-cell { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 120px; }
+.spm-filter-cell label { font-size: 11px; color: var(--text-dim); }
+.spm-filter-cell input,
+.spm-filter-cell select { font-size: 13px; }
+.spm-filter-grid { display: flex; flex-direction: column; gap: 8px; }
+
+/* ── Audio dashboard ────────────────────────────────────────────────────── */
+.spm-dash { display: flex; flex-direction: column; gap: 14px; }
+.spm-dash-header { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 12px 14px; background: var(--bg-elev-2); border-radius: var(--r-md); }
+.spm-dash-mood { display: flex; align-items: center; gap: 10px; }
+.spm-mood-emoji { font-size: 28px; }
+.spm-dash-bpm { text-align: right; }
+.spm-bpm-num { display: block; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); }
+
+.spm-feat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.spm-feat-pill { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--r-md); }
+.spm-feat-label { font-size: 11px; color: var(--text-dim); width: 85px; flex-shrink: 0; }
+.spm-feat-val   { font-size: 12px; font-variant-numeric: tabular-nums; width: 34px; text-align: right; flex-shrink: 0; }
+
+.spm-bar-track { flex: 1; height: 6px; background: var(--bg-elev-2); border-radius: 3px; overflow: hidden; }
+.spm-bar-fill  { height: 100%; border-radius: 3px; transition: width 400ms ease; }
+
+.spm-buckets { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 650px) { .spm-buckets { grid-template-columns: 1fr; } }
+.spm-bucket-group { display: flex; flex-direction: column; gap: 6px; }
+.spm-bucket-title { font-size: 11px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
+.spm-bucket-row { display: flex; align-items: center; gap: 8px; }
+.spm-bucket-label { font-size: 11px; width: 90px; color: var(--text-dim); flex-shrink: 0; }
+.spm-bucket-count { font-size: 11px; font-variant-numeric: tabular-nums; width: 28px; text-align: right; flex-shrink: 0; color: var(--text-dim); }
+
+.spm-top5 { display: flex; flex-direction: column; gap: 6px; }
+.spm-top-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.spm-top-rank { font-size: 12px; font-weight: 700; color: var(--text-faint); width: 16px; text-align: right; flex-shrink: 0; }
+.spm-top-meta { display: flex; flex-direction: column; gap: 2px; width: 200px; flex-shrink: 0; }
+.spm-top-meta strong { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spm-top-bars { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+
+/* ── Track list ─────────────────────────────────────────────────────────── */
+.spm-track-list { display: flex; flex-direction: column; gap: 3px; }
+.spm-track-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--bg-elev); border-radius: var(--r-sm); font-size: 12.5px; }
+.spm-track-num  { font-size: 11px; color: var(--text-faint); width: 20px; text-align: right; flex-shrink: 0; }
+.spm-track-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.spm-track-meta strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spm-track-meta small  { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Backup list ────────────────────────────────────────────────────────── */
+.spm-backup-list { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
+.spm-backup-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  transition: all 120ms ease;
+}
+.spm-backup-row:hover    { border-color: var(--accent); background: var(--bg-elev-2); }
+.spm-backup-row.selected { border-color: var(--accent); background: var(--accent-soft); }
+.spm-backup-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.spm-backup-meta strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spm-backup-meta small  { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Dashboard cleanup 2026-06-09: quieter first screen, smaller type. */
+body,
+button,
+input,
+select,
+textarea,
+optgroup {
+  letter-spacing: 0;
+}
+
+.main {
+  padding: 18px 24px;
+}
+
+.dashboard-header {
+  gap: 16px;
+  margin-bottom: 6px !important;
+}
+
+.dashboard-header .page-title {
+  font-size: 20px;
+  line-height: 1.15;
+  margin: 0 0 2px;
+  background: none;
+  color: var(--text);
+  -webkit-text-fill-color: currentColor;
+  letter-spacing: 0;
+}
+
+.dashboard-header .page-sub {
+  font-size: 12px;
+  margin: 0;
+}
+
+.dashboard-actions {
+  gap: 6px;
+  max-width: none;
+}
+
+.dashboard-actions .ghost.small,
+.dashboard-actions .primary.small {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+
+.live-timer.idle-slim,
+.zen-panel-compact,
+.routine-panel-compact {
+  margin: 6px 0 8px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.live-timer.idle-slim {
+  padding: 8px 10px;
+}
+
+.zen-panel-compact,
+.routine-panel-compact {
+  padding: 8px 10px;
+  background: transparent;
+  border-style: dashed;
+}
+
+.zen-quick,
+.routine-compact-main,
+.zen-compose-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zen-quick {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.zen-quick-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 160px;
+}
+
+.zen-quick-title {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.zen-quick-minutes {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.zen-quick-minutes .chip {
+  min-height: 28px;
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+.zen-panel:not(.active):not(.zen-panel-compact) {
+  margin: 6px 0 8px;
+}
+
+.zen-compose {
+  padding: 10px;
+  gap: 10px;
+}
+
+.zen-title,
+.routine-title {
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.routine-panel {
+  margin-top: 6px;
+  padding: 10px;
+}
+
+.routine-panel-compact .routine-title {
+  margin: 0;
+}
+
+.routine-compact-main {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.routine-grid {
+  gap: 8px;
+}
+
+.routine-strip {
+  margin-top: 10px;
+  padding-top: 9px;
+}
+
+.dashboard-top-row.grid-3 {
+  grid-template-columns: minmax(320px, 1.25fr) minmax(240px, 0.9fr) minmax(240px, 0.9fr);
+  gap: 12px;
+  margin-top: 10px !important;
+  margin-bottom: 12px !important;
+}
+
+.card.today-card,
+.dashboard-top-row > .card {
+  max-height: 380px;
+  padding: 12px 14px;
+}
+
+.dashboard-top-row .card .card-title {
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.today-card .today-head {
+  margin-bottom: 8px;
+}
+
+.today-sub,
+.today-task-sub,
+.class-row .sub,
+.goal-row-count {
+  font-size: 11px;
+}
+
+.today-task-title,
+.goal-row-title {
+  font-size: 12.5px;
+}
+
+.goal-list {
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.goal-row {
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+@media (max-width: 1100px) {
+  .dashboard-top-row.grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .main {
+    padding: 16px;
+  }
+  .dashboard-header {
+    flex-direction: column;
+  }
+  .dashboard-actions {
+    justify-content: flex-start;
+  }
+  .zen-quick,
+  .routine-compact-main {
+    align-items: stretch;
+  }
+}
+
+/* Activity tracker rethink: collapsed summary + optional detail surface. */
+.activity-card {
+  padding: 0;
+  border-radius: 8px;
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--border));
+  background:
+    radial-gradient(circle at 8% -22%, color-mix(in srgb, var(--productive) 16%, transparent), transparent 34%),
+    radial-gradient(circle at 72% -18%, color-mix(in srgb, var(--mobile) 15%, transparent), transparent 34%),
+    linear-gradient(135deg, color-mix(in srgb, var(--bg-elev) 82%, var(--bg)), var(--bg-elev));
+}
+
+.activity-card::before {
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--productive),
+    var(--mobile) 36%,
+    var(--leisure) 68%,
+    var(--distraction)
+  );
+  opacity: 0.95;
+}
+
+.activity-summary-shell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px 12px;
+}
+
+.activity-summary-main {
+  all: unset;
+  flex: 1 1 180px;
+  min-width: 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-radius: 8px;
+}
+
+.activity-summary-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.activity-kicker {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.activity-summary-title {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.activity-summary-title strong {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.activity-summary-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.activity-summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  flex: 2 1 300px;
+  min-width: 0;
+}
+
+.activity-summary-chip {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elev-2) 86%, transparent);
+}
+
+.activity-summary-chip small,
+.bucket-summary-copy .section-label {
+  display: block;
+  margin: 0 0 2px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.activity-summary-chip strong {
+  display: block;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-summary-spectrum {
+  display: flex;
+  height: 7px;
+  margin: 0 16px 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.activity-summary-spectrum-seg {
+  min-width: 3px;
+}
+
+.activity-summary-spectrum-seg + .activity-summary-spectrum-seg {
+  border-left: 1px solid color-mix(in srgb, var(--bg) 76%, transparent);
+}
+
+.activity-summary-spectrum-seg.cat-productive,
+.bucket-mini-bar.cat-productive { background: var(--productive); }
+.activity-summary-spectrum-seg.cat-distraction,
+.bucket-mini-bar.cat-distraction { background: var(--distraction); }
+.activity-summary-spectrum-seg.cat-neutral,
+.bucket-mini-bar.cat-neutral { background: var(--neutral); }
+.activity-summary-spectrum-seg.cat-rest,
+.bucket-mini-bar.cat-rest { background: var(--rest); }
+.activity-summary-spectrum-seg.cat-leisure,
+.bucket-mini-bar.cat-leisure { background: var(--leisure); }
+.activity-summary-spectrum-seg.cat-mobile,
+.bucket-mini-bar.cat-mobile { background: var(--mobile); }
+.activity-summary-spectrum-seg.cat-other,
+.bucket-mini-bar.cat-other { background: var(--text-faint); }
+
+.activity-body {
+  padding: 0 16px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+}
+
+.activity-card .stats-strip {
+  margin: 12px 0;
+  gap: 8px;
+}
+
+.activity-card .stat-pill {
+  min-height: 58px;
+  padding: 9px 12px;
+  border-radius: 8px;
+}
+
+.activity-card .stat-value {
+  font-size: 17px;
+}
+
+.activity-card .pane {
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent 58%),
+    color-mix(in srgb, var(--bg-elev-2) 88%, var(--bg));
+}
+
+.activity-card.collapsed {
+  box-shadow: none;
+}
+
+.activity-card.collapsed .activity-summary-shell {
+  padding-bottom: 10px;
+}
+
+.bucket-timeline {
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--mobile) 6%, transparent), transparent 54%),
+    color-mix(in srgb, var(--bg-elev-2) 82%, var(--bg));
+  padding: 10px;
+}
+
+.bucket-timeline-collapsed {
+  padding: 0;
+  overflow: hidden;
+}
+
+.bucket-summary {
+  all: unset;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(160px, 0.9fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+}
+
+.bucket-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.bucket-summary-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.bucket-summary-copy strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.bucket-summary-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bucket-summary-bars {
+  height: 42px;
+  display: flex;
+  align-items: end;
+  gap: 3px;
+  padding: 5px 7px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+}
+
+.bucket-mini-bar {
+  width: 7px;
+  min-height: 8px;
+  border-radius: 999px 999px 2px 2px;
+  opacity: 0.92;
+}
+
+.bucket-summary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.bucket-timeline-list {
+  max-height: 260px;
+}
+
+.bucket-bar {
+  height: 18px;
+  border-radius: 5px;
+}
+
+.bucket-seg {
+  padding: 0 6px;
+}
+
+@media (max-width: 980px) {
+  .activity-summary-shell {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .activity-hero-actions {
+    justify-content: flex-start;
+  }
+  .activity-summary-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .bucket-summary {
+    grid-template-columns: 1fr;
+  }
+  .bucket-summary-bars {
+    justify-content: stretch;
+  }
+  .bucket-mini-bar {
+    flex: 1;
+    width: auto;
+  }
+}
+
+/* Dashboard tune pass: calmer surfaces, recent-app inputs, balanced tracker. */
+.dashboard-tools-card {
+  margin: -4px 0 16px;
+  padding: 12px 14px;
+}
+.dashboard-tools-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.dashboard-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.dashboard-tool-tile {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  background: color-mix(in srgb, var(--bg-elev-2) 76%, var(--bg));
+}
+.dashboard-tool-tile strong,
+.dashboard-tool-tile small {
+  display: block;
+}
+.dashboard-tool-tile small {
+  margin-top: 2px;
+  line-height: 1.35;
+}
+.ask-apex-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+.ask-apex-prompts button {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+
+.cat-recent-apps {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 10px;
+}
+.cat-recent-apps button,
+.zen-suggestions button {
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  background: color-mix(in srgb, var(--bg-elev-2) 80%, var(--bg));
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+}
+.cat-recent-apps button.active,
+.zen-suggestions button.on {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-elev-2));
+}
+
+.activity-card {
+  border-color: color-mix(in srgb, var(--border) 92%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 92%, var(--bg));
+  box-shadow: none;
+}
+.activity-card::before {
+  background: color-mix(in srgb, var(--accent) 45%, var(--border));
+  opacity: 0.72;
+}
+.activity-card .pane,
+.activity-card .stat-pill,
+.activity-summary-chip {
+  background: color-mix(in srgb, var(--bg-elev-2) 78%, var(--bg));
+}
+.activity-card .stat-pill {
+  border-color: color-mix(in srgb, var(--border) 88%, transparent);
+}
+.activity-card .stat-pill.cat-productive,
+.activity-card .stat-pill.cat-distraction,
+.activity-card .stat-pill.cat-neutral,
+.activity-card .stat-pill.cat-rest,
+.activity-card .stat-pill.cat-leisure,
+.activity-card .stat-pill.cat-mobile,
+.activity-card .stat-pill.cat-other {
+  background: color-mix(in srgb, var(--bg-elev-2) 80%, var(--bg));
+}
+.activity-summary-spectrum,
+.activity-spectrum {
+  opacity: 0.82;
+}
+
+.activity-panes {
+  grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
+  align-items: stretch;
+}
+.activity-card .trail-pane,
+.activity-card .apps-pane {
+  min-height: 350px;
+  max-height: 550px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.trail-pane .trail {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+}
+.trail-pane .trail-day-stack {
+  min-height: 210px;
+}
+.trail-pane .chip-row {
+  max-height: 74px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+.apps-pane .app-rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+.apps-pane .app-row {
+  box-shadow: none;
+  background: color-mix(in srgb, var(--bg-elev-2) 80%, var(--bg));
+}
+.apps-pane .app-row:hover {
+  transform: none;
+  background: color-mix(in srgb, var(--bg-elev-2) 94%, var(--bg));
+}
+.apps-pane .app-row::after {
+  display: none;
+}
+.apps-pane .bar-fill {
+  box-shadow: none;
+  opacity: 0.82;
+}
+
+.bucket-timeline {
+  background: color-mix(in srgb, var(--bg-elev-2) 78%, var(--bg));
+}
+.bucket-timeline-list {
+  gap: 6px;
+  max-height: 228px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+.bucket-row {
+  grid-template-columns: 52px minmax(0, 1fr) minmax(92px, 0.38fr);
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: color-mix(in srgb, var(--bg) 34%, transparent);
+}
+.bucket-time code {
+  font-size: 11px;
+}
+.bucket-time small {
+  font-size: 10px;
+}
+.bucket-bar {
+  height: 12px;
+  border: 0;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 50%, transparent);
+}
+.bucket-seg {
+  padding: 0;
+  min-width: 3px;
+  border-right: 2px solid color-mix(in srgb, var(--bg) 76%, transparent);
+}
+.bucket-row-summary {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+}
+.bucket-row-summary strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 600;
+}
+.bucket-row-summary small {
+  font-size: 10px;
+}
+
+@media (max-width: 980px) {
+  .dashboard-tools-grid {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-tool-tile {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .activity-card .trail-pane,
+  .activity-card .apps-pane {
+    max-height: none;
+  }
+  .trail-pane .trail-day-stack {
+    min-height: 150px;
+  }
+}
+
+/* Zen mode and focus-block polish. */
+.zen-compose-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zen-suggestions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zen-suggestions button small {
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.zen-summary {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-color: color-mix(in srgb, var(--productive) 28%, var(--border));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--productive) 10%, transparent), transparent 48%),
+    var(--bg-elev);
+}
+
+.zen-summary-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.zen-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.zen-summary-grid > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elev-2) 78%, var(--bg));
+}
+
+.zen-summary-grid strong {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zen-summary-events {
+  display: grid;
+  gap: 6px;
+}
+
+.zen-summary-event {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 42%, transparent);
+}
+
+.zen-summary-event span,
+.zen-summary-event small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zen-playlist-status {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  color: var(--text-dim);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.zen-playlist-status.compact {
+  margin: 8px 10px 0;
+}
+
+.zen-playlist-status.ok {
+  border-color: color-mix(in srgb, var(--productive) 30%, var(--border));
+  background: color-mix(in srgb, var(--productive) 10%, var(--bg));
+  color: var(--text);
+}
+
+.zen-playlist-status.ok small {
+  flex-basis: 100%;
+  color: var(--text-dim);
+}
+
+.zen-playlist-status.warn {
+  border-color: color-mix(in srgb, var(--leisure) 34%, var(--border));
+  background: color-mix(in srgb, var(--leisure) 10%, var(--bg));
+}
+
+.zen-lock-panel.intrusive {
+  border-width: 2px;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--distraction) 22%, transparent),
+    0 24px 80px rgba(0, 0, 0, 0.52);
+  animation: zen-intrusive-pop 180ms ease-out;
+}
+
+@keyframes zen-intrusive-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+
+.focus-blocks {
+  flex: 0 0 auto;
+  margin: 0 0 10px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--productive) 20%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--productive) 6%, var(--bg-elev-2));
+}
+
+.focus-blocks-head,
+.focus-block-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.focus-blocks-head {
+  margin-bottom: 8px;
+}
+
+.focus-blocks-head strong,
+.focus-blocks-head small {
+  display: block;
+}
+
+.focus-blocks-head > span,
+.focus-block-min {
+  font-family: var(--font-mono);
+  color: var(--text);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.focus-block-list {
+  display: grid;
+  gap: 6px;
+  max-height: 136px;
+  overflow-y: auto;
+  padding-right: 3px;
+  scrollbar-width: thin;
+}
+
+.focus-block-row {
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 42%, transparent);
+}
+
+.focus-block-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.focus-block-copy strong,
+.focus-block-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+  .activity-summary-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .zen-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.close-reason-modal textarea {
+  margin-top: 10px;
+}
+
+.close-reason-foreground {
+  display: grid;
+  gap: 2px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elev-2) 76%, var(--bg));
+}
+
+.close-reason-foreground span,
+.close-reason-foreground strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.close-reason-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.close-reason-presets button {
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elev-2) 74%, var(--bg));
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.close-reason-presets button.active {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-elev-2));
+  color: var(--text);
+}
+
+.day-summary-modal {
+  max-height: min(760px, calc(100vh - 48px));
+  overflow-y: auto;
+}
+
+.day-summary-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.day-summary-stat {
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elev-2) 78%, var(--bg));
+}
+
+.day-summary-stat small,
+.day-summary-stat strong {
+  display: block;
+}
+
+.day-summary-stat strong {
+  margin-top: 3px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 15px;
+}
+
+.day-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.day-summary-section {
+  min-width: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elev-2) 70%, var(--bg));
+  scrollbar-width: thin;
+}
+
+.day-summary-event {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 7px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
+}
+
+.day-summary-event:first-of-type {
+  border-top: 0;
+}
+
+.day-summary-event code {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.day-summary-event strong,
+.day-summary-event small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.day-summary-foot {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.day-summary-foot small {
+  display: block;
+}
+
+.brain-dump-context-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 10px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-elev-2));
+  cursor: pointer;
+}
+
+.brain-dump-context-toggle input {
+  width: auto;
+}
+
+.brain-dump-context-toggle span,
+.brain-dump-context-toggle small {
+  display: block;
+}
+
+@media (max-width: 820px) {
+  .day-summary-stats,
+  .day-summary-grid {
+    grid-template-columns: 1fr;
+  }
+  .day-summary-foot {
+    flex-direction: column;
+  }
 }

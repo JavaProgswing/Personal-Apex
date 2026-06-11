@@ -1,4 +1,4 @@
-// prettyAppName — turn raw Android package ids & desktop process names into
+// prettyAppName - turn raw Android package ids & desktop process names into
 // human labels.
 //
 // Examples:
@@ -101,7 +101,7 @@ const ANDROID_MAP = {
   "com.supercell.clashofclans": "Clash of Clans",
   "com.supercell.clashroyale": "Clash Royale",
   "com.mojang.minecraftpe": "Minecraft",
-  // Launcher packages — every OEM ships a different one, all just "Launcher".
+  // Launcher packages - every OEM ships a different one, all just "Launcher".
   "com.miui.home": "Launcher",
   "com.miui.personalassistant": "Launcher",
   "com.mi.android.globallauncher": "Launcher",
@@ -214,7 +214,7 @@ const TOKENS = [
   "launcher", "dialer", "gallery", "camera",
 ];
 
-// Literal display-name overrides — when the tracker stores a pre-capitalised
+// Literal display-name overrides - when the tracker stores a pre-capitalised
 // leaf (e.g. "Brawlstars" or "Bloonstdbattles2") without the full package id,
 // these shortcut the splitter for common cases.
 const DISPLAY_MAP = {

@@ -155,6 +155,17 @@ function runMigrations() {
     tryExec(`ALTER TABLE tasks ADD COLUMN recurrence_rule TEXT`);
   if (!has("tasks", "course_code"))
     tryExec(`ALTER TABLE tasks ADD COLUMN course_code TEXT`);
+  tryExec(`CREATE TABLE IF NOT EXISTS task_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    at TEXT NOT NULL,
+    task_id INTEGER,
+    action TEXT NOT NULL,
+    title TEXT,
+    payload TEXT NOT NULL DEFAULT '{}'
+  )`);
+  tryExec(`CREATE INDEX IF NOT EXISTS idx_task_events_date ON task_events(date)`);
+  tryExec(`CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id)`);
 
   // people: CP handles + last_scraped_at.
   for (const col of [
@@ -239,6 +250,43 @@ function runMigrations() {
     note TEXT
   )`);
   tryExec(`CREATE INDEX IF NOT EXISTS idx_leisure_started ON leisure_segments(started_at)`);
+
+  // zen_sessions — focus blocks that wrap the live timer with allowed/
+  // blocked app policy, strict/relaxed mode, and an optional Spotify playlist.
+  tryExec(`CREATE TABLE IF NOT EXISTS zen_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    status TEXT NOT NULL DEFAULT 'active',
+    mode TEXT NOT NULL DEFAULT 'strict',
+    title TEXT NOT NULL DEFAULT 'Deep work',
+    profile TEXT NOT NULL DEFAULT 'deep',
+    allowed_apps TEXT NOT NULL DEFAULT '[]',
+    blocked_apps TEXT NOT NULL DEFAULT '[]',
+    planned_minutes INTEGER NOT NULL,
+    started_at TEXT NOT NULL,
+    ends_at TEXT NOT NULL,
+    ended_at TEXT,
+    violations INTEGER NOT NULL DEFAULT 0,
+    last_violation_at TEXT,
+    last_violation_app TEXT,
+    last_violation_title TEXT,
+    playlist_id TEXT,
+    playlist_uri TEXT,
+    playlist_name TEXT,
+    created_playlist INTEGER NOT NULL DEFAULT 0,
+    note TEXT
+  )`);
+  tryExec(`CREATE INDEX IF NOT EXISTS idx_zen_status ON zen_sessions(status)`);
+  tryExec(`CREATE INDEX IF NOT EXISTS idx_zen_started ON zen_sessions(started_at)`);
+  tryExec(`CREATE TABLE IF NOT EXISTS zen_violations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    at TEXT NOT NULL,
+    app TEXT,
+    title TEXT,
+    reason TEXT,
+    category TEXT
+  )`);
+  tryExec(`CREATE INDEX IF NOT EXISTS idx_zen_violations_session ON zen_violations(session_id)`);
 
   // Post-migration indexes: these reference columns that may have just been
   // added by the ALTERs above, so they can't live in schema.sql (which runs
@@ -437,6 +485,47 @@ function rowToTask(r) {
     kind: r.kind || "task",
   };
 }
+function logTaskEvent(action, task, payload = {}) {
+  try {
+    const at = payload.at || new Date().toISOString();
+    const date = payload.date || isoDate(new Date(at));
+    db.prepare(
+      `INSERT INTO task_events (date, at, task_id, action, title, payload)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      date,
+      at,
+      task?.id ?? payload.task_id ?? null,
+      action,
+      task?.title || payload.title || null,
+      JSON.stringify(payload || {}),
+    );
+  } catch {
+    /* audit logging must never block the task action */
+  }
+}
+function taskChangedFields(before, after) {
+  const keys = [
+    "title",
+    "description",
+    "priority",
+    "deadline",
+    "category",
+    "course_code",
+    "estimated_minutes",
+    "kind",
+    "status",
+    "progress",
+    "recurrence_rule",
+  ];
+  const changed = [];
+  for (const key of keys) {
+    const a = before?.[key] ?? null;
+    const b = after?.[key] ?? null;
+    if (JSON.stringify(a) !== JSON.stringify(b)) changed.push(key);
+  }
+  return changed;
+}
 function createTask(t) {
   const info = db
     .prepare(
@@ -460,7 +549,9 @@ function createTask(t) {
       links: JSON.stringify(t.links ?? []),
       rec: t.recurrence_rule ?? null,
     });
-  return listOne(info.lastInsertRowid);
+  const row = listOne(info.lastInsertRowid);
+  logTaskEvent("created", row, { source: t.source || null });
+  return row;
 }
 function updateTask(id, patch) {
   const cur = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
@@ -495,9 +586,15 @@ function updateTask(id, patch) {
        progress=@progress, links=@links, recurrence_rule=@rec,
        updated_at=datetime('now') WHERE id=@id`,
   ).run(merged);
-  return listOne(id);
+  const row = listOne(id);
+  logTaskEvent("updated", row, {
+    changed: taskChangedFields(rowToTask(cur), row),
+  });
+  return row;
 }
 function deleteTask(id) {
+  const cur = listOne(id);
+  logTaskEvent("deleted", cur || { id }, { snapshot: cur });
   db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
   return true;
 }
@@ -532,7 +629,11 @@ function toggleTask(id) {
       } catch { /* ignore */ }
     }
   }
-  return listOne(id);
+  const row = listOne(id);
+  logTaskEvent(becomingDone ? "completed" : "reopened", row, {
+    completed_at: row?.completed_at || null,
+  });
+  return row;
 }
 
 // Current streak for a habit — how many consecutive days (ending today
@@ -738,7 +839,9 @@ function upsertWeeklyGoal(g) {
       progress: g.progress ?? 0,
       sort: g.sort ?? 99,
     });
-    return db.prepare("SELECT * FROM weekly_goals WHERE id=?").get(g.id);
+    const row = db.prepare("SELECT * FROM weekly_goals WHERE id=?").get(g.id);
+    logTaskEvent("goal_updated", null, { goal_id: row?.id, title: row?.title, goal: row });
+    return row;
   }
   const info = db
     .prepare(
@@ -750,15 +853,20 @@ function upsertWeeklyGoal(g) {
       progress: g.progress ?? 0,
       sort: g.sort ?? 99,
     });
-  return db
+  const row = db
     .prepare("SELECT * FROM weekly_goals WHERE id=?")
     .get(info.lastInsertRowid);
+  logTaskEvent("goal_created", null, { goal_id: row?.id, title: row?.title, goal: row });
+  return row;
 }
 function deleteWeeklyGoal(id) {
+  const row = db.prepare("SELECT * FROM weekly_goals WHERE id = ?").get(id);
+  logTaskEvent("goal_deleted", null, { goal_id: id, title: row?.title || null, goal: row || null });
   db.prepare("DELETE FROM weekly_goals WHERE id = ?").run(id);
   return true;
 }
 function resetWeeklyGoals() {
+  logTaskEvent("goals_reset", null, { title: "Weekly goals reset" });
   db.prepare("UPDATE weekly_goals SET progress = 0").run();
   return listWeeklyGoals();
 }
@@ -770,7 +878,16 @@ function incrementGoalProgress(id, by = 1) {
     Math.min((row.progress ?? 0) + by, (row.target ?? 1) * 2),
   );
   db.prepare("UPDATE weekly_goals SET progress = ? WHERE id = ?").run(next, id);
-  return db.prepare("SELECT * FROM weekly_goals WHERE id = ?").get(id);
+  const updated = db.prepare("SELECT * FROM weekly_goals WHERE id = ?").get(id);
+  logTaskEvent("goal_progress", null, {
+    goal_id: id,
+    title: updated?.title || row.title,
+    by,
+    previous: row.progress ?? 0,
+    progress: next,
+    target: row.target ?? 1,
+  });
+  return updated;
 }
 // Exported helper so init-ordering / manual re-seeding both work.
 function seedWeeklyGoals() {
@@ -1679,20 +1796,14 @@ function deleteDayNote(date) {
 //
 // Scheme: scrypt(passcode, salt, 32) → stored as "scrypt:<saltHex>:<hashHex>".
 // ───────────────────────────────────────────────────────────────────────────
-function hasDayNotePasscode() {
-  const v = getSetting("dayNotes.passcodeHash");
-  return !!(v && v.startsWith("scrypt:"));
-}
-function setDayNotePasscode(plaintext) {
+function hashDayNoteSecret(plaintext) {
   const text = String(plaintext || "");
-  if (text.length < 3) throw new Error("Passcode must be at least 3 characters");
   const salt = crypto.randomBytes(16);
   const hash = crypto.scryptSync(text, salt, 32);
-  setSetting("dayNotes.passcodeHash", `scrypt:${salt.toString("hex")}:${hash.toString("hex")}`);
-  return true;
+  return `scrypt:${salt.toString("hex")}:${hash.toString("hex")}`;
 }
-function verifyDayNotePasscode(plaintext) {
-  const stored = getSetting("dayNotes.passcodeHash");
+
+function verifyDayNoteSecret(plaintext, stored) {
   if (!stored || !stored.startsWith("scrypt:")) return false;
   const parts = stored.split(":");
   if (parts.length !== 3) return false;
@@ -1705,8 +1816,54 @@ function verifyDayNotePasscode(plaintext) {
     return false;
   }
 }
+
+function hasDayNotePasscode() {
+  const v = getSetting("dayNotes.passcodeHash");
+  return !!(v && v.startsWith("scrypt:"));
+}
+function setDayNotePasscode(plaintext) {
+  const text = String(plaintext || "");
+  if (text.length < 3) throw new Error("Passcode must be at least 3 characters");
+  setSetting("dayNotes.passcodeHash", hashDayNoteSecret(text));
+  return true;
+}
+function verifyDayNotePasscode(plaintext) {
+  return verifyDayNoteSecret(plaintext, getSetting("dayNotes.passcodeHash"));
+}
+function normalizeDayNoteRecoveryCode(code) {
+  return String(code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+function generateDayNoteRecoveryCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.randomBytes(16);
+  let raw = "";
+  for (const byte of bytes) raw += alphabet[byte % alphabet.length];
+  return raw.match(/.{1,4}/g).join("-");
+}
+function setDayNoteRecoveryCode(code) {
+  const text = normalizeDayNoteRecoveryCode(code);
+  if (text.length < 12) throw new Error("Recovery code must be at least 12 characters");
+  setSetting("dayNotes.recoveryHash", hashDayNoteSecret(text));
+  return true;
+}
+function resetDayNoteRecoveryCode() {
+  const code = generateDayNoteRecoveryCode();
+  setDayNoteRecoveryCode(code);
+  return code;
+}
+function hasDayNoteRecoveryCode() {
+  const v = getSetting("dayNotes.recoveryHash");
+  return !!(v && v.startsWith("scrypt:"));
+}
+function verifyDayNoteRecoveryCode(code) {
+  return verifyDayNoteSecret(
+    normalizeDayNoteRecoveryCode(code),
+    getSetting("dayNotes.recoveryHash"),
+  );
+}
 function clearDayNotePasscode() {
   setSetting("dayNotes.passcodeHash", "");
+  setSetting("dayNotes.recoveryHash", "");
   return true;
 }
 
@@ -2124,9 +2281,22 @@ function topAppsOn(date, limit = 10) {
       `SELECT app, category, SUM(minutes) AS minutes,
               GROUP_CONCAT(DISTINCT source) AS sources
      FROM activity_sessions WHERE date = ?
+       AND source NOT IN ('timer', 'manual')
      GROUP BY app ORDER BY minutes DESC LIMIT ?`,
     )
     .all(date, limit);
+}
+function focusBlocksOn(date, limit = 12) {
+  return db
+    .prepare(
+      `SELECT id, app AS title, window_title AS kind, category, started_at, ended_at, minutes, note
+         FROM activity_sessions
+        WHERE date = ?
+          AND source = 'timer'
+        ORDER BY started_at DESC
+        LIMIT ?`,
+    )
+    .all(date, Math.max(1, Math.min(50, +limit || 12)));
 }
 function activitySessionsRange(startIso, endIso) {
   return db
@@ -2350,6 +2520,251 @@ function categoryForTimerKind(kind) {
     default:
       return "neutral";
   }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// zen_sessions — focused app-lock sessions layered on top of the live timer.
+// Strict/relaxed/locked behavior is enforced in main.cjs; persistence lives here.
+// ───────────────────────────────────────────────────────────────────────────
+function rowToZen(r) {
+  if (!r) return null;
+  const ends = new Date(r.ends_at).getTime();
+  let violationEvents = [];
+  try {
+    violationEvents = zenViolationsFor(r.id, 24);
+  } catch { violationEvents = []; }
+  return {
+    ...r,
+    allowed_apps: safeJson(r.allowed_apps, []),
+    blocked_apps: safeJson(r.blocked_apps, []),
+    violation_events: violationEvents,
+    created_playlist: !!r.created_playlist,
+    remaining_seconds: Number.isFinite(ends)
+      ? Math.max(0, Math.ceil((ends - Date.now()) / 1000))
+      : 0,
+  };
+}
+function activeZenSession() {
+  const row = db
+    .prepare(
+      `SELECT * FROM zen_sessions
+        WHERE status = 'active'
+        ORDER BY started_at DESC
+        LIMIT 1`,
+    )
+    .get();
+  return rowToZen(row);
+}
+function startZenSession(p = {}) {
+  const existing = activeZenSession();
+  if (existing) stopZenSession("interrupted");
+  const started = p.started_at ? new Date(p.started_at) : new Date();
+  const planned = Math.max(1, Math.min(600, Math.round(+p.planned_minutes || 50)));
+  const ends = new Date(started.getTime() + planned * 60_000);
+  const allowed = Array.isArray(p.allowed_apps) ? p.allowed_apps : [];
+  const blocked = Array.isArray(p.blocked_apps) ? p.blocked_apps : [];
+  const mode = ["relaxed", "strict", "locked"].includes(p.mode) ? p.mode : "strict";
+  const info = db
+    .prepare(
+      `INSERT INTO zen_sessions
+        (status, mode, title, profile, allowed_apps, blocked_apps,
+         planned_minutes, started_at, ends_at, playlist_id, playlist_uri,
+         playlist_name, created_playlist, note)
+       VALUES
+        ('active', @mode, @title, @profile, @allowed, @blocked,
+         @planned, @started, @ends, @playlistId, @playlistUri,
+         @playlistName, @createdPlaylist, @note)`,
+    )
+    .run({
+      mode,
+      title: (p.title || "Deep work").trim(),
+      profile: ["deep", "flow", "calm"].includes(p.profile) ? p.profile : "deep",
+      allowed: JSON.stringify(allowed.map((x) => String(x).trim()).filter(Boolean)),
+      blocked: JSON.stringify(blocked.map((x) => String(x).trim()).filter(Boolean)),
+      planned,
+      started: started.toISOString(),
+      ends: ends.toISOString(),
+      playlistId: p.playlist_id || null,
+      playlistUri: p.playlist_uri || null,
+      playlistName: p.playlist_name || null,
+      createdPlaylist: p.created_playlist ? 1 : 0,
+      note: p.note || null,
+    });
+  return rowToZen(
+    db.prepare(`SELECT * FROM zen_sessions WHERE id = ?`).get(info.lastInsertRowid),
+  );
+}
+function extendZenSession(byMinutes) {
+  const row = activeZenSession();
+  if (!row) return null;
+  const m = Math.max(1, Math.min(180, Math.round(+byMinutes || 0)));
+  const ends = new Date(new Date(row.ends_at).getTime() + m * 60_000);
+  db.prepare(
+    `UPDATE zen_sessions
+        SET planned_minutes = planned_minutes + ?,
+            ends_at = ?
+      WHERE id = ?`,
+  ).run(m, ends.toISOString(), row.id);
+  return activeZenSession();
+}
+function stopZenSession(reason = "stopped") {
+  const row = activeZenSession();
+  if (!row) return null;
+  const now = new Date();
+  const completed = now.getTime() >= new Date(row.ends_at).getTime();
+  const status = reason === "cancelled"
+    ? "cancelled"
+    : reason === "interrupted"
+      ? "interrupted"
+      : completed || reason === "completed"
+        ? "completed"
+        : "stopped";
+  db.prepare(
+    `UPDATE zen_sessions
+        SET status = ?, ended_at = ?
+      WHERE id = ?`,
+  ).run(status, now.toISOString(), row.id);
+  return rowToZen(db.prepare(`SELECT * FROM zen_sessions WHERE id = ?`).get(row.id));
+}
+function recordZenViolation(v = {}) {
+  const row = activeZenSession();
+  if (!row) return null;
+  const now = new Date().toISOString();
+  const tx = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO zen_violations (session_id, at, app, title, reason, category)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(row.id, now, v.app || null, v.title || null, v.reason || null, v.category || null);
+    db.prepare(
+      `UPDATE zen_sessions
+          SET violations = violations + 1,
+              last_violation_at = ?,
+              last_violation_app = ?,
+              last_violation_title = ?
+        WHERE id = ?`,
+    ).run(now, v.app || null, v.title || null, row.id);
+  });
+  tx();
+  return activeZenSession();
+}
+function zenViolationsFor(sessionId, limit = 24) {
+  if (!sessionId) return [];
+  return db
+    .prepare(
+      `SELECT at, app, title, reason, category
+         FROM zen_violations
+        WHERE session_id = ?
+        ORDER BY at DESC
+        LIMIT ?`,
+    )
+    .all(sessionId, Math.max(1, Math.min(100, +limit || 24)));
+}
+function zenSessionsOn(date, limit = 12) {
+  return db
+    .prepare(
+      `SELECT * FROM zen_sessions
+        WHERE substr(started_at, 1, 10) = ?
+           OR substr(COALESCE(ended_at, ''), 1, 10) = ?
+        ORDER BY started_at DESC
+        LIMIT ?`,
+    )
+    .all(date, date, Math.max(1, Math.min(50, +limit || 12)))
+    .map(rowToZen);
+}
+function rowWithJsonPayload(row) {
+  return row ? { ...row, payload: safeJson(row.payload, {}) } : row;
+}
+function taskEventsOn(date, limit = 100) {
+  return db
+    .prepare(
+      `SELECT * FROM task_events
+        WHERE date = ?
+        ORDER BY at DESC, id DESC
+        LIMIT ?`,
+    )
+    .all(date, Math.max(1, Math.min(300, +limit || 100)))
+    .map(rowWithJsonPayload);
+}
+function routineEventsOn(date, { kinds = null, limit = 120 } = {}) {
+  let sql = `SELECT * FROM routine_events WHERE date = ?`;
+  const args = [date];
+  if (Array.isArray(kinds) && kinds.length) {
+    sql += ` AND kind IN (${kinds.map(() => "?").join(",")})`;
+    args.push(...kinds);
+  }
+  sql += ` ORDER BY at DESC, id DESC LIMIT ?`;
+  args.push(Math.max(1, Math.min(300, +limit || 120)));
+  return db.prepare(sql).all(...args).map(rowWithJsonPayload);
+}
+function distractionLogOn(date, limit = 24) {
+  return db
+    .prepare(
+      `SELECT id, source, app, window_title, category, started_at, ended_at, minutes, note
+         FROM activity_sessions
+        WHERE date = ?
+          AND category = 'distraction'
+        ORDER BY minutes DESC, started_at DESC
+        LIMIT ?`,
+    )
+    .all(date, Math.max(1, Math.min(100, +limit || 24)));
+}
+function appCloseEventsOn(date, limit = 24) {
+  return routineEventsOn(date, {
+    kinds: ["close_blocked", "close_reason", "app_close"],
+    limit,
+  });
+}
+function daySummaryOn(date = isoDate(new Date())) {
+  const iso = date || isoDate(new Date());
+  const burnoutRow = db
+    .prepare(`SELECT * FROM burnout_reports WHERE date = ? ORDER BY created_at DESC LIMIT 1`)
+    .get(iso);
+  const dayNote = getDayNote(iso);
+  const openTasks = db
+    .prepare(
+      `SELECT * FROM tasks
+        WHERE completed = 0
+        ORDER BY priority ASC,
+                 CASE WHEN deadline IS NULL THEN 1 ELSE 0 END,
+                 deadline ASC,
+                 updated_at DESC
+        LIMIT 20`,
+    )
+    .all()
+    .map(rowToTask);
+  return {
+    date: iso,
+    generated_at: new Date().toISOString(),
+    checkin: getCheckinByDate(iso),
+    totals: activityTotalsOn(iso),
+    topApps: topAppsOn(iso, 10),
+    focusBlocks: focusBlocksOn(iso, 12),
+    distractions: distractionLogOn(iso, 24),
+    zenSessions: zenSessionsOn(iso, 12),
+    closeEvents: appCloseEventsOn(iso, 24),
+    routineEvents: routineEventsOn(iso, {
+      kinds: ["app_open", "wake_done", "sleep_done", "objective_done", "routine_nudge"],
+      limit: 40,
+    }),
+    taskEvents: taskEventsOn(iso, 100),
+    completedTasks: tasksCompletedOn(iso),
+    openTasks,
+    weeklyGoals: listWeeklyGoals(),
+    burnoutReport: burnoutRow
+      ? { ...burnoutRow, payload: safeJson(burnoutRow.payload, {}) }
+      : null,
+    dayNoteSummary: dayNote?.summary || null,
+  };
+}
+function recentZenSessions(limit = 12) {
+  return db
+    .prepare(
+      `SELECT * FROM zen_sessions
+        ORDER BY started_at DESC
+        LIMIT ?`,
+    )
+    .all(Math.max(1, Math.min(50, +limit || 12)))
+    .map(rowToZen);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -2630,6 +3045,7 @@ module.exports = {
   addActivitySession,
   upsertActivitySession,
   topAppsOn,
+  focusBlocksOn,
   activitySessionsRange,
   reclassifyAppCategory,
   getRepoSummary,
@@ -2652,6 +3068,19 @@ module.exports = {
   extendTimer,
   clearTimer,
   categoryForTimerKind,
+  activeZenSession,
+  startZenSession,
+  extendZenSession,
+  stopZenSession,
+  recordZenViolation,
+  zenViolationsFor,
+  zenSessionsOn,
+  taskEventsOn,
+  routineEventsOn,
+  distractionLogOn,
+  appCloseEventsOn,
+  daySummaryOn,
+  recentZenSessions,
   listClassOverrides,
   setClassOverride,
   addExtraClass,
@@ -2665,6 +3094,9 @@ module.exports = {
   hasDayNotePasscode,
   setDayNotePasscode,
   verifyDayNotePasscode,
+  resetDayNoteRecoveryCode,
+  hasDayNoteRecoveryCode,
+  verifyDayNoteRecoveryCode,
   clearDayNotePasscode,
   // legacy / compatibility — not persistent. Kept to avoid UI breakage.
   listInterests: () =>

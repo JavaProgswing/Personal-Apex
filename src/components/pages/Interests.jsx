@@ -1,4 +1,4 @@
-// DEPRECATED — interests were merged into Tasks (filter by "Interests" tab).
+// DEPRECATED - interests were merged into Tasks (filter by "Interests" tab).
 // Kept only because the file system doesn't allow deletion here.
 import React from "react";
 export default function Interests() {

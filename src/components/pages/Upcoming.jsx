@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import api from "../../lib/api.js";
 
 // Upcoming = next N days of {classes, task deadlines} in chronological order.
@@ -63,7 +63,7 @@ export default function Upcoming({ go }) {
     if (!title) return;
     // Validate deadline: must parse, and must not be in the past (we
     // give a 5-minute grace so "type now-ish" still works). Empty is OK
-    // — no deadline.
+    // - no deadline.
     let deadlineIso = null;
     if (quickDue) {
       const d = new Date(quickDue);
@@ -120,13 +120,10 @@ export default function Upcoming({ go }) {
       <div className="row between" style={{ marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
         <div>
           <h1 className="page-title">Upcoming</h1>
-          <p className="page-sub">
-            Your next 7 days — classes and deadlines in one place.
-          </p>
         </div>
         <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-          <button className="ghost" onClick={reload}>
-            Refresh
+          <button className="ghost" onClick={reload} title="Refresh" aria-label="Refresh">
+            ↻
           </button>
           <button className="ghost" onClick={() => go("settings")}>
             Edit schedule
@@ -208,7 +205,7 @@ export default function Upcoming({ go }) {
                   ? DOW[dateObj.getDay()]
                   : null;
 
-          // For today only — figure out the current + next class
+          // For today only - figure out the current + next class
           let currentClassId = null;
           let nextClassId = null;
           if (isToday && d.classes.length) {
@@ -237,7 +234,7 @@ export default function Upcoming({ go }) {
                 (isWeekend ? " is-weekend" : "")
               }
             >
-              {/* Single-line header — date + relative pill + a compact
+              {/* Single-line header - date + relative pill + a compact
                   meta line (day-order / class count / due count) all
                   flush left, no more double-pill row. */}
               <div className="upcoming-day-head">
@@ -414,3 +411,4 @@ function dedupeById(list) {
   }
   return out;
 }
+

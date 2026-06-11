@@ -4,7 +4,7 @@ import ActivityFeed from "../ActivityFeed.jsx";
 import { MarkdownBlock } from "../../lib/markdown.jsx";
 
 // Curated preset links shown in the "Import from links" modal. Treated as
-// regular `{label, url}` pairs — no special-casing for NextTechLab. Users
+// regular `{label, url}` pairs - no special-casing for NextTechLab. Users
 // can extend this list at runtime via `ui.linkPresets` in localStorage.
 const BUILTIN_LINK_PRESETS = [
   { label: "NextTechLab · Satoshi",  url: "https://nexttechlab.in/labs/satoshi"  },
@@ -52,7 +52,7 @@ export default function People() {
   useEffect(() => { setPage(1); }, [filter.q, filter.tag, filter.source, filter.only, groupBy]);
 
   useEffect(() => {
-    // Hydrate sync state from the main process on mount — survives tab
+    // Hydrate sync state from the main process on mount - survives tab
     // switches. Earlier the UI lost track of an in-flight sync the moment
     // you navigated away because state lived only in component memory.
     // Now main owns the truth; we just paint whatever it's holding.
@@ -127,7 +127,7 @@ export default function People() {
     // Server only knows about q/tag; source/only are client-side pills.
     const list = await api.people.list({ q: filter.q, tag: filter.tag });
     setPeople(list || []);
-    // Fetch heat strips in batch — used by PersonCard to render a 14-day
+    // Fetch heat strips in batch - used by PersonCard to render a 14-day
     // commit pulse. Cheap query, but keep payload bounded.
     if (api.people?.heatStrips && list?.length) {
       try {
@@ -176,7 +176,7 @@ export default function People() {
   }
   async function syncAllGh() {
     if (ghSync.active) {
-      setStatus({ msg: "GitHub sync already running — wait for it to finish." });
+      setStatus({ msg: "GitHub sync already running - wait for it to finish." });
       return;
     }
     setGhSync({ active: true, total: 0, done: 0, current: null, rateLimited: false, resetAt: null });
@@ -200,7 +200,7 @@ export default function People() {
   }
   async function syncAllCp() {
     if (cpSync.active) {
-      setStatus({ msg: "CP sync already running — wait for it to finish." });
+      setStatus({ msg: "CP sync already running - wait for it to finish." });
       return;
     }
     setCpSync({ active: true, total: 0, done: 0, ok: 0, err: 0, current: null });
@@ -213,7 +213,7 @@ export default function People() {
       if (!res || res.ok === false) {
         setStatus({ err: "CP sync: " + (res?.error || "unknown error") });
       } else if ((res.total || 0) === 0) {
-        setStatus({ msg: "CP sync: nobody has a LeetCode/CF/CC handle yet — set one in Settings or import classmates first." });
+        setStatus({ msg: "CP sync: nobody has a LeetCode/CF/CC handle yet - set one in Settings or import classmates first." });
       } else {
         setStatus({ msg: `CP sync: ${res.okCount} / ${res.total} ok` });
       }
@@ -274,9 +274,9 @@ export default function People() {
     const map = new Map();
     const push = (k, p) => { if (!map.has(k)) map.set(k, []); map.get(k).push(p); };
     for (const p of filtered) {
-      if (groupBy === "source") push(p.source || "—", p);
+      if (groupBy === "source") push(p.source || "-", p);
       else if (groupBy === "tag") {
-        if (!p.tags?.length) push("—", p);
+        if (!p.tags?.length) push("-", p);
         else p.tags.forEach((t) => push(t, p));
       } else if (groupBy === "syncstate") push(p.last_scraped_at ? "synced" : "never", p);
     }
@@ -285,7 +285,7 @@ export default function People() {
       .map(([key, rows]) => ({ key, rows }));
   }, [filtered, groupBy]);
 
-  // Pagination — flat across groups (simple approach: limit to page * PAGE_SIZE)
+  // Pagination - flat across groups (simple approach: limit to page * PAGE_SIZE)
   const paged = useMemo(() => {
     const limit = page * PAGE_SIZE;
     let n = 0;
@@ -298,13 +298,13 @@ export default function People() {
   }, [groups, page]);
   const totalRows = filtered.length;
   const shownRows = paged.reduce((s, g) => s + g.rows.length, 0);
+  const hasFilters = !!(filter.q || filter.tag || filter.source || filter.only);
 
   return (
     <>
       <div className="row between" style={{ marginBottom: 18, alignItems: "flex-start" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1 className="page-title">People</h1>
-          <p className="page-sub">Classmates, friends, and their projects. GitHub + LeetCode/CF/CC.</p>
         </div>
         {/* Compact action cluster: one primary CTA, one "+ Add" group, and a
             condensed sync menu. Cuts the toolbar from 5 buttons to ~3. */}
@@ -401,7 +401,7 @@ export default function People() {
         </div>
       </details>
 
-      {/* Everyone — grouped grid. This is the primary view and stays open. */}
+      {/* Everyone - grouped grid. This is the primary view and stays open. */}
       <section className="people-section">
         <div className="people-section-head">
           <h3>Everyone</h3>
@@ -432,9 +432,12 @@ export default function People() {
         </section>
         ))}
         {filtered.length === 0 && (
-          <div className="muted" style={{ padding: "20px 8px", textAlign: "center" }}>
-            No people match. Try clearing filters or import from a link.
-          </div>
+          <PeopleEmptyState
+            hasFilters={hasFilters}
+            onClearFilters={() => setFilter({ q: "", tag: "", source: "", only: "" })}
+            onImport={() => setShowImport(true)}
+            onAdd={() => setShowAdd(true)}
+          />
         )}
 
         {/* Pager */}
@@ -490,6 +493,37 @@ export default function People() {
   );
 }
 
+function PeopleEmptyState({ hasFilters, onClearFilters, onImport, onAdd }) {
+  return (
+    <div className="people-empty-state">
+      <div className="people-empty-mark" aria-hidden>
+        <span />
+      </div>
+      <div>
+        <strong>{hasFilters ? "No one matches this view" : "Build your people graph"}</strong>
+        <p className="muted">
+          {hasFilters
+            ? "The directory is here, but the current filters are hiding everyone."
+            : "Import a lab page, GitHub profile, LinkedIn profile, or add one person manually to start tracking projects and CP activity."}
+        </p>
+      </div>
+      <div className="people-empty-actions">
+        {hasFilters && (
+          <button className="ghost small" onClick={onClearFilters}>
+            Clear filters
+          </button>
+        )}
+        <button className="primary small" onClick={onImport}>
+          Import links
+        </button>
+        <button className="ghost small" onClick={onAdd}>
+          Add manually
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SyncBar({ label, total, done, ok, err, current, rateLimited }) {
   const pct = total ? Math.round((done / total) * 100) : 0;
   return (
@@ -504,7 +538,7 @@ function SyncBar({ label, total, done, ok, err, current, rateLimited }) {
   );
 }
 
-// Compact "+ Add" split-button — one primary CTA with a chevron menu for
+// Compact "+ Add" split-button - one primary CTA with a chevron menu for
 // the secondary add path. Keeps the People header from sprouting buttons.
 // Compact, tidy controls bar for the People page. Top row: search +
 // "scope" chips + leaderboard. Below that, a collapsible Advanced panel
@@ -527,7 +561,7 @@ function PeopleControlsRow({
 
   return (
     <div className="page-people-controls">
-      {/* Primary line — search + scope chips + leaderboard. */}
+      {/* Primary line - search + scope chips + leaderboard. */}
       <div className="people-controls-primary">
         <input
           className="people-controls-search"
@@ -569,18 +603,18 @@ function PeopleControlsRow({
         </div>
         <button
           type="button"
-          className="ghost xsmall people-controls-advanced-toggle"
+          className={"ghost people-controls-advanced-toggle" + (open ? " active" : "")}
           onClick={() => setOpen((v) => !v)}
           title="Tag / source / sort / group filters"
         >
-          {open ? "▴ Less" : "▾ Advanced"}
+          Filters {open ? "▴" : "▾"}
         </button>
         <button className="ghost" onClick={onLeaderboard} title="Open leaderboard">
           Leaderboard
         </button>
       </div>
 
-      {/* Advanced — tucked behind a toggle. */}
+      {/* Advanced - tucked behind a toggle. */}
       {open && (
         <div className="people-controls-advanced">
           <FilterField label="Tag">
@@ -727,7 +761,7 @@ function PeopleAddMenu({ onImport, onAdd, onMergeDuplicates, onClearData }) {
 // Single sync button with a dropdown that fans out to GitHub / CP / SRM
 // leaderboard. The visible label reflects whichever sync is currently
 // running. Replaces the three separate sync buttons in the header.
-// Richer sync menu — three sync paths, each with its own "last sync"
+// Richer sync menu - three sync paths, each with its own "last sync"
 // timestamp and live status row. Replaces the old flat button list with
 // a card-style dropdown that reads like a control panel.
 function PeopleSyncMenu({ ghActive, cpActive, onSyncGh, onSyncCp, onSyncSrm }) {
@@ -746,7 +780,7 @@ function PeopleSyncMenu({ ghActive, cpActive, onSyncGh, onSyncCp, onSyncSrm }) {
     api.cp.srmLeaderboardLastSync?.().then((r) => setLast(r)).catch(() => {});
     api.settings?.get?.("github.lastSync")?.then((v) => v && setGhLast(v)).catch(() => {});
     api.settings?.get?.("cp.lastSync")?.then((v) => v && setCpLast(v)).catch(() => {});
-    // Hydrate SRM busy state from main on mount — survives tab switches.
+    // Hydrate SRM busy state from main on mount - survives tab switches.
     api.sync?.status?.().then((s) => {
       if (s?.srm?.active) {
         setBusy(true);
@@ -760,7 +794,7 @@ function PeopleSyncMenu({ ghActive, cpActive, onSyncGh, onSyncCp, onSyncSrm }) {
     const off = api.cp.onSrmLeaderboardProgress?.((info) => {
       setProgress(info);
       // The main process now broadcasts an end-of-job event with
-      // active:false — flip our local busy to match.
+      // active:false - flip our local busy to match.
       if (info && info.active === false) setBusy(false);
       else if (info && info.active === true) setBusy(true);
     });
@@ -802,7 +836,7 @@ function PeopleSyncMenu({ ghActive, cpActive, onSyncGh, onSyncCp, onSyncSrm }) {
     try {
       const r = await api.cp.syncSrmLeaderboard();
       if (r?.ok === false && r.error === "already-running") {
-        setMsg("Already syncing — wait for it to finish.");
+        setMsg("Already syncing - wait for it to finish.");
       } else if (!r?.ok) {
         setMsg("Failed: " + (r?.error || "unknown"));
       } else {
@@ -873,7 +907,7 @@ function PeopleSyncMenu({ ghActive, cpActive, onSyncGh, onSyncCp, onSyncSrm }) {
   );
 }
 
-// One row in the sync menu — title, sub, last-sync, and a Run button.
+// One row in the sync menu - title, sub, last-sync, and a Run button.
 function SyncMenuRow({ label, sub, lastAt, active, extra, onRun }) {
   const ago = lastAt ? humanAgo(new Date(lastAt)) : "never synced";
   return (
@@ -941,7 +975,7 @@ function SrmLeaderboardButton({ onSynced }) {
       if (!r?.ok) {
         setMsg("Failed: " + (r?.error || "unknown"));
       } else {
-        const partialNote = r.partial ? " (partial — JS-paginated source)" : "";
+        const partialNote = r.partial ? " (partial - JS-paginated source)" : "";
         setMsg(
           `Imported ${r.imported}, updated ${r.updated} of ${r.total}${partialNote}.`,
         );
@@ -1022,17 +1056,19 @@ function PersonCard({ p, heat, following, onOpen, onToggleFollow, onRetryGh, onR
         <div className="name">{p.name}</div>
 
         {/* Primary handle: GitHub first, else LinkedIn */}
-        {p.github_username ? (
-          <div className="handle">
-            <span className="handle-icon" aria-hidden>⌥</span>@{p.github_username}
-          </div>
-        ) : liHandle ? (
-          <div className="handle li">
-            <span className="handle-icon" aria-hidden>in</span>/{liHandle}
-          </div>
-        ) : (
-          <div className="handle muted">no linked profile</div>
-        )}
+        <div className="handle-row">
+          {p.github_username ? (
+            <span className="handle">
+              <span className="handle-icon" aria-hidden>@</span>{p.github_username}
+            </span>
+          ) : liHandle ? (
+            <span className="handle li">
+              <span className="handle-icon" aria-hidden>in</span>/{liHandle}
+            </span>
+          ) : (
+            <span className="handle muted">no linked profile</span>
+          )}
+        </div>
 
         {p.bio && (
           <div
@@ -1058,64 +1094,33 @@ function PersonCard({ p, heat, following, onOpen, onToggleFollow, onRetryGh, onR
               ? "LinkedIn profile"
               : hasAnyLink ? "" : "no GitHub / LinkedIn"}
         </small>
-        {/* 14-day commit pulse from activity_feed. Cells get progressively
-            brighter for higher push counts; empty days are muted. */}
-        {p.github_username && (
-          <PersonHeatStrip days={14} heat={heat} />
-        )}
       </div>
-      <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 4 }}>
-        {p.github_username && <button className="ghost small" title="Retry GitHub" onClick={(e) => { e.stopPropagation(); onRetryGh(); }}>↻ GH</button>}
+      {/* Hover action rail — one Sync that refreshes everything the person
+          has (GitHub + CP), plus LinkedIn for link-only profiles. */}
+      <div className="person-card-actions">
+        {(p.github_username || hasCp) && (
+          <button
+            className="ghost small"
+            title="Sync GitHub + CP data"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (p.github_username) onRetryGh();
+              if (hasCp) onRetryCp();
+            }}
+          >
+            ↻ Sync
+          </button>
+        )}
         {!p.github_username && p.linkedin_url && (
           <button
             className="ghost small"
             title="Open LinkedIn"
             onClick={(e) => { e.stopPropagation(); api.ext.open(p.linkedin_url); }}
           >
-            ↗ LinkedIn
+            ↗
           </button>
         )}
-        {hasCp && (
-          <button className="ghost small" title="Retry CP" onClick={(e) => { e.stopPropagation(); onRetryCp(); }}>↻ CP</button>
-        )}
       </div>
-    </div>
-  );
-}
-
-// Tiny calendar of recent commits — 14 cells, one per day, brightness
-// scales with that day's push count. Empty days are dimmed; today is on
-// the right.
-function PersonHeatStrip({ days = 14, heat = [] }) {
-  // Build map { 'YYYY-MM-DD' → count } and walk the last `days` days.
-  const map = new Map();
-  let max = 0;
-  for (const r of heat || []) {
-    map.set(r.date, r.n || 0);
-    if ((r.n || 0) > max) max = r.n || 0;
-  }
-  const cells = [];
-  const now = new Date();
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    const iso = d.toISOString().slice(0, 10);
-    const n = map.get(iso) || 0;
-    cells.push({ iso, n });
-  }
-  return (
-    <div className="person-heat" title={`${heat.reduce((s, r) => s + (r.n || 0), 0)} commits in ${days}d`}>
-      {cells.map((c) => {
-        const intensity = max > 0 ? Math.min(1, c.n / Math.max(3, max)) : 0;
-        return (
-          <span
-            key={c.iso}
-            className={"person-heat-cell" + (c.n > 0 ? " hot" : "")}
-            style={c.n > 0 ? { opacity: 0.35 + intensity * 0.65 } : null}
-            title={`${c.iso} · ${c.n} commit${c.n === 1 ? "" : "s"}`}
-          />
-        );
-      })}
     </div>
   );
 }
@@ -1228,31 +1233,31 @@ function PersonModal({ person, repos, cpStats, activity, onClose, onSyncGh, onSy
           </>
         )}
 
-        {/* CP stats — only show when handles are set OR we already have stats */}
+        {/* CP stats - only show when handles are set OR we already have stats */}
         {(hasCpHandles || cpStats.length > 0) && (
           <>
             <div className="section-label" style={{ marginTop: 12 }}>Competitive programming</div>
             {cpStats.length === 0 ? (
-              <div className="muted small" style={{ padding: "4px 0" }}>No stats yet — hit Sync CP to fetch.</div>
+              <div className="muted small" style={{ padding: "4px 0" }}>No stats yet - hit Sync CP to fetch.</div>
             ) : (
               cpStats.map((cp) => <CpStatCard key={cp.id} cp={cp} />)
             )}
           </>
         )}
 
-        {/* Repos — only show when GH is connected OR we already have repos */}
+        {/* Repos - only show when GH is connected OR we already have repos */}
         {(hasGh || repos.length > 0) && (
           <>
-            <div className="row between" style={{ marginTop: 14 }}>
+            <div className="row between" style={{ marginTop: 14, marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
               <div className="section-label" style={{ margin: 0 }}>Repos ({repos.length})</div>
               {repos.length > 0 && (
-                <div className="row" style={{ gap: 6 }}>
-                  <input placeholder="filter repos…" value={repoQ} onChange={(e) => setRepoQ(e.target.value)} style={{ maxWidth: 180 }} />
+                <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                  <input placeholder="Filter…" value={repoQ} onChange={(e) => setRepoQ(e.target.value)} style={{ maxWidth: 160 }} />
                   <select value={repoLang} onChange={(e) => setRepoLang(e.target.value)} style={{ maxWidth: 130 }}>
                     <option value="">All langs</option>
                     {languages.map((l) => <option key={l} value={l}>{l}</option>)}
                   </select>
-                  <select value={repoSort} onChange={(e) => setRepoSort(e.target.value)} style={{ maxWidth: 140 }}>
+                  <select value={repoSort} onChange={(e) => setRepoSort(e.target.value)} style={{ maxWidth: 150 }}>
                     <option value="pushed">Recently pushed</option>
                     <option value="stars">Most stars</option>
                     <option value="name">Name (A-Z)</option>
@@ -1261,7 +1266,7 @@ function PersonModal({ person, repos, cpStats, activity, onClose, onSyncGh, onSy
               )}
             </div>
             {repos.length === 0 && (
-              <div className="muted small" style={{ padding: "4px 0" }}>No repos cached yet — hit Sync GitHub.</div>
+              <div className="muted small" style={{ padding: "4px 0" }}>No repos cached yet - hit Sync GitHub.</div>
             )}
             <div className="grid-auto">
               {filteredRepos.map((r) => (
@@ -1276,7 +1281,7 @@ function PersonModal({ person, repos, cpStats, activity, onClose, onSyncGh, onSy
                     {(r.topics || []).slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}
                   </div>
                   <div className="repo-meta" style={{ marginTop: 6 }}>
-                    ⑂ {r.forks ?? 0} · pushed {r.pushed_at ? new Date(r.pushed_at).toLocaleDateString() : "—"}
+                    {r.forks ?? 0} forks · pushed {r.pushed_at ? new Date(r.pushed_at).toLocaleDateString() : "-"}
                   </div>
                 </div>
               ))}
@@ -1313,12 +1318,22 @@ function CpStatCard({ cp }) {
       {hasError ? (
         <div className="error" style={{ marginTop: 4 }}>error: {cp.error}</div>
       ) : (
-        <div className="sub" style={{ marginTop: 4 }}>
-          {s.rating != null && <>rating <strong>{s.rating}</strong>{s.maxRating ? ` (max ${s.maxRating})` : ""} · </>}
-          {s.totalSolved != null && <>solved <strong>{s.totalSolved}</strong>{s.easy != null ? ` (${s.easy}E/${s.medium}M/${s.hard}H)` : ""} · </>}
-          {s.stars != null && <>stars {s.stars}★ · </>}
-          {s.contests != null && <>contests {s.contests} · </>}
-          {s.rank && <>rank {s.rank}</>}
+        <div className="cp-stat-chips">
+          {s.rating != null && (
+            <span className="cp-stat-chip"><small>rating</small><strong>{s.rating}</strong>{s.maxRating ? <small className="muted">max {s.maxRating}</small> : null}</span>
+          )}
+          {s.totalSolved != null && (
+            <span className="cp-stat-chip"><small>solved</small><strong>{s.totalSolved}</strong>{s.easy != null ? <small className="muted">{s.easy}E·{s.medium}M·{s.hard}H</small> : null}</span>
+          )}
+          {s.stars != null && (
+            <span className="cp-stat-chip"><small>stars</small><strong>{s.stars}★</strong></span>
+          )}
+          {s.contests != null && (
+            <span className="cp-stat-chip"><small>contests</small><strong>{s.contests}</strong></span>
+          )}
+          {s.rank && (
+            <span className="cp-stat-chip"><small>rank</small><strong>{s.rank}</strong></span>
+          )}
         </div>
       )}
     </div>
@@ -1366,8 +1381,8 @@ function HandleEdit({ person, onSaved }) {
 // complete row) becomes the keeper; the rest are merged into it. Repos +
 // CP stats + submissions are reassigned to the keeper inside one DB tx.
 // Topic-driven repo browser. Two parallel result rails:
-//   1. From your people — repos cached locally for anyone you've added.
-//   2. From the wider community — top stars on github.com for the same query.
+//   1. From your people - repos cached locally for anyone you've added.
+//   2. From the wider community - top stars on github.com for the same query.
 // Quick chips below the search seed common topics. Click any card → opens
 // the existing RepoDetailModal (Overview & Chat / Walkthrough / Compare).
 const REPO_TOPIC_QUICK = [
@@ -1383,7 +1398,7 @@ function RepoTopicSearch({ onOpenRepo }) {
   const [loadingLocal, setLoadingLocal] = useState(false);
   const [loadingPublic, setLoadingPublic] = useState(false);
   const [err, setErr] = useState(null);
-  // Semantic-summary build state — when the user clicks "Build summaries"
+  // Semantic-summary build state - when the user clicks "Build summaries"
   // we kick off a batch summarize and stream per-repo progress here so
   // the UI shows the queue burning down.
   const [stats, setStats] = useState(null); // { total, withSummary, stale }
@@ -1496,7 +1511,7 @@ function RepoTopicSearch({ onOpenRepo }) {
                 type="button"
                 className="ghost xsmall"
                 onClick={() => buildSummaries(false)}
-                title="Summarise the stale ones — runs through Ollama, ~30s each"
+                title="Summarise the stale ones - runs through Ollama, ~30s each"
               >
                 Build summaries
               </button>
@@ -1758,7 +1773,7 @@ function MergeDuplicatesModal({ onClose, onMerged }) {
           <button className="ghost" onClick={onClose}>✕</button>
         </div>
 
-        {/* Tabs — duplicates vs placeholder names. */}
+        {/* Tabs - duplicates vs placeholder names. */}
         <div className="chip-row" style={{ marginBottom: 10 }}>
           <button
             className={"chip" + (tab === "duplicates" ? " active" : "")}
@@ -1770,7 +1785,7 @@ function MergeDuplicatesModal({ onClose, onMerged }) {
             className={"chip" + (tab === "placeholders" ? " active" : "")}
             onClick={() => setTab("placeholders")}
             disabled={showCount === 0}
-            title={showCount === 0 ? "No placeholder-name groups" : "People imported with the same junk name (e.g. \"syndicate\") — fix their names so they stop being grouped together."}
+            title={showCount === 0 ? "No placeholder-name groups" : "People imported with the same junk name (e.g. \"syndicate\") - fix their names so they stop being grouped together."}
           >
             Fix names · {showCount}
           </button>
@@ -1814,7 +1829,7 @@ function MergeDuplicatesModal({ onClose, onMerged }) {
                 <small className="muted" style={{ display: "block", marginTop: 4 }}>
                   Some imports saved every person under the same name (e.g.
                   "syndicate"). Click ✎ next to each row to give them their
-                  real name — they'll stop being grouped after that.
+                  real name - they'll stop being grouped after that.
                 </small>
               </div>
             )}
@@ -1951,7 +1966,7 @@ function MergeDuplicatesModal({ onClose, onMerged }) {
             <div className="row between" style={{ marginTop: 10 }}>
               <small className="muted">
                 {tab === "duplicates"
-                  ? "Merging combines handles, tags, links, repos, CP stats — keeper wins on conflicts."
+                  ? "Merging combines handles, tags, links, repos, CP stats - keeper wins on conflicts."
                   : "Renaming will re-cluster this group on next scan."}
               </small>
               <div className="row" style={{ gap: 6 }}>
@@ -2010,7 +2025,7 @@ function AddPersonModal({ onClose, onSaved }) {
   );
 }
 
-// Single-flow link import. NextTechLab is no longer a separate tab — its
+// Single-flow link import. NextTechLab is no longer a separate tab - its
 // labs sit alongside any other preset as `{label, url}` pairs. Users can
 // add their own presets via the "+ Add preset" row (persisted to
 // localStorage). Multi-URL bulk scrape (e.g. all 5 NTL labs at once) is a
@@ -2018,7 +2033,7 @@ function AddPersonModal({ onClose, onSaved }) {
 function ImportByLinkModal({ onClose, onImported }) {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
-  // Combined results — both single-URL previews and multi-URL bulk runs end
+  // Combined results - both single-URL previews and multi-URL bulk runs end
   // up here as one flat candidate list, keyed `${source}:${i}`.
   const [results, setResults] = useState([]); // [{source, candidates}]
   const [picked, setPicked] = useState(new Set());
@@ -2144,7 +2159,7 @@ function ImportByLinkModal({ onClose, onImported }) {
           </button>
         </div>
 
-        {/* Preset chips — built-ins + user presets, with the bulk-scrape
+        {/* Preset chips - built-ins + user presets, with the bulk-scrape
             shortcut and an "+ Add preset" row that mirrors normal link
             convention (title + URL). */}
         <div style={{ marginTop: 12 }}>
@@ -2275,7 +2290,7 @@ function LeaderboardModal({ onClose }) {
   const [data, setData] = useState({ leetcode: null, codeforces: null, codechef: null });
   const [sort, setSort] = useState("leetcode-combined"); // platform-mode key
   const [loading, setLoading] = useState(true);
-  // CP summaries — keyed per person_id. Each entry is the result of
+  // CP summaries - keyed per person_id. Each entry is the result of
   // api.cp.summarize for that person, plus a loading flag.
   const [summaries, setSummaries] = useState({});
   const [summariseLoading, setSummariseLoading] = useState(new Set());
@@ -2322,7 +2337,7 @@ function LeaderboardModal({ onClose }) {
       }
     }
     const all = [...map.values()];
-    // Sort key like "leetcode-combined" / "codeforces" — split into platform
+    // Sort key like "leetcode-combined" / "codeforces" - split into platform
     // + mode, then read whichever pre-computed field the row exposes.
     const [platform, mode = "rating"] = sort.split("-");
     all.sort((a, b) => {
@@ -2457,20 +2472,20 @@ function leaderboardMetric(r, mode) {
   return r.combinedScore ?? r.totalSolved ?? null;
 }
 function statCell(r, plat) {
-  if (!r) return "—";
+  if (!r) return "-";
   if (r.error) return <span className="error">{r.error}</span>;
   const s = r.stats || {};
   if (plat === "leetcode") {
     const solved = s.totalSolved != null
       ? `${s.totalSolved} (${s.easy || 0}/${s.medium || 0}/${s.hard || 0})`
-      : "—";
+      : "-";
     const rating = s.rating ? ` · ${s.rating}` : "";
     const contests = s.contests ? ` · ${s.contests} contests` : "";
     return solved + rating + contests;
   }
-  if (plat === "codeforces") return s.rating != null ? `${s.rating}${s.maxRating ? ` (max ${s.maxRating})` : ""}${s.totalSolved ? ` · ${s.totalSolved} solved` : ""}` : "—";
-  if (plat === "codechef") return s.rating != null ? `${s.rating}${s.stars ? ` · ${s.stars}★` : ""}` : "—";
-  return "—";
+  if (plat === "codeforces") return s.rating != null ? `${s.rating}${s.maxRating ? ` (max ${s.maxRating})` : ""}${s.totalSolved ? ` · ${s.totalSolved} solved` : ""}` : "-";
+  if (plat === "codechef") return s.rating != null ? `${s.rating}${s.stars ? ` · ${s.stars}★` : ""}` : "-";
+  return "-";
 }
 
 // Full-fat repo detail modal with tech stack, README preview, Ollama summary,
@@ -2484,7 +2499,7 @@ function RepoDetailModal({ repo, person, onClose }) {
   const [model, setModel] = useState("");
   const [ollamaOk, setOllamaOk] = useState(false);
   const [models, setModels] = useState([]);
-  // Tabs: chat (default — overview lives inside as a context card) |
+  // Tabs: chat (default - overview lives inside as a context card) |
   // walkthrough | compare. The standalone Overview tab is gone; its
   // content now sits at the top of Chat so users get one combined view.
   const [tab, setTab] = useState("chat");
@@ -2514,7 +2529,7 @@ function RepoDetailModal({ repo, person, onClose }) {
       if (!res?.ok) {
         setChatErr(res?.error || "Chat failed.");
         // Roll back the user message so they can retry without dupes? Keep it
-        // — the failure is informative.
+        // - the failure is informative.
       } else {
         setChatHistory((h) => [...h, { role: "assistant", content: res.reply || "(empty reply)" }]);
       }
@@ -2583,13 +2598,13 @@ function RepoDetailModal({ repo, person, onClose }) {
         {repo.description && <p style={{ marginTop: 10 }}>{repo.description}</p>}
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
           <span className="pill">★ {repo.stars ?? 0}</span>
-          <span className="pill">⑂ {repo.forks ?? 0}</span>
+          <span className="pill">{repo.forks ?? 0} forks</span>
           {repo.language && <span className="pill">{repo.language}</span>}
           {(repo.topics || []).slice(0, 6).map((t) => <span key={t} className="pill gray">{t}</span>)}
-          <span className="pill gray">pushed {repo.pushed_at ? new Date(repo.pushed_at).toLocaleDateString() : "—"}</span>
+          <span className="pill gray">pushed {repo.pushed_at ? new Date(repo.pushed_at).toLocaleDateString() : "-"}</span>
         </div>
 
-        {/* Tab strip — overview vs. project chat. Chat has read-access to
+        {/* Tab strip - overview vs. project chat. Chat has read-access to
             the same context the AI summary uses, so the user can ask
             grounded questions like "what does it actually do?" or
             "where is auth handled?". */}
@@ -2629,7 +2644,7 @@ function RepoDetailModal({ repo, person, onClose }) {
         ) : tab === "compare" ? (
           <RepoComparePanel repo={repo} />
         ) : (
-          // Overview & Chat — single combined view. Overview content sits
+          // Overview & Chat - single combined view. Overview content sits
           // inside a collapsible card so the chat input is always within
           // reach without losing access to the project facts.
           <>
@@ -2672,17 +2687,29 @@ function RepoDetailModal({ repo, person, onClose }) {
             <div className="section-label" style={{ marginTop: 14 }}>Overview</div>
             <div className="card" style={{ background: "var(--bg-elev-2)" }}>
               {!aiSummary && !aiLoading && (
-                <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-                  <select value={model} onChange={(e) => setModel(e.target.value)} style={{ maxWidth: 160 }}>
-                    {models.length === 0 && <option value="">(no models)</option>}
-                    {models.map((m) => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                  <button className="primary small" onClick={runSummary} disabled={!ollamaOk || !model}>
-                    Summarise
-                  </button>
+                <div className="ai-summary-empty">
+                  <div>
+                    <strong>What is this project?</strong>
+                    <small className="muted" style={{ display: "block" }}>
+                      One-paragraph read: architecture, stack, and what's worth stealing.
+                    </small>
+                  </div>
+                  <div className="row" style={{ gap: 6 }}>
+                    <select value={model} onChange={(e) => setModel(e.target.value)} style={{ maxWidth: 160 }}>
+                      {models.length === 0 && <option value="">(no models)</option>}
+                      {models.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <button className="primary small" onClick={runSummary} disabled={!ollamaOk || !model}>
+                      Summarise
+                    </button>
+                  </div>
                 </div>
               )}
-              {aiLoading && <div className="muted">Thinking…</div>}
+              {aiLoading && (
+                <div className="muted" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="pulse" /> Reading the repo…
+                </div>
+              )}
               {aiErr && <div className="error">{aiErr}</div>}
               {aiSummary && (
                 <div className="ai-summary">
@@ -2770,7 +2797,7 @@ function RepoDetailModal({ repo, person, onClose }) {
           </RepoOverviewCard>
         )}
 
-        {/* Chat — always present below the overview so users can ask
+        {/* Chat - always present below the overview so users can ask
             questions without changing tabs. */}
         <RepoChatPanel
           repo={repo}
@@ -2793,7 +2820,7 @@ function RepoDetailModal({ repo, person, onClose }) {
   );
 }
 
-// Collapsible overview card — sits above Chat in the merged tab. Default
+// Collapsible overview card - sits above Chat in the merged tab. Default
 // collapsed state shows a one-line "summary strip"; expanded shows the
 // full Overview content (tech stack, AI summary, repo links, etc.).
 function RepoOverviewCard({ children, defaultOpen = false }) {
@@ -2867,16 +2894,14 @@ function RepoChatPanel({
   return (
     <div className="repo-chat" style={{ marginTop: 12 }}>
       <div className="repo-chat-controls">
-        <small className="muted">
-          Asks Ollama with the README, file tree, manifests &amp; recent
-          commits as context. All local.
-        </small>
+        <span />
         <div className="row" style={{ gap: 6 }}>
           <select
             value={model}
             onChange={(e) => onModelChange(e.target.value)}
             disabled={!ollamaOk || models.length === 0}
             style={{ maxWidth: 200 }}
+            title="Local Ollama model — answers use the README, file tree, manifests & recent commits"
           >
             {models.length === 0 && <option value="">(no models)</option>}
             {models.map((m) => (
@@ -2999,13 +3024,13 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
   }, [fullscreen]);
 
   // Build the deterministic guided tour. Each step has a `path` AND a
-  // `purpose` label — the model uses the purpose to give a focused
+  // `purpose` label - the model uses the purpose to give a focused
   // explanation, and the user sees it in the toolbar so they know WHY
   // we're at this file. Order encodes a logical reading flow:
-  //   1. Orientation (README, manifest)  — "what is this project"
-  //   2. Entry point (src/index.*, main.*)  — "where execution starts"
-  //   3. Core layers (App, router, server) — "the wiring"
-  //   4. Representative source files from the rest  — "the surface area"
+  //   1. Orientation (README, manifest)  - "what is this project"
+  //   2. Entry point (src/index.*, main.*)  - "where execution starts"
+  //   3. Core layers (App, router, server) - "the wiring"
+  //   4. Representative source files from the rest  - "the surface area"
   // Files never repeat in the tour. At the end the user gets a "How it
   // all fits together?" recap prompt.
   const tourPlan = React.useMemo(() => {
@@ -3019,12 +3044,12 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
 
     // 1) Orientation files.
     const orient = [
-      [/^README(\.md|\.rst|\.txt)?$/i, "Orientation — README, the project's pitch"],
-      [/^package\.json$/, "Orientation — package manifest"],
-      [/^pyproject\.toml$/, "Orientation — Python project manifest"],
-      [/^requirements\.txt$/, "Orientation — dependency list"],
-      [/^Cargo\.toml$/, "Orientation — Rust manifest"],
-      [/^go\.mod$/, "Orientation — Go modules"],
+      [/^README(\.md|\.rst|\.txt)?$/i, "Orientation - README, the project's pitch"],
+      [/^package\.json$/, "Orientation - package manifest"],
+      [/^pyproject\.toml$/, "Orientation - Python project manifest"],
+      [/^requirements\.txt$/, "Orientation - dependency list"],
+      [/^Cargo\.toml$/, "Orientation - Rust manifest"],
+      [/^go\.mod$/, "Orientation - Go modules"],
     ];
     for (const [re, why] of orient) {
       const m = paths.find((p) => re.test(p));
@@ -3033,23 +3058,23 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
 
     // 2) Entry points.
     const entries = [
-      [/^src\/index\.(jsx?|tsx?|mjs|cjs)$/, "Entry — JS bootstrap"],
-      [/^src\/main\.(jsx?|tsx?|py|go|rs|java|kt|c|cpp)$/, "Entry — main()"],
-      [/^src\/App\.(jsx?|tsx?)$/, "Core — root component"],
-      [/^index\.(jsx?|tsx?|html|py|js)$/, "Entry — root file"],
-      [/^main\.(py|go|rs|java|c|cpp)$/, "Entry — main()"],
-      [/^app\.(jsx?|tsx?|py)$/, "Entry — app boot"],
-      [/^server\.(jsx?|tsx?|py|go)$/, "Core — server"],
-      [/^app\/page\.(jsx?|tsx?)$/, "Core — Next.js root page"],
-      [/^app\/layout\.(jsx?|tsx?)$/, "Core — Next.js root layout"],
-      [/^pages\/_app\.(jsx?|tsx?)$/, "Core — Next.js _app shell"],
+      [/^src\/index\.(jsx?|tsx?|mjs|cjs)$/, "Entry - JS bootstrap"],
+      [/^src\/main\.(jsx?|tsx?|py|go|rs|java|kt|c|cpp)$/, "Entry - main()"],
+      [/^src\/App\.(jsx?|tsx?)$/, "Core - root component"],
+      [/^index\.(jsx?|tsx?|html|py|js)$/, "Entry - root file"],
+      [/^main\.(py|go|rs|java|c|cpp)$/, "Entry - main()"],
+      [/^app\.(jsx?|tsx?|py)$/, "Entry - app boot"],
+      [/^server\.(jsx?|tsx?|py|go)$/, "Core - server"],
+      [/^app\/page\.(jsx?|tsx?)$/, "Core - Next.js root page"],
+      [/^app\/layout\.(jsx?|tsx?)$/, "Core - Next.js root layout"],
+      [/^pages\/_app\.(jsx?|tsx?)$/, "Core - Next.js _app shell"],
     ];
     for (const [re, why] of entries) {
       const m = paths.find((p) => re.test(p));
       if (m) add(m, why);
     }
 
-    // 3) Surface area — one or two files per meaningful folder.
+    // 3) Surface area - one or two files per meaningful folder.
     const noise = /(^|\/)(node_modules|dist|build|\.next|\.cache|coverage|vendor|target|venv|__pycache__|tests?|spec|docs?|examples?|fixtures|assets|public|images?)\//i;
     const codeExt = /\.(jsx?|tsx?|py|go|rs|java|kt|c|cpp|h|hpp|rb|php|cs|swift|sh|cjs|mjs|svelte|vue)$/i;
     const folders = new Map();
@@ -3067,8 +3092,8 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
     };
     for (const [dir, list] of folders.entries()) {
       list.sort(prefer);
-      add(list[0], `Surface — ${dir}/`);
-      if (list.length > 4) add(list[1], `Surface — ${dir}/ (more)`);
+      add(list[0], `Surface - ${dir}/`);
+      if (list.length > 4) add(list[1], `Surface - ${dir}/ (more)`);
     }
     return steps.slice(0, 12);
   }, [tree]);
@@ -3230,7 +3255,7 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
 
   return (
     <div className={"repo-walkthrough" + (fullscreen ? " fullscreen" : "")}>
-      {/* Toolbar — < / > cycle through the essential-files tour, then the
+      {/* Toolbar - < / > cycle through the essential-files tour, then the
           current file path, then a progress bar of the tour, then a "next
           suggested" jump if the AI proposed one outside the tour. */}
       <div className="repo-walkthrough-toolbar">
@@ -3320,7 +3345,7 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
           })}
         </div>
 
-        {/* File viewer — spinner instead of bare "loading…" text. */}
+        {/* File viewer - spinner instead of bare "loading…" text. */}
         {busy && !content ? (
           <div className="repo-walk-viewer">
             <div className="spinner-block">
@@ -3337,7 +3362,7 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
         <div className="repo-walk-side">
           <div className="section-label">Apex says</div>
           <div className="repo-walk-side-stream">
-            {!ollamaOk && <div className="muted">Ollama is offline — start it from Settings.</div>}
+            {!ollamaOk && <div className="muted">Ollama is offline - start it from Settings.</div>}
             {busy && !explanation && (
               <div className="spinner-row" style={{ marginTop: 4 }}>
                 <span className="spinner" aria-hidden />
@@ -3352,7 +3377,7 @@ function RepoWalkthroughPanel({ repo, ollamaOk, model }) {
               </div>
             ))}
           </div>
-          {/* End-of-tour synthesis button — appears once you've reached
+          {/* End-of-tour synthesis button - appears once you've reached
               the last step OR explicitly visited every tour file. The
               click feeds the planned tour back into Ollama for a recap
               that connects the dots between everything you saw. */}
@@ -3530,7 +3555,7 @@ function RepoComparePanel({ repo }) {
 
   return (
     <div className="repo-compare">
-      {/* Header — who we matched against, how many, and meta. */}
+      {/* Header - who we matched against, how many, and meta. */}
       <div className="row between" style={{ marginBottom: 10, alignItems: "baseline" }}>
         <div>
           <div className="section-label">Compare {repo.name} with your repos</div>
@@ -3544,12 +3569,12 @@ function RepoComparePanel({ repo }) {
 
       {matches.length === 0 ? (
         <div className="muted" style={{ padding: "20px 8px", textAlign: "center" }}>
-          No clear matches — none of your repos share a language, topic, or
+          No clear matches - none of your repos share a language, topic, or
           obvious keyword with this one.
         </div>
       ) : (
         <div className="repo-compare-grid">
-          {/* Left rail — list of similar repos with scores */}
+          {/* Left rail - list of similar repos with scores */}
           <div className="repo-compare-list">
             <div className="section-label" style={{ marginBottom: 6 }}>Your similar repos</div>
             {matches.map((m) => {
@@ -3585,7 +3610,7 @@ function RepoComparePanel({ repo }) {
             })}
           </div>
 
-          {/* Right pane — full AI comparison + chat for the selected match */}
+          {/* Right pane - full AI comparison + chat for the selected match */}
           <div className="repo-compare-detail">
             {!selected ? (
               <div className="muted" style={{ padding: 20, textAlign: "center" }}>
@@ -3816,3 +3841,4 @@ function BulkDeleteModal({ people, onClose, onDeleted }) {
     </div>
   );
 }
+

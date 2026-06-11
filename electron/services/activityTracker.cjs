@@ -13,11 +13,13 @@ const db = require('./db.cjs');
 
 const POLL_MS = 30_000;
 const NUDGE_AFTER_MIN = 45;   // nudge when the same app has run 45+ minutes
+const DISTRACT_NUDGE_MIN = 15; // distraction sessions get called out sooner
 
 let timer = null;
 let currentSession = null;    // { app, title, category, startedAt, lastTickAt }
 let emitter = null;
 let nudgedFor = null;         // the sessionId we already nudged about
+let distractNudgedFor = null; // session already agenda-nudged for drifting
 let lastPsError = null;       // surfaced via status() so UI can show cause
 
 // PowerShell script. NOTE: do NOT use $pid — it's a read-only automatic
@@ -89,10 +91,22 @@ function inferCategory(exe, title) {
   const lower = (exe + ' ' + (title || '')).toLowerCase();
   const cat = db.getSetting('activity.overrides.' + (exe || '').toLowerCase());
   if (cat) return cat;
+  const educationalVideo =
+    /(youtube|youtu\.be)/.test(lower) &&
+    /(lecture|course|tutorial|lesson|programming|coding|leetcode|codeforces|dbms|dsa|operating system|computer network|compiler|math|calculus|linear algebra|mit ocw|stanford|cs50|freecodecamp|khan academy|nptel|gate cse)/.test(lower);
+  if (educationalVideo) return 'productive';
+  const intentionalResearch =
+    /(chrome|firefox|brave|edge|opera|vivaldi|arc|safari)/.test(lower) &&
+    /(documentation|docs\.|mdn|stackoverflow|stack overflow|github|gitlab|arxiv|paper|research|course|syllabus|assignment|leetcode|codeforces|codechef|nptel|geeksforgeeks|wikipedia)/.test(lower);
+  if (intentionalResearch) return 'productive';
+  const workChat =
+    /(slack|teams|discord)/.test(lower) &&
+    /(meeting|standup|class|course|project|assignment|github|pull request|pr |issue|nexttech|srm|lab|study)/.test(lower);
+  if (workChat) return 'productive';
   const rules = [
     // ── PRODUCTIVE ───────────────────────────────────────────────────
     // IDEs / editors
-    { cat: 'productive', re: /(code|idea64|webstorm|pycharm|clion|rider|goland|datagrip|rubymine|phpstorm|appcode|androidstudio|xcode|vim|nvim|emacs|cursor|sublime|neovim|atom|fleet|zed)/ },
+    { cat: 'productive', re: /(code|idea64|webstorm|pycharm|clion|rider|goland|datagrip|rubymine|phpstorm|appcode|androidstudio|xcode|vim|nvim|emacs|sublime|neovim|atom|fleet|zed)/ },
     // Terminals
     { cat: 'productive', re: /(terminal|wt|windowsterminal|powershell|pwsh|cmd|bash|zsh|wsl|kitty|alacritty|hyper|tabby|warp|iterm)/ },
     // Office / docs / notes / writing
@@ -112,6 +126,8 @@ function inferCategory(exe, title) {
     { cat: 'distraction', re: /(youtube|netflix|disney|hotstar|primevideo|twitch|crunchyroll|hulu|jiocinema)/ },
     // Social
     { cat: 'distraction', re: /(instagram|facebook|twitter|x\.com|reddit|tiktok|discord|snapchat|threads|pinterest|linkedin)/ },
+    // Shopping / gambling / endless feeds
+    { cat: 'distraction', re: /(amazon|flipkart|myntra|nykaa|ajio|ebay|temu|shein|bet365|stake\.com|dream11|fantasy|casino|sportsbook)/ },
     // Messaging that tends to spiral
     { cat: 'distraction', re: /(whatsapp|telegram|signal|messenger|slack|teams)/ },
     // News / aggregator timesinks
@@ -370,6 +386,26 @@ async function tick() {
       } catch { /* non-fatal */ }
     }
 
+    // Distraction drift: after 15 min on a distraction app, remind the user
+    // what today is actually for (their top open task) — once per session.
+    if (
+      category === 'distraction' &&
+      mins >= DISTRACT_NUDGE_MIN &&
+      distractNudgedFor !== currentSession.startedAt
+    ) {
+      distractNudgedFor = currentSession.startedAt;
+      let agenda = '';
+      try {
+        const open = (db.listTasks?.({ kind: 'task', completed: false }) || [])
+          .sort((a, b) => (a.priority || 3) - (b.priority || 3));
+        if (open[0]) agenda = ` Today's agenda: ${open[0].title}.`;
+      } catch { /* agenda is decoration */ }
+      sendRendererEvent('activity:nudge', {
+        app, title, category, minutes: mins,
+        message: `${mins} min on ${app} — that's a distraction.${agenda}`,
+      });
+    }
+
     // Soft nudge if we've been in the same session for >= NUDGE_AFTER_MIN min
     if (mins >= NUDGE_AFTER_MIN && nudgedFor !== currentSession.startedAt) {
       nudgedFor = currentSession.startedAt;
@@ -403,6 +439,7 @@ function rollover(now) {
   }
   currentSession = null;
   nudgedFor = null;
+  distractNudgedFor = null;
 }
 
 function start(send) {
@@ -474,6 +511,18 @@ function status() {
   return { running, current, last, todayDesktop, lastError: lastPsError };
 }
 
+async function currentWindow() {
+  const fg = await getForegroundWindow();
+  if (!fg || !fg.exe || isSystemProcess(fg.exe)) return null;
+  const app = String(fg.exe);
+  const title = fg.title || "";
+  return {
+    app,
+    title,
+    category: inferCategory(app, title),
+  };
+}
+
 function toIsoDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -488,4 +537,4 @@ function sendRendererEvent(channel, payload) {
   } catch {}
 }
 
-module.exports = { start, stop, status, tick, inferCategory };
+module.exports = { start, stop, status, tick, inferCategory, currentWindow, getVisibleWindows };

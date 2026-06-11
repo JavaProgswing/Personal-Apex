@@ -445,6 +445,73 @@ async function chat({ model, system, user, json = false, temperature = 0.4, imag
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// chatStream — multi-turn streaming chat. Accepts a full `messages` array
+// (role/content turns) plus an optional `system` prompt, streams Ollama's
+// NDJSON response, and invokes `onDelta(piece)` for every token chunk. An
+// AbortSignal can cancel mid-stream. Used by the interactive Ask Apex drawer.
+// Returns { ok, content, model, aborted? }.
+// ───────────────────────────────────────────────────────────────────────────
+async function chatStream({ model, system, messages = [], temperature = 0.4, signal, onDelta } = {}) {
+  try {
+    const chosen = await resolveModel(model);
+    if (!chosen) {
+      return {
+        ok: false,
+        error: 'No Ollama models installed. Run `ollama pull llama3.2` first, then Refresh models.',
+      };
+    }
+    const msgs = [];
+    if (system) msgs.push({ role: 'system', content: system });
+    for (const m of messages) {
+      if (!m || !m.content) continue;
+      if (m.role !== 'user' && m.role !== 'assistant' && m.role !== 'system') continue;
+      const mm = { role: m.role, content: String(m.content) };
+      if (Array.isArray(m.images) && m.images.length > 0) mm.images = m.images;
+      msgs.push(mm);
+    }
+    const res = await fetch(`${host()}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: chosen, messages: msgs, stream: true, options: { temperature } }),
+      signal,
+    });
+    if (!res.ok || !res.body) {
+      let body = ''; try { body = await res.text(); } catch {}
+      const hint = res.status === 404
+        ? ` (model "${chosen}" not found — try \`ollama pull ${chosen}\`)`
+        : '';
+      return { ok: false, error: `Ollama ${res.status}${hint}${body ? ': ' + body.slice(0, 200) : ''}` };
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let full = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        try {
+          const j = JSON.parse(line);
+          const piece = j.message?.content || '';
+          if (piece) { full += piece; if (onDelta) { try { onDelta(piece); } catch {} } }
+        } catch { /* partial line — wait for more */ }
+      }
+    }
+    return { ok: true, content: full, model: chosen };
+  } catch (err) {
+    if (err && (err.name === 'AbortError' || /aborted/i.test(err.message || ''))) {
+      return { ok: true, content: '', model: null, aborted: true };
+    }
+    return { ok: false, error: err.message };
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // planDay — produce a structured day plan respecting classes, energy, dread.
 // ───────────────────────────────────────────────────────────────────────────
 async function planDay({
@@ -470,6 +537,10 @@ Hard constraints:
 - Chain hard+easy: pair one hard problem with one easy follow-up when possible.
 - If there's an ACTIVE timer right now, plan AROUND it: don't double-book the
   next ~timer-remaining minutes; pick up afterwards.
+- CT/exam rule: if any task mentions a CT/exam with a date (e.g. "CT2 DBMS
+  on 2026-06-20"), syllabus units COVERED BY THAT CT (see COURSE MATERIALS)
+  outrank everything else until that date; units outside the CT syllabus get
+  scheduled only after the CT date.
 - Skip slots that already happened (before "now").
 - Prefer a realistic plan over an ambitious one; leave 20% slack.
 Output style:
@@ -1038,6 +1109,7 @@ Style:
 - Each item is ONE concrete next action, max 18 words.
 - No generic motivational fluff. No "drink water" filler unless burnout suggests it.
 - Mix at least one DSA/CP nudge, at least one task or class-prep item, and at least one health/break item if energy/dread suggest it.
+- CT/exam rule: when a task names a CT/exam date, recommend ONLY that CT's syllabus units (from course materials) until the date passes; push other units after it.
 - Reference real task IDs / titles / class subjects from the input where you can.
 - Skip items that are already in progress (active timer / just-logged sessions).
 - Output 2 to 4 items, sorted most-impactful-first.`);
@@ -1294,7 +1366,7 @@ function safeParseJson(content) {
 // We deliberately bias toward MORE extractions than fewer — easier to
 // uncheck a noisy row than re-paste to add a missing one.
 // ───────────────────────────────────────────────────────────────────────────
-async function extractTasksFromText({ text, intent, model } = {}) {
+async function extractTasksFromText({ text, intent, model, courseContext } = {}) {
   if (!text || !String(text).trim()) {
     return { ok: false, error: 'Paste something first.' };
   }
@@ -1334,8 +1406,11 @@ Return shape:
   const intentLine = intent && intent.trim()
     ? `User intent / framing: "${intent.trim().slice(0, 200)}"\n\n`
     : '';
+  const courseBlock = courseContext && String(courseContext).trim()
+    ? `Known course/syllabus context (use to infer course_code/category when the source mentions matching topics; do not create tasks from this block alone):\n${String(courseContext).slice(0, 6000)}\n\n`
+    : '';
 
-  const user = `${intentLine}Source dump (verbatim, may be a chat transcript with both speakers):
+  const user = `${intentLine}${courseBlock}Source dump (verbatim, may be a chat transcript with both speakers):
 
 """
 ${String(text).slice(0, 18_000)}
@@ -1552,7 +1627,7 @@ async function compareRepos({ target, mine, history = [], question, model }) {
 }
 
 module.exports = {
-  listModels, chat, planDay, burnoutSuggest, eveningReview, burnoutCheck, summarizeRepo,
+  listModels, chat, chatStream, planDay, burnoutSuggest, eveningReview, burnoutCheck, summarizeRepo,
   summarizeRecentChanges, recommendNow, chatAboutRepo, chatAboutCommit,
   summarizeCpActivity, extractTasksFromText, walkthroughFile, walkthroughRecap, compareRepos,
   ocrTimetable, autoPickBest, resolveModel, personalContext, buildSystem,

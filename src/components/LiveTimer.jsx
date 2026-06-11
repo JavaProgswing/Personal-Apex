@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../lib/api.js";
 
-// LiveTimer — universal "what am I doing right now" timer.
+// LiveTimer - universal "what am I doing right now" timer.
 // Pinned to the top of the Dashboard. When idle, shows a "Start" call-to-
 // action. When running, shows a countdown ring, the activity title +
 // description, and quick actions (extend, stop, cancel).
@@ -21,7 +21,7 @@ const KIND_OPTIONS = [
   { key: "social",      label: "Social",      category: "leisure",    desc: "Hanging out, calls, meals with people" },
   { key: "leisure",     label: "Leisure",     category: "leisure",    desc: "Music, reading for fun" },
   { key: "gaming",      label: "Gaming",      category: "leisure",    desc: "Video games" },
-  { key: "distraction", label: "Distraction", category: "distraction", desc: "Social media, doomscrolling — being honest" },
+  { key: "distraction", label: "Distraction", category: "distraction", desc: "Social media, doomscrolling - being honest" },
   { key: "break",       label: "Break",       category: "neutral",    desc: "Short break between work blocks" },
   { key: "transit",     label: "Transit",     category: "neutral",    desc: "Commuting, travel" },
   { key: "other",       label: "Other",       category: "neutral",    desc: "Anything else" },
@@ -35,7 +35,7 @@ const QUICK_DURATIONS = [10, 25, 45, 60, 90, 120];
 // give the planner / evening-review better signal.
 const BREAK_PRESETS = [
   { icon: "🚶", title: "Stretch / walk",  desc: "Stand up, move around, get the blood flowing.", minutes: 5 },
-  { icon: "👀", title: "Eyes off-screen", desc: "20-20-20 rule — look 20 ft away for 20 seconds, repeat.", minutes: 5 },
+  { icon: "👀", title: "Eyes off-screen", desc: "20-20-20 rule - look 20 ft away for 20 seconds, repeat.", minutes: 5 },
   { icon: "💧", title: "Snack / drink",   desc: "Hydrate, grab a snack.", minutes: 10 },
   { icon: "🌳", title: "Outside",         desc: "Step outside, get sunlight + fresh air.", minutes: 15 },
   { icon: "🚿", title: "Reset (shower)",  desc: "Shower / freshen up to reset focus.", minutes: 20 },
@@ -43,7 +43,7 @@ const BREAK_PRESETS = [
   { icon: "🍴", title: "Meal",            desc: "Eat away from the desk.", minutes: 30 },
   { icon: "💬", title: "Social",          desc: "Talk to a friend / family for a few minutes.", minutes: 15 },
   { icon: "🧘", title: "Breathing",       desc: "Box-breathing or short meditation.", minutes: 5 },
-  { icon: "😴", title: "Power nap",       desc: "Nap with an alarm — under 30 min so you don't go deep.", minutes: 20 },
+  { icon: "😴", title: "Power nap",       desc: "Nap with an alarm - under 30 min so you don't go deep.", minutes: 20 },
   { icon: "🛋️", title: "Just rest",       desc: "Sit, stare, do nothing.", minutes: 10 },
 ];
 
@@ -52,23 +52,26 @@ export default function LiveTimer({ tasks = [], onChanged }) {
   const [now, setNow] = useState(Date.now());
   const [showStart, setShowStart] = useState(false);
   // After a productive timer auto-stops we surface a small inline suggest:
-  // "Take a 5-min break?" — one click starts a break-kind timer with a
+  // "Take a 5-min break?" - one click starts a break-kind timer with a
   // sensible duration based on what just finished.
   const [breakSuggestion, setBreakSuggestion] = useState(null);
-  // Active leisure segment — runs independently of the live_timer state
+  // Active leisure segment - runs independently of the live_timer state
   // so the user can be "off the clock" without having to start a fake
   // timer. Polled alongside the regular timer refresh.
   const [leisure, setLeisure] = useState(null);
+  const [zen, setZen] = useState(null);
   const tickRef = useRef(null);
 
   async function refresh() {
     try {
-      const [t, l] = await Promise.all([
+      const [t, l, z] = await Promise.all([
         api.timer.active(),
         api.leisure?.active?.() ?? Promise.resolve(null),
+        api.zen?.active?.() ?? Promise.resolve(null),
       ]);
       setActive(t || null);
       setLeisure(l || null);
+      setZen(z || null);
       onChanged?.(t || null);
     } catch {
       setActive(null);
@@ -94,16 +97,22 @@ export default function LiveTimer({ tasks = [], onChanged }) {
       setActive(t || null);
       onChanged?.(t || null);
     });
-    return () => off?.();
+    const offZen = api.zen?.onUpdate?.((payload) => {
+      setZen(payload?.session || null);
+    });
+    return () => {
+      off?.();
+      offZen?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 1Hz tick to drive the countdown without re-fetching.
+  // 1Hz tick to drive the countdown/leisure elapsed time without re-fetching.
   useEffect(() => {
-    if (!active) return;
+    if (!active && !leisure) return;
     tickRef.current = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(tickRef.current);
-  }, [active]);
+  }, [active, leisure]);
 
   // Auto-finish when the timer has been at/under 0 for 10s. We keep showing
   // the "0:00" briefly so the user sees the moment of completion.
@@ -149,7 +158,7 @@ export default function LiveTimer({ tasks = [], onChanged }) {
           <div className="break-suggest">
             <div style={{ flex: 1, minWidth: 0 }}>
               <strong>
-                Done — {breakSuggestion.elapsed}m of "{breakSuggestion.after}"
+                Done - {breakSuggestion.elapsed}m of "{breakSuggestion.after}"
               </strong>
               <small className="muted" style={{ display: "block", marginTop: 2 }}>
                 Take a {breakSuggestion.minutes}-min break before the next block?
@@ -196,7 +205,7 @@ export default function LiveTimer({ tasks = [], onChanged }) {
             </div>
           </div>
         )}
-        {/* Leisure mode — a parallel "I'm on a break" state. Lives next
+        {/* Leisure mode - a parallel "I'm on a break" state. Lives next
             to the work-timer slot so the dashboard always reflects what
             the user is actually doing. */}
         {leisure ? (
@@ -214,7 +223,7 @@ export default function LiveTimer({ tasks = [], onChanged }) {
                 type="button"
                 className="ghost small"
                 onClick={() => startLeisureSegment("On a break")}
-                title="Log a break — extend, resume, or stop when you're back"
+                title="Log a break - extend, resume, or stop when you're back"
               >
                 Start leisure
               </button>
@@ -245,6 +254,7 @@ export default function LiveTimer({ tasks = [], onChanged }) {
   const isLow = remaining > 0 && remaining <= 120;
   const isOver = remaining <= 0;
   const cat = active.category || "neutral";
+  const lockedByZen = zen?.mode === "locked" && remaining > 0;
 
   return (
     <div className={`live-timer running cat-${cat}` + (isLow ? " low" : "") + (isOver ? " over" : "")}>
@@ -268,6 +278,7 @@ export default function LiveTimer({ tasks = [], onChanged }) {
           {active.extended_minutes ? (
             <> · +{active.extended_minutes}m extended</>
           ) : null}
+          {lockedByZen ? <> · locked by Zen</> : null}
         </div>
       </div>
       <div className="live-timer-clock">
@@ -298,26 +309,37 @@ export default function LiveTimer({ tasks = [], onChanged }) {
           <button
             className="primary small"
             onClick={async () => {
-              await api.timer.stop();
+              const result = await api.timer.stop();
+              if (result?.locked) {
+                setZen(result.session || zen);
+                return;
+              }
               refresh();
             }}
-            title="Stop and log this timer"
+            title={lockedByZen ? "Locked focus ends when the timer reaches zero" : "Stop and log this timer"}
+            disabled={lockedByZen}
           >
-            ■ Stop
+            {lockedByZen ? "Locked" : "■ Stop"}
           </button>
           <button
             className="ghost xsmall"
             onClick={async () => {
+              if (lockedByZen) return;
               if (
                 elapsed >= 60 &&
                 !confirm("Cancel this timer? Less than a minute will be discarded; >1m logs as cancelled.")
               ) {
                 return;
               }
-              await api.timer.cancel();
+              const result = await api.timer.cancel();
+              if (result?.locked) {
+                setZen(result.session || zen);
+                return;
+              }
               refresh();
             }}
-            title="Cancel — discard if <1m, else log as cancelled"
+            title={lockedByZen ? "Locked focus cannot be cancelled early" : "Cancel - discard if <1m, else log as cancelled"}
+            disabled={lockedByZen}
           >
             ✕
           </button>
@@ -326,7 +348,6 @@ export default function LiveTimer({ tasks = [], onChanged }) {
     </div>
   );
 }
-
 function StartTimerModal({ tasks, onClose, onStarted }) {
   const [kind, setKind] = useState("task");
   const [title, setTitle] = useState("");
@@ -406,7 +427,7 @@ function StartTimerModal({ tasks, onClose, onStarted }) {
             <div className="form-row">
               <label>Link to a task (optional)</label>
               <select value={taskId} onChange={(e) => pickTask(e.target.value)}>
-                <option value="">— none —</option>
+                <option value="">- none -</option>
                 {openTasks.slice(0, 50).map((t) => (
                   <option key={t.id} value={t.id}>
                     P{t.priority} · {t.title.slice(0, 60)}
@@ -416,7 +437,7 @@ function StartTimerModal({ tasks, onClose, onStarted }) {
             </div>
           )}
 
-        {/* Break presets — quick-pick "what for?" so a break gets logged
+        {/* Break presets - quick-pick "what for?" so a break gets logged
             with real context instead of just "Break". Click prefills
             title + description + duration; user can still tweak. */}
         {(kind === "break" || kind === "rest") && (
@@ -502,7 +523,6 @@ function StartTimerModal({ tasks, onClose, onStarted }) {
     </div>
   );
 }
-
 function Ring({ pct, cat }) {
   const r = 28;
   const c = 2 * Math.PI * r;

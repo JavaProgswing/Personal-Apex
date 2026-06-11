@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld("apex", {
     lock: () => invoke("dayNotes:lock"),
     isUnlocked: () => invoke("dayNotes:isUnlocked"),
     clearPasscode: (passcode) => invoke("dayNotes:clearPasscode", { passcode }),
+    resetWithRecovery: (recoveryCode, newPasscode) =>
+      invoke("dayNotes:resetWithRecovery", { recoveryCode, newPasscode }),
     resetPasscode: () => invoke("dayNotes:resetPasscode", { confirm: "DELETE" }),
   },
   streak: {
@@ -89,6 +91,28 @@ contextBridge.exposeInMainWorld("apex", {
     cancel: () => invoke("timer:cancel"),
     onUpdate: (h) => on("timer:update", h),
   },
+  zen: {
+    active: () => invoke("zen:active"),
+    start: (p) => invoke("zen:start", p),
+    extend: (mins) => invoke("zen:extend", mins),
+    stop: (reason) => invoke("zen:stop", reason),
+    history: (limit) => invoke("zen:history", limit),
+    onUpdate: (h) => on("zen:update", h),
+    onViolation: (h) => on("zen:violation", h),
+  },
+  routine: {
+    state: () => invoke("routine:state"),
+    saveConfig: (patch) => invoke("routine:saveConfig", patch),
+    mark: (kind, payload) => invoke("routine:mark", kind, payload),
+    approveCloseReason: (payload) => invoke("routine:approveCloseReason", payload),
+    syncNow: () => invoke("routine:syncNow"),
+    createPairingCode: (payload) => invoke("routine:createPairingCode", payload),
+    pairDesktop: (payload) => invoke("routine:pairDesktop", payload),
+    listDevices: () => invoke("routine:listDevices"),
+    revokeDevice: (id) => invoke("routine:revokeDevice", id),
+    onCloseBlocked: (h) => on("routine:closeBlocked", h),
+    onNudge: (h) => on("routine:nudge", h),
+  },
   srm: {
     saveCreds: (creds) => invoke("srm:saveCreds", creds),
     clearCreds: () => invoke("srm:clearCreds"),
@@ -105,6 +129,7 @@ contextBridge.exposeInMainWorld("apex", {
   },
   courseMaterials: {
     list: (opts) => invoke("courseMaterials:list", opts),
+    context: (opts) => invoke("courseMaterials:context", opts),
     upsert: (p) => invoke("courseMaterials:upsert", p),
     delete: (id) => invoke("courseMaterials:delete", id),
     setAi: (id, on) => invoke("courseMaterials:setAi", id, on),
@@ -132,6 +157,19 @@ contextBridge.exposeInMainWorld("apex", {
     listModels: () => invoke("ollama:listModels"),
     plan: (ctx) => invoke("ollama:plan", ctx),
     chat: (p) => invoke("ollama:chat", p),
+    // Streaming multi-turn chat. `onToken` is called with { delta } chunks as
+    // they arrive, then { done, ok, content, ... }. The returned promise
+    // resolves with the final result. Abort with chatStreamAbort(streamId).
+    chatStream: (payload, onToken) => {
+      const id = payload.streamId;
+      const channel = `ollama:stream:${id}`;
+      const handler = (_e, msg) => { try { onToken && onToken(msg); } catch {} };
+      ipcRenderer.on(channel, handler);
+      return invoke("ollama:chatStream", payload).finally(() =>
+        ipcRenderer.removeListener(channel, handler),
+      );
+    },
+    chatStreamAbort: (streamId) => invoke("ollama:chatStreamAbort", streamId),
     burnoutSuggest: (ctx) => invoke("ollama:burnoutSuggest", ctx),
     recommend: (opts) => invoke("ollama:recommend", opts),
     burnoutCheck: (ctx) => invoke("ollama:burnoutCheck", ctx),
@@ -217,6 +255,8 @@ contextBridge.exposeInMainWorld("apex", {
     totalsOn: (d) => invoke("activity:totalsOn", d),
     trend: (days) => invoke("activity:trend", days),
     topApps: (d, limit) => invoke("activity:topApps", d, limit),
+    focusBlocks: (d, limit) => invoke("activity:focusBlocks", d, limit),
+    daySummary: (d) => invoke("activity:daySummary", d),
     feed: (opts) => invoke("activity:feed", opts),
     buckets: (d) => invoke("activity:buckets", d),
     clearAll: () => invoke("activity:clearAll"),
@@ -232,13 +272,19 @@ contextBridge.exposeInMainWorld("apex", {
     start: () => invoke("tracker:start"),
     stop: () => invoke("tracker:stop"),
     status: () => invoke("tracker:status"),
+    openWindows: () => invoke("tracker:openWindows"),
     categorize: (app, category) => invoke("tracker:categorize", app, category),
     onNudge: (h) => on("activity:nudge", h),
     onSessionEnded: (h) => on("activity:sessionEnded", h),
   },
   wellbeing: {
     devices: () => invoke("wellbeing:devices"),
+    diagnose: () => invoke("wellbeing:diagnose"),
     syncNow: () => invoke("wellbeing:syncNow"),
+    // Cloud (no-USB) phone-usage sync via the shared sync API.
+    cloudStatus: () => invoke("wellbeing:cloudStatus"),
+    pullCloud: (opts) => invoke("wellbeing:pullCloud", opts),
+    setCloudAuto: (on) => invoke("wellbeing:setCloudAuto", on),
   },
   battery: {
     supported: () => invoke("battery:supported"),
@@ -314,5 +360,26 @@ contextBridge.exposeInMainWorld("apex", {
     isTrackSaved: (uri) => invoke("spotify:isTrackSaved", uri),
     saveTrack: (uri) => invoke("spotify:saveTrack", uri),
     unsaveTrack: (uri) => invoke("spotify:unsaveTrack", uri),
+    // Playlist Manager
+    exportSyncLiked:          (opts) => invoke("spotify:exportSyncLiked", opts),
+    sortPlaylist:             (opts) => invoke("spotify:sortPlaylist", opts),
+    audioDashboard:           (opts) => invoke("spotify:audioDashboard", opts),
+    detectPlaylistDuplicates: (opts) => invoke("spotify:detectPlaylistDuplicates", opts),
+    removeExactDuplicates:    (opts) => invoke("spotify:removeExactDuplicates", opts),
+    applyMoodArc:             (opts) => invoke("spotify:applyMoodArc", opts),
+    backupPlaylist:           (opts) => invoke("spotify:backupPlaylist", opts),
+    listBackups:              ()     => invoke("spotify:listBackups"),
+    restorePlaylist:          (opts) => invoke("spotify:restorePlaylist", opts),
+    smartFilter:              (opts) => invoke("spotify:smartFilter", opts),
+    crossPlaylistDupes:       ()     => invoke("spotify:crossPlaylistDupes"),
+    mergePlaylists:           (opts) => invoke("spotify:mergePlaylists", opts),
+    timeMachine:              (opts) => invoke("spotify:timeMachine", opts),
+    createFocusPlaylist:      (opts) => invoke("spotify:createFocusPlaylist", opts),
+    // Progress event (long-running ops stream updates via this)
+    onProgress: (cb) => {
+      const handler = (_e, data) => cb(data);
+      ipcRenderer.on("spotify:progress", handler);
+      return () => ipcRenderer.removeListener("spotify:progress", handler);
+    },
   },
 });

@@ -31,6 +31,19 @@ CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline);
 -- idx_tasks_kind and idx_tasks_course are created in db.cjs runMigrations()
 -- after the `kind` and `course_code` columns are added to pre-v2 databases.
 
+CREATE TABLE IF NOT EXISTS task_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL,
+  at TEXT NOT NULL,
+  task_id INTEGER,
+  action TEXT NOT NULL,
+  title TEXT,
+  payload TEXT NOT NULL DEFAULT '{}',
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_events_date ON task_events(date);
+CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id);
+
 -- ────────────────────────────────────────────────────────────────────────────
 -- Check-ins, focus, weekly goals
 -- ────────────────────────────────────────────────────────────────────────────
@@ -215,9 +228,11 @@ CREATE TABLE IF NOT EXISTS burnout_reports (
 );
 
 -- ────────────────────────────────────────────────────────────────────────────
--- Passive activity tracker — active-window poll (desktop) + ADB dumpsys (mobile).
--- `source` is 'desktop' or 'mobile'. `category` is productive / distraction /
--- neutral / rest / mobile. `app` is the window exe or mobile package name.
+-- Passive activity tracker — active-window poll (desktop), ADB dumpsys
+-- (mobile), battery imports, and live-timer focus blocks.
+-- `source` is 'desktop' | 'mobile' | 'battery' | 'timer' | 'manual'.
+-- `category` is productive / distraction / neutral / rest / mobile.
+-- `app` is the window exe, mobile package, or focus-block title.
 -- ────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS activity_sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -301,7 +316,7 @@ CREATE INDEX IF NOT EXISTS idx_habit_completions_date ON habit_completions(date)
 -- Live timer — singleton row that tracks "what am I doing right now" with a
 -- countdown the user can extend or stop early. When stopped or expired, an
 -- entry is written into activity_sessions (source='timer') so it shows up in
--- the day's totals + Top apps strip.
+-- the day's totals + Focus blocks strip without polluting Top apps.
 -- ────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS live_timer (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -315,6 +330,58 @@ CREATE TABLE IF NOT EXISTS live_timer (
   extended_minutes INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
 );
+
+-- Zen mode sessions. A Zen session wraps the live timer with a focused app
+-- policy and optional Spotify focus playlist. Strict/locked modes raise Apex
+-- when the foreground app violates the policy; relaxed mode only logs/nudges.
+CREATE TABLE IF NOT EXISTS zen_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  status TEXT NOT NULL DEFAULT 'active',   -- active | completed | stopped | cancelled | interrupted
+  mode TEXT NOT NULL DEFAULT 'strict',      -- strict | relaxed | locked
+  title TEXT NOT NULL DEFAULT 'Deep work',
+  profile TEXT NOT NULL DEFAULT 'deep',     -- deep | flow | calm
+  allowed_apps TEXT NOT NULL DEFAULT '[]',  -- JSON array of app/title match tokens
+  blocked_apps TEXT NOT NULL DEFAULT '[]',  -- JSON array of app/title match tokens
+  planned_minutes INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  ends_at TEXT NOT NULL,
+  ended_at TEXT,
+  violations INTEGER NOT NULL DEFAULT 0,
+  last_violation_at TEXT,
+  last_violation_app TEXT,
+  last_violation_title TEXT,
+  playlist_id TEXT,
+  playlist_uri TEXT,
+  playlist_name TEXT,
+  created_playlist INTEGER NOT NULL DEFAULT 0,
+  note TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_zen_status ON zen_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_zen_started ON zen_sessions(started_at);
+
+CREATE TABLE IF NOT EXISTS zen_violations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id INTEGER NOT NULL,
+  at TEXT NOT NULL,
+  app TEXT,
+  title TEXT,
+  reason TEXT,
+  category TEXT,
+  FOREIGN KEY (session_id) REFERENCES zen_sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_zen_violations_session ON zen_violations(session_id);
+
+-- Daily routine guard — wake/sleep/objective nudges, app lifecycle,
+-- close-reason audit, and sync events shared with the mobile API.
+CREATE TABLE IF NOT EXISTS routine_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  at TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_routine_events_date ON routine_events(date);
+CREATE INDEX IF NOT EXISTS idx_routine_events_kind ON routine_events(kind);
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- Per-date class overrides — cancel, move, replace, or add a class for a

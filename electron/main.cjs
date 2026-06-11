@@ -19,8 +19,13 @@ const {
 const path = require("node:path");
 const fs = require("node:fs");
 const { pathToFileURL } = require("node:url");
+const { execFile } = require("node:child_process");
 
 const isDev = process.env.NODE_ENV === "development";
+if (process.platform === "win32") {
+  app.setAppUserModelId("in.apex.app");
+}
+app.setName("Apex");
 
 // On Windows, the default console codepage is cp437/cp1252 — Node writes
 // UTF-8 bytes and any non-ASCII glyph (em-dash, ellipsis, arrows) renders
@@ -48,17 +53,39 @@ const wellbeing = require("./services/wellbeing.cjs");
 const batteryReport = require("./services/batteryReport.cjs");
 const importLinks = require("./services/importLinks.cjs");
 const cp = require("./services/cp.cjs");
+const routine = require("./services/routine.cjs");
 
 let mainWindow = null;
 let tray = null;
 // Flipped to true only when the user picks "Quit" from the tray or
 // Cmd/Ctrl+Q. Tells the close handler "this is a real quit, don't hide".
 let isQuitting = false;
+let routinePoll = null;
 // True if the OS auto-started the app at login. Used so we open the
 // window minimised (or not at all if tray-mode is on) when launched
 // invisibly at startup, vs full-window when the user opens the app
 // from their Start menu / taskbar.
 let launchedAtLogin = false;
+const appOpenedAt = new Date().toISOString();
+const appSessionId = `${process.pid}-${Date.now().toString(36)}`;
+let lastCloseRequest = null;
+let appCloseLogged = false;
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", (_event, argv = [], workingDirectory = "") => {
+    const attemptedAt = new Date().toISOString();
+    logRoutineEvent("singleton_second_instance", {
+      ...appSessionPayload(),
+      attemptedAt,
+      argv: argv.slice(-8),
+      workingDirectory,
+    });
+    if (app.isReady()) focusMainWindow();
+  });
+}
 
 function createWindow() {
   // Honour "start minimised" when launched at login — open hidden if
@@ -109,11 +136,30 @@ function createWindow() {
   // `isQuitting` before triggering close.
   mainWindow.on("close", (event) => {
     if (isQuitting) return;
+    // Tray mode first: the X only hides the window — Apex keeps running and
+    // tracking, so no close reason is owed for that.
     let wantTray = false;
     try { wantTray = db.getSetting("ui.minimizeToTray") === "1"; } catch {}
     if (wantTray && tray) {
       event.preventDefault();
+      logRoutineEvent("window_hidden_to_tray", {
+        ...appSessionPayload(),
+        source: "window-close",
+        hiddenAt: new Date().toISOString(),
+      });
       mainWindow.hide();
+      return;
+    }
+    let block = false;
+    try {
+      block = shouldBlockAppClose();
+    } catch (err) {
+      console.warn("[close-guard] check threw:", err.message);
+    }
+    console.log("[close-guard] window-close → block =", block);
+    if (block) {
+      event.preventDefault();
+      surfaceRoutineGuard("window-close");
     }
   });
 }
@@ -123,9 +169,9 @@ function createWindow() {
 // asset locations the build/dist process produces.
 function getAppIcon() {
   const candidates = [
-    path.join(__dirname, "..", "build", "icon.png"),
     path.join(__dirname, "..", "build", "icon.ico"),
-    path.join(__dirname, "..", "assets", "icon.png"),
+    path.join(__dirname, "..", "build", "icon.png"),
+    path.join(__dirname, "assets", "icon.png"),
     path.join(__dirname, "..", "dist", "icon.png"),
     path.join(__dirname, "icon.png"),
   ];
@@ -140,12 +186,33 @@ function getAppIcon() {
   return null;
 }
 
+function getTrayIcon() {
+  const candidates = [
+    path.join(__dirname, "..", "build", "tray.png"),
+    path.join(__dirname, "..", "build", "tray.ico"),
+    path.join(__dirname, "assets", "tray.png"),
+    path.join(__dirname, "..", "build", "icon.ico"),
+  ];
+  for (const p of candidates) {
+    try {
+      if (!fs.existsSync(p)) continue;
+      const img = nativeImage.createFromPath(p);
+      if (img.isEmpty()) continue;
+      return img.resize({ width: 16, height: 16, quality: "best" });
+    } catch {}
+  }
+  const fallback = getAppIcon();
+  return fallback && !fallback.isEmpty()
+    ? fallback.resize({ width: 16, height: 16, quality: "best" })
+    : null;
+}
+
 // Build the system-tray icon + context menu. Creates one tray instance
 // per app lifetime; the menu's items reach into mainWindow so we always
 // act on the current renderer.
 function createTray() {
   if (tray) return;
-  const icon = getAppIcon();
+  const icon = getTrayIcon();
   // Fallback: a 16x16 transparent template so Tray() doesn't throw if no
   // icon shipped with the build. Windows will show a generic placeholder.
   const trayImg = icon || nativeImage.createEmpty();
@@ -186,6 +253,10 @@ function rebuildTrayMenu() {
     {
       label: "Quit Apex",
       click: () => {
+        if (shouldBlockAppClose()) {
+          surfaceRoutineGuard("tray-quit");
+          return;
+        }
         isQuitting = true;
         app.quit();
       },
@@ -196,21 +267,78 @@ function rebuildTrayMenu() {
 
 // Apply the "start with Windows" preference to the OS. Idempotent: safe
 // to call on every boot to keep the registry/Login Items entry in sync.
+function usesElectronDefaultRuntime() {
+  const exe = path.basename(process.execPath || "").toLowerCase();
+  return !!process.defaultApp || !app.isPackaged || exe === "electron.exe" || exe === "electron";
+}
+
+function quoteLoginArg(arg) {
+  const value = String(arg || "");
+  if (process.platform !== "win32") return value;
+  if (!/\s/.test(value) || /^".*"$/.test(value)) return value;
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function loginLaunchArgs(minimised) {
+  const args = [];
+  // In development/unpackaged runs, Windows launches the Electron binary
+  // directly. Electron needs the app folder as argv[1]; without it, the
+  // bundled Electron sample screen appears at login.
+  if (usesElectronDefaultRuntime()) {
+    args.push(quoteLoginArg(app.getAppPath()));
+  }
+  if (minimised) args.push("--launched-at-login");
+  return args;
+}
+
+function loginItemOptions(minimised) {
+  return {
+    path: process.execPath,
+    args: loginLaunchArgs(minimised),
+  };
+}
+
 function applyAutostartFromSettings() {
   try {
     const want = db.getSetting("ui.autostart") === "1";
     const minimised = db.getSetting("ui.minimizeToTray") === "1";
+    const loginItem = loginItemOptions(minimised);
     // openAsHidden hides the window at login on macOS; on Windows we
-    // approximate it by setting `args: ["--launched-at-login"]` and
-    // letting createWindow check it.
+    // approximate it by setting `--launched-at-login` and letting
+    // createWindow check it.
     app.setLoginItemSettings({
       openAtLogin: want,
       openAsHidden: !!minimised,
-      args: minimised ? ["--launched-at-login"] : [],
+      path: loginItem.path,
+      args: loginItem.args,
+      enabled: want,
     });
   } catch (err) {
     console.warn("[apex] applyAutostartFromSettings:", err.message);
   }
+}
+
+function startupStatusSnapshot() {
+  const minimised = db.getSetting("ui.minimizeToTray") === "1";
+  const autostart = db.getSetting("ui.autostart") === "1";
+  const loginItem = loginItemOptions(minimised);
+  const li = app.getLoginItemSettings(loginItem);
+  const electronRuntime = usesElectronDefaultRuntime();
+  const hasMismatchedStartupArgs =
+    autostart && !!li.executableWillLaunchAtLogin && !li.openAtLogin;
+  return {
+    openAtLogin: !!li.openAtLogin,
+    executableWillLaunchAtLogin: !!li.executableWillLaunchAtLogin,
+    hasMismatchedStartupArgs,
+    trayActive: !!tray,
+    minimizeToTrayPref: minimised,
+    autostartPref: autostart,
+    launchMode: electronRuntime ? "electron-default" : "packaged",
+    requiresAppPathArg: electronRuntime,
+    expectedArgs: loginItem.args,
+    appPath: app.getAppPath(),
+    executable: loginItem.path,
+  };
 }
 
 // Register a custom `apex-img://` protocol so the renderer can display
@@ -249,6 +377,7 @@ if (process.argv.includes("--launched-at-login")) {
   launchedAtLogin = true;
 }
 
+if (hasSingleInstanceLock) {
 app.whenReady().then(async () => {
   registerTimetableProtocol();
   try {
@@ -266,6 +395,7 @@ app.whenReady().then(async () => {
   }
   // db.init() already seeds classes + weekly_goals + course habits on first
   // run. Nothing to do here.
+  logAppOpen();
   createWindow();
   // Create the system-tray icon ONLY if the user opted in. We keep it
   // off by default so the app doesn't grow a tray icon nobody asked for.
@@ -286,6 +416,22 @@ app.whenReady().then(async () => {
       activityTracker.start((ch, p) => emit(ch, p));
     }
   } catch (e) { console.warn("[tracker] autostart skipped:", e.message); }
+  try {
+    if (db.activeZenSession?.()) startZenMonitor();
+  } catch (e) { console.warn("[zen] autoresume skipped:", e.message); }
+  try {
+    startRoutineMonitor();
+  } catch (e) { console.warn("[routine] monitor skipped:", e.message); }
+
+  // Cloud mobile-wellbeing auto-pull. If the desktop is paired and the user
+  // enabled auto-sync, pull the phone's usage now and then every 15 minutes.
+  try {
+    startCloudWellbeingAutoSync();
+    const wb = wellbeing.cloudConfigured();
+    if (wb.auto && wb.paired) {
+      wellbeing.pullFromCloud().catch((e) => console.warn("[wellbeing] cloud pull failed:", e.message));
+    }
+  } catch (e) { console.warn("[wellbeing] cloud autosync skipped:", e.message); }
 
   // Global Ctrl/Cmd+Shift+N — pop the quick-capture modal in the renderer
   // even when Apex is in the background. We don't bind plain Ctrl+N so we
@@ -401,9 +547,15 @@ app.whenReady().then(async () => {
   console.error("[apex] whenReady failed:", err);
   app.exit(1);
 });
+}
 
 app.on("will-quit", () => {
+  logAppCloseOnce("will-quit");
   try { globalShortcut.unregisterAll(); } catch { /* ignore */ }
+  if (routinePoll) {
+    clearInterval(routinePoll);
+    routinePoll = null;
+  }
 });
 
 app.on("window-all-closed", () => {
@@ -415,7 +567,20 @@ app.on("window-all-closed", () => {
   if (tray) return;
   app.quit();
 });
-app.on("before-quit", () => { isQuitting = true; });
+app.on("before-quit", (event) => {
+  let shouldBlock = false;
+  if (hasSingleInstanceLock) {
+    try { shouldBlock = shouldBlockAppClose(); } catch {}
+  }
+  if (shouldBlock) {
+    event.preventDefault();
+    isQuitting = false;
+    surfaceRoutineGuard("app-quit");
+    return;
+  }
+  if (hasSingleInstanceLock) logAppCloseOnce("before-quit");
+  isQuitting = true;
+});
 
 // Helpers to push progress events to the renderer.
 function emit(channel, payload) {
@@ -424,6 +589,173 @@ function emit(channel, payload) {
       mainWindow.webContents.send(channel, payload);
     }
   } catch {}
+}
+
+function uptimeMs() {
+  const opened = Date.parse(appOpenedAt);
+  return Number.isFinite(opened) ? Date.now() - opened : null;
+}
+
+function appSessionPayload(extra = {}) {
+  return {
+    appSessionId,
+    appOpenAt: appOpenedAt,
+    pid: process.pid,
+    launchedAtLogin,
+    packaged: app.isPackaged,
+    executable: process.execPath,
+    appPath: app.getAppPath?.(),
+    uptimeMs: uptimeMs(),
+    ...extra,
+  };
+}
+
+function logRoutineEvent(kind, payload = {}) {
+  try {
+    return routine.logEvent(kind, payload || {});
+  } catch (err) {
+    console.warn(`[routine] ${kind} log skipped:`, err.message);
+    return null;
+  }
+}
+
+function logAppOpen() {
+  logRoutineEvent("app_open", {
+    ...appSessionPayload({
+      openedAt: appOpenedAt,
+      argv: process.argv.slice(1),
+      cwd: process.cwd(),
+    }),
+  });
+}
+
+function logAppCloseOnce(source, extra = {}) {
+  if (appCloseLogged) return null;
+  appCloseLogged = true;
+  const closeAt = new Date().toISOString();
+  let lastReason = null;
+  try { lastReason = routine.closeState?.().lastReason || null; } catch {}
+  return logRoutineEvent("app_close", {
+    ...appSessionPayload({
+      source,
+      closeAt,
+      lastCloseRequest,
+      closeReason: lastReason,
+      ...extra,
+    }),
+  });
+}
+
+function focusMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function activeWorkCloseContext() {
+  let activeZen = null;
+  let activeTimer = null;
+  try { activeZen = db.activeZenSession?.() || null; } catch {}
+  try { activeTimer = db.getActiveTimer?.() || null; } catch {}
+
+  const timerKind = String(activeTimer?.kind || "").toLowerCase();
+  const timerCategory = String(activeTimer?.category || "").toLowerCase();
+  const timerRequiresReason = !!activeTimer && (
+    timerCategory === "productive" ||
+    ["task", "study", "habit"].includes(timerKind)
+  );
+
+  if (!activeZen && !timerRequiresReason) return null;
+  return {
+    reason: activeZen ? "zen-active" : "productive-timer-active",
+    activeZen: activeZen ? {
+      id: activeZen.id,
+      title: activeZen.title,
+      mode: activeZen.mode,
+      plannedMinutes: activeZen.planned_minutes,
+      startedAt: activeZen.started_at,
+      endsAt: activeZen.ends_at,
+      violations: activeZen.violations || 0,
+    } : null,
+    activeTimer: activeTimer ? {
+      id: activeTimer.id,
+      kind: activeTimer.kind,
+      category: activeTimer.category,
+      title: activeTimer.title,
+      description: activeTimer.description,
+      plannedMinutes: activeTimer.planned_minutes,
+      startedAt: activeTimer.started_at,
+    } : null,
+  };
+}
+
+function shouldBlockAppClose() {
+  const close = routine.closeState?.();
+  if (close?.allowedNow) return false;
+  if (routine.shouldBlockClose?.()) return true;
+  return !!activeWorkCloseContext();
+}
+
+function surfaceRoutineGuard(source) {
+  const closeRequestedAt = new Date().toISOString();
+  const foreground = activityTracker.status?.().current || null;
+  const workContext = activeWorkCloseContext();
+  const closePayload = {
+    ...appSessionPayload({
+      source,
+      closeRequestedAt,
+      foreground,
+      workContext,
+    }),
+  };
+  lastCloseRequest = closePayload;
+  let payload = { source, ...closePayload };
+  try {
+    payload = routine.closeBlocked(closePayload);
+    lastCloseRequest = {
+      ...closePayload,
+      blockedEventId: payload?.event?.id || null,
+    };
+  } catch (err) {
+    payload = { source, ...closePayload, error: err.message };
+  }
+  focusMainWindow();
+  emit("routine:closeBlocked", payload);
+  try {
+    notifier.fire({
+      title: "Close reason required",
+      body: "Apex needs a reason before it exits.",
+      kind: "routine-close",
+      payload,
+    });
+  } catch { /* notifier may be disabled */ }
+}
+
+function startRoutineMonitor() {
+  if (routinePoll) return;
+  const tick = () => {
+    try {
+      const nudge = routine.nextNudge?.();
+      if (!nudge) return;
+      emit("routine:nudge", nudge);
+      try {
+        notifier.fire({
+          title: nudge.title,
+          body: nudge.body,
+          kind: `routine-${nudge.key}`,
+          payload: nudge,
+        });
+      } catch { /* notifier may be disabled */ }
+    } catch (err) {
+      console.warn("[routine] nudge:", err.message);
+    }
+  };
+  routinePoll = setInterval(tick, 60_000);
+  setTimeout(tick, 6_000);
 }
 
 // ---- IPC surface -------------------------------------------------------------
@@ -446,23 +778,81 @@ ipcMain.handle("window:applyStartup", () => {
       tray = null;
     }
     applyAutostartFromSettings();
-    return { ok: true, tray: !!tray };
+    return { ok: true, tray: !!tray, status: startupStatusSnapshot() };
   } catch (err) {
     return { ok: false, error: err.message };
   }
 });
 // Status read — Settings UI uses this to reflect the *actual* OS-level
 // login-item state (vs what we wrote to settings).
-ipcMain.handle("window:startupStatus", () => {
-  const li = app.getLoginItemSettings();
-  return {
-    openAtLogin: !!li.openAtLogin,
-    trayActive: !!tray,
-    minimizeToTrayPref: db.getSetting("ui.minimizeToTray") === "1",
-    autostartPref: db.getSetting("ui.autostart") === "1",
-  };
-});
+ipcMain.handle("window:startupStatus", () => startupStatusSnapshot());
 ipcMain.handle("settings:all", () => db.allSettings());
+
+// --- routine guard ---
+ipcMain.handle("routine:state", () => routine.getState());
+ipcMain.handle("routine:saveConfig", async (_e, patch) => {
+  const config = routine.saveConfig(patch || {});
+  if (config.syncEnabled) routine.syncNow?.().catch(() => {});
+  return config;
+});
+ipcMain.handle("routine:mark", async (_e, kind, payload) => {
+  const event = routine.logEvent(kind, payload || {});
+  if (kind === "wake_done" || kind === "sleep_done" || kind === "objective_done") {
+    routine.syncNow?.().catch(() => {});
+  }
+  return event;
+});
+ipcMain.handle("routine:dismissNudge", async (_e, kind) => {
+  const key = String(kind || "").toLowerCase();
+  if (key === "wake") {
+    const event = routine.logEvent("wake_done", { source: "desktop-dismiss" });
+    routine.syncNow?.().catch(() => {});
+    return { ok: true, event };
+  }
+  if (key === "sleep") {
+    const event = routine.logEvent("sleep_done", { source: "desktop-dismiss" });
+    routine.syncNow?.().catch(() => {});
+    return { ok: true, event };
+  }
+  return { ok: false, error: "unknown-routine-nudge" };
+});
+ipcMain.handle("routine:approveCloseReason", async (_e, payload) => {
+  const res = routine.approveCloseReason({
+    ...(payload || {}),
+    ...(lastCloseRequest || {}),
+    appSessionId,
+    appOpenAt: appOpenedAt,
+    closeApprovedAt: new Date().toISOString(),
+    uptimeMs: uptimeMs(),
+  });
+  if (res?.ok) {
+    routine.syncNow?.().catch(() => {});
+    const closeSource = lastCloseRequest?.source || payload?.source || "approved-close";
+    setImmediate(() => {
+      try {
+        isQuitting = true;
+        logAppCloseOnce("approved-close", {
+          closeSource,
+          closeReasonEventId: res.event?.id || null,
+          allowUntil: res.allowUntil,
+        });
+        app.quit();
+      } catch (err) {
+        console.warn("[routine] approved close quit failed:", err.message);
+      }
+    });
+  }
+  return res;
+});
+ipcMain.handle("routine:syncNow", () => routine.syncNow());
+ipcMain.handle("routine:listDevices", () => routine.listDevices());
+ipcMain.handle("routine:revokeDevice", (_e, id) => routine.revokeDevice(id));
+ipcMain.handle("routine:createPairingCode", (_e, payload) =>
+  routine.createPairingCode(payload || {}),
+);
+ipcMain.handle("routine:pairDesktop", (_e, payload) =>
+  routine.pairDesktop(payload || {}),
+);
 
 ipcMain.handle("dialog:pickDirectory", async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
@@ -538,8 +928,9 @@ ipcMain.handle("dayNotes:hasPasscode", () => ({ set: db.hasDayNotePasscode() }))
 ipcMain.handle("dayNotes:setPasscode", (_e, { passcode }) => {
   try {
     db.setDayNotePasscode(passcode);
+    const recoveryCode = db.resetDayNoteRecoveryCode();
     _dayNotesUnlockedUntil = Date.now() + DAY_NOTES_UNLOCK_TTL_MS;
-    return { ok: true };
+    return { ok: true, recoveryCode };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -554,10 +945,26 @@ ipcMain.handle("dayNotes:unlock", (_e, { passcode }) => {
 });
 ipcMain.handle("dayNotes:lock", () => { _dayNotesUnlockedUntil = 0; return { ok: true }; });
 ipcMain.handle("dayNotes:isUnlocked", () => ({ unlocked: dayNotesIsUnlocked() }));
-// Hard-reset path — used when the user has FORGOTTEN the passcode. Since
-// notes are gated by the passcode (and we can't recover them), this nukes
-// every day_notes row + clears the passcode setting. Caller MUST pass
-// `confirm: "DELETE"` so an accidental click can't trigger it.
+ipcMain.handle("dayNotes:resetWithRecovery", (_e, { recoveryCode, newPasscode } = {}) => {
+  if (!db.hasDayNotePasscode()) return { ok: false, error: "No passcode set" };
+  if (!db.hasDayNoteRecoveryCode?.()) {
+    return { ok: false, error: "No recovery code is saved for this passcode" };
+  }
+  if (!db.verifyDayNoteRecoveryCode?.(recoveryCode)) {
+    return { ok: false, error: "Recovery code did not match" };
+  }
+  try {
+    db.setDayNotePasscode(newPasscode);
+    const nextRecoveryCode = db.resetDayNoteRecoveryCode();
+    _dayNotesUnlockedUntil = Date.now() + DAY_NOTES_UNLOCK_TTL_MS;
+    return { ok: true, recoveryCode: nextRecoveryCode, ttlMs: DAY_NOTES_UNLOCK_TTL_MS };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+// Emergency hard-reset path. The normal forgotten-passcode flow should use
+// dayNotes:resetWithRecovery, which preserves notes. This exists only for the
+// case where both passcode and recovery code are lost.
 ipcMain.handle("dayNotes:resetPasscode", (_e, { confirm } = {}) => {
   if (confirm !== "DELETE") {
     return { ok: false, error: "Reset requires confirm=\"DELETE\"" };
@@ -570,7 +977,7 @@ ipcMain.handle("dayNotes:resetPasscode", (_e, { confirm } = {}) => {
     dbh.exec(`DELETE FROM day_notes`);
     db.clearDayNotePasscode?.();
     db.setSetting("dayNotes.passcodeHash", null);
-    db.setSetting("dayNotes.passcodeSalt", null);
+    db.setSetting("dayNotes.recoveryHash", null);
     _dayNotesUnlockedUntil = 0;
     return { ok: true, deletedNotes: before?.c || 0 };
   } catch (e) {
@@ -774,6 +1181,16 @@ ipcMain.handle("srm:diagnose", async () => {
 ipcMain.handle("courseMaterials:list", (_e, opts = {}) =>
   db.listCourseMaterials(opts || {}),
 );
+ipcMain.handle("courseMaterials:context", (_e, opts = {}) => {
+  const maxChars = Math.max(500, Math.min(20_000, +opts.maxChars || 6000));
+  const items = db.listCourseMaterials({ includeBody: false }) || [];
+  return {
+    block: db.aiContextFromCourseMaterials({ maxChars }) || "",
+    items,
+    included: items.filter((x) => x.include_in_ai).length,
+    total: items.length,
+  };
+});
 ipcMain.handle("courseMaterials:upsert", (_e, p) =>
   ({ ok: true, id: db.upsertCourseMaterial(p || {}) }),
 );
@@ -876,6 +1293,43 @@ ipcMain.handle("ollama:chat", (_e, { model, system, user }) =>
   // so even Ask-Apex gets the profile + house rules.
   ollama.chat({ model, system: ollama.buildSystem(system || "You are Apex, a helpful personal assistant."), user }),
 );
+
+// Streaming, multi-turn chat for the interactive Ask Apex drawer. Token
+// chunks are pushed to the renderer on a per-request channel; the awaited
+// invoke resolves with the final assembled message. An in-flight request can
+// be cancelled via ollama:chatStreamAbort using the same streamId.
+const _ollamaStreamAborts = new Map();
+ipcMain.handle("ollama:chatStream", async (e, payload = {}) => {
+  const { streamId, model, system, messages, temperature } = payload;
+  const channel = `ollama:stream:${streamId}`;
+  const send = (msg) => {
+    try { if (streamId && !e.sender.isDestroyed()) e.sender.send(channel, msg); } catch {}
+  };
+  const ctl = new AbortController();
+  if (streamId) _ollamaStreamAborts.set(streamId, ctl);
+  try {
+    const res = await ollama.chatStream({
+      model,
+      system: ollama.buildSystem(system || "You are Apex, a helpful personal assistant."),
+      messages,
+      temperature,
+      signal: ctl.signal,
+      onDelta: (delta) => send({ delta }),
+    });
+    send({ done: true, ...res });
+    return res;
+  } catch (err) {
+    send({ error: err.message });
+    return { ok: false, error: err.message };
+  } finally {
+    if (streamId) _ollamaStreamAborts.delete(streamId);
+  }
+});
+ipcMain.handle("ollama:chatStreamAbort", (_e, streamId) => {
+  const ctl = _ollamaStreamAborts.get(streamId);
+  if (ctl) { try { ctl.abort(); } catch {} _ollamaStreamAborts.delete(streamId); return { ok: true }; }
+  return { ok: false };
+});
 // What should I do next? Pulls all relevant state on the backend so the
 // renderer can fire-and-forget without assembling 6 different fetches.
 ipcMain.handle("ollama:recommend", async (_e, opts = {}) => {
@@ -971,7 +1425,13 @@ ipcMain.handle("ollama:burnoutSuggest", (_e, ctx = {}) => {
 });
 ipcMain.handle("ollama:burnoutCheck", (_e, ctx) => ollama.burnoutCheck(ctx));
 ipcMain.handle("ollama:extractTasks", (_e, opts = {}) =>
-  ollama.extractTasksFromText(opts || {}),
+  ollama.extractTasksFromText({
+    ...(opts || {}),
+    courseContext:
+      opts?.courseContext ??
+      db.aiContextFromCourseMaterials?.({ maxChars: 5000 }) ??
+      "",
+  }),
 );
 
 // File → text. Handles PDFs via `pdftotext` (poppler) when available;
@@ -1381,6 +1841,12 @@ ipcMain.handle("activity:recentPushes", (_e, opts) =>
 ipcMain.handle("activity:totalsOn", (_e, isoDate) => db.activityTotalsOn(isoDate));
 ipcMain.handle("activity:trend", (_e, days) => db.activityTrend(days ?? 7));
 ipcMain.handle("activity:topApps", (_e, isoDate, limit) => db.topAppsOn(isoDate ?? today(), limit ?? 10));
+ipcMain.handle("activity:focusBlocks", (_e, isoDate, limit) =>
+  db.focusBlocksOn(isoDate ?? today(), limit ?? 12),
+);
+ipcMain.handle("activity:daySummary", (_e, isoDate) =>
+  db.daySummaryOn(isoDate ?? today()),
+);
 ipcMain.handle("activity:feed", (_e, opts) => db.listActivityFeed(opts || {}));
 ipcMain.handle("people:heatStrips", (_e, ids, days) =>
   db.pushHeatStripsFor(ids || [], days || 14),
@@ -1397,9 +1863,14 @@ ipcMain.handle("timer:active", () => db.getActiveTimer());
 ipcMain.handle("timer:start", (_e, p) => {
   // If something is already running, finish it cleanly first.
   const existing = db.getActiveTimer();
+  const activeZen = db.activeZenSession?.();
+  if (activeZen?.mode === "locked" && !zenCanEnd(activeZen, "stopped")) {
+    return lockedZenStopError(activeZen);
+  }
   if (existing) finishTimerToActivity(existing, "interrupted");
   const row = db.startTimer(p || {});
   broadcastTimer(row);
+  if (activeZen) broadcastZen(activeZen, { timer: row });
   // Optional Spotify focus playlist auto-play. Defined later in the file
   // (after the spotify service is required); guarded with typeof so we
   // don't blow up if the helper hasn't loaded yet.
@@ -1407,27 +1878,44 @@ ipcMain.handle("timer:start", (_e, p) => {
   return row;
 });
 ipcMain.handle("timer:extend", (_e, mins) => {
-  const row = db.extendTimer(+mins || 5);
+  const byMinutes = +mins || 5;
+  const row = db.extendTimer(byMinutes);
+  const activeZen = db.activeZenSession?.();
+  if (activeZen) {
+    const session = db.extendZenSession?.(byMinutes);
+    broadcastZen(session, { timer: row });
+  }
   broadcastTimer(row);
   return row;
 });
 ipcMain.handle("timer:stop", () => {
   const row = db.getActiveTimer();
   if (!row) return { ok: false, error: "No active timer" };
-  const out = finishTimerToActivity(row, "stopped");
+  const activeZen = db.activeZenSession?.();
+  const completed = timerIsComplete(row);
+  if (activeZen?.mode === "locked" && !completed && !zenCanEnd(activeZen, "stopped")) {
+    return lockedZenStopError(activeZen);
+  }
+  const out = finishTimerToActivity(row, completed ? "completed" : "stopped");
   db.clearTimer();
+  if (activeZen) finishZenSession(completed ? "completed" : "stopped", { stopTimer: false });
   broadcastTimer(null);
   return { ok: true, logged: out };
 });
 ipcMain.handle("timer:cancel", () => {
   const row = db.getActiveTimer();
   if (!row) return { ok: false };
+  const activeZen = db.activeZenSession?.();
+  if (activeZen?.mode === "locked" && !zenCanEnd(activeZen, "cancelled")) {
+    return lockedZenStopError(activeZen);
+  }
   // Cancel = discard. Only log if more than 60s elapsed so accidental
   // cancels don't pollute the activity stream.
   const minutes = elapsedMinutes(row);
   let logged = null;
   if (minutes >= 1) logged = finishTimerToActivity(row, "cancelled");
   db.clearTimer();
+  if (activeZen) finishZenSession("cancelled", { stopTimer: false });
   broadcastTimer(null);
   return { ok: true, logged };
 });
@@ -1436,6 +1924,39 @@ function elapsedMinutes(timer) {
   const start = new Date(timer.started_at).getTime();
   return Math.max(0, Math.round((Date.now() - start) / 60000));
 }
+
+function timerRemainingSeconds(timer) {
+  if (!timer) return 0;
+  const start = new Date(timer.started_at).getTime();
+  const totalSeconds = Math.max(
+    0,
+    ((+timer.planned_minutes || 0) + (+timer.extended_minutes || 0)) * 60,
+  );
+  if (!Number.isFinite(start)) return totalSeconds;
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - start) / 1000));
+  return Math.ceil(totalSeconds - elapsedSeconds);
+}
+
+function timerIsComplete(timer) {
+  return timerRemainingSeconds(timer) <= 0;
+}
+
+function zenCanEnd(session, reason = "stopped") {
+  if (!session || session.mode !== "locked") return true;
+  if (reason === "completed" || reason === "expired" || reason === "shutdown") return true;
+  const endsAt = new Date(session.ends_at).getTime();
+  return Number.isFinite(endsAt) && Date.now() >= endsAt;
+}
+
+function lockedZenStopError(session) {
+  return {
+    ok: false,
+    locked: true,
+    error: "Locked focus is active. It can only stop when the timer finishes.",
+    session,
+  };
+}
+
 function finishTimerToActivity(timer, reason) {
   const minutes = elapsedMinutes(timer);
   if (minutes < 1) return null;
@@ -1455,6 +1976,234 @@ function finishTimerToActivity(timer, reason) {
     note: noteParts.join(" "),
   });
   return { id, minutes };
+}
+
+// --- Zen mode ---------------------------------------------------------------
+// Guarded focus lock. Strict mode raises Apex and emits a lock overlay when
+// the user moves into a blocked app; relaxed mode only records/nudges.
+let zenPoll = null;
+let zenLastViolationAt = 0;
+let zenLastViolationKey = "";
+const ZEN_POLL_MS = 4_000;
+const ZEN_REPEAT_VIOLATION_MS = 12_000;
+
+function broadcastZen(payload, extra = {}) {
+  emit("zen:update", { session: payload, ...extra });
+}
+
+function normalizeZenToken(v) {
+  return String(v || "")
+    .toLowerCase()
+    .replace(/\.exe$/i, "")
+    .trim();
+}
+
+function zenTokenMatches(fg, token) {
+  const t = normalizeZenToken(token);
+  if (!t) return false;
+  const app = normalizeZenToken(fg?.app);
+  const title = String(fg?.title || "").toLowerCase();
+  return app.includes(t) || title.includes(t);
+}
+
+function isApexWindow(fg) {
+  const appName = normalizeZenToken(fg?.app);
+  const title = String(fg?.title || "").toLowerCase();
+  return appName.includes("apex") || title.includes("apex");
+}
+
+function zenViolationReason(session, fg) {
+  if (!session || !fg || isApexWindow(fg)) return null;
+  const allowed = Array.isArray(session.allowed_apps) ? session.allowed_apps : [];
+  const blocked = Array.isArray(session.blocked_apps) ? session.blocked_apps : [];
+  if (blocked.some((token) => zenTokenMatches(fg, token))) return "blocked-app";
+  if (allowed.length && !allowed.some((token) => zenTokenMatches(fg, token))) {
+    return "outside-allowlist";
+  }
+  if (!allowed.length && fg.category === "distraction") return "distraction";
+  return null;
+}
+
+function startZenMonitor() {
+  if (zenPoll) return;
+  zenPoll = setInterval(() => {
+    zenTick().catch((err) => console.warn("[zen] tick:", err.message));
+  }, ZEN_POLL_MS);
+  zenTick().catch((err) => console.warn("[zen] initial tick:", err.message));
+}
+
+function stopZenMonitorIfIdle() {
+  if (!zenPoll) return;
+  if (db.activeZenSession?.()) return;
+  clearInterval(zenPoll);
+  zenPoll = null;
+  zenLastViolationAt = 0;
+  zenLastViolationKey = "";
+}
+
+async function zenTick() {
+  const session = db.activeZenSession?.();
+  if (!session) {
+    stopZenMonitorIfIdle();
+    return;
+  }
+
+  if (session.remaining_seconds <= 0) {
+    finishZenSession("completed", { stopTimer: true });
+    return;
+  }
+
+  const fg = await activityTracker.currentWindow?.();
+  const reason = zenViolationReason(session, fg);
+  if (!reason) return;
+
+  const key = `${fg.app}|${fg.title}|${reason}`;
+  const now = Date.now();
+  if (key === zenLastViolationKey && now - zenLastViolationAt < ZEN_REPEAT_VIOLATION_MS) {
+    return;
+  }
+  zenLastViolationKey = key;
+  zenLastViolationAt = now;
+
+  const updated = db.recordZenViolation?.({
+    app: fg.app,
+    title: fg.title,
+    reason,
+    category: fg.category,
+  });
+  const payload = { session: updated, foreground: fg, reason };
+  emit("zen:violation", payload);
+  broadcastZen(updated, { violation: { foreground: fg, reason } });
+
+  if ((updated?.mode === "strict" || updated?.mode === "locked") && mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.flashFrame(true);
+      try {
+        mainWindow.setAlwaysOnTop(true, "floating");
+        setTimeout(() => {
+          try {
+            mainWindow?.setAlwaysOnTop?.(false);
+            mainWindow?.flashFrame?.(false);
+          } catch {}
+        }, 4500);
+      } catch {}
+    } catch {}
+  } else if (Notification?.isSupported?.()) {
+    try {
+      new Notification({
+        title: "Zen drift",
+        body: `${fg.app || "App"} is outside this focus block.`,
+      }).show();
+    } catch {}
+  }
+}
+
+function finishZenSession(reason = "stopped", { stopTimer = true } = {}) {
+  const current = db.activeZenSession?.();
+  if (current?.mode === "locked" && !zenCanEnd(current, reason)) {
+    broadcastZen(current);
+    return lockedZenStopError(current);
+  }
+  const ended = db.stopZenSession?.(reason);
+  if (!ended) return null;
+  // Tell the phone the focus block is over so its blocker stands down.
+  routine.pushFocus?.({ active: false }).catch?.(() => {});
+  if (stopTimer) {
+    const timer = db.getActiveTimer?.();
+    if (timer) finishTimerToActivity(timer, reason);
+    db.clearTimer?.();
+    broadcastTimer(null);
+  }
+  broadcastZen(null, { ended });
+  stopZenMonitorIfIdle();
+  return ended;
+}
+
+ipcMain.handle("zen:active", () => db.activeZenSession?.() || null);
+ipcMain.handle("zen:history", (_e, limit) => db.recentZenSessions?.(limit || 12) || []);
+ipcMain.handle("zen:start", async (_e, p) => {
+  const existing = db.getActiveTimer();
+  const activeZen = db.activeZenSession?.();
+  if (activeZen?.mode === "locked" && !zenCanEnd(activeZen, "stopped")) {
+    return lockedZenStopError(activeZen);
+  }
+
+  const payload = { ...(p || {}) };
+  if (existing) {
+    const remainingMinutes = Math.max(1, Math.ceil(Math.max(0, timerRemainingSeconds(existing)) / 60));
+    payload.title = payload.title || existing.title || "Focus timer";
+    payload.planned_minutes = remainingMinutes;
+    payload.note = payload.note || `Wrapped live timer: ${existing.title || existing.kind || "timer"}`;
+  }
+
+  const session = db.startZenSession(payload);
+  const timerRow = existing || db.startTimer({
+    kind: "study",
+    category: "productive",
+    title: session.title,
+    description: `Zen mode: ${session.mode}`,
+    planned_minutes: session.planned_minutes,
+  });
+  broadcastTimer(timerRow);
+  startZenMonitor();
+  broadcastZen(session, { timer: timerRow });
+
+  // Mirror the focus block to the phone (mobile distraction blocker).
+  routine.pushFocus?.({
+    active: true,
+    title: session.title,
+    mode: session.mode,
+    endsAt: session.ends_at,
+  }).catch?.(() => {});
+
+  if (session.playlist_uri && spotify?.play) {
+    startZenPlaylist(session.playlist_uri).then((playlist) => {
+      const live = db.activeZenSession?.();
+      if (live?.id === session.id) broadcastZen(live, { playlist });
+    }).catch(() => {});
+  } else if (typeof _maybeStartFocusMusic === "function") {
+    _maybeStartFocusMusic(timerRow);
+  }
+  return session;
+});
+ipcMain.handle("zen:extend", (_e, mins) => {
+  const session = db.extendZenSession?.(+mins || 10);
+  const timer = db.extendTimer(+mins || 10);
+  broadcastTimer(timer);
+  broadcastZen(session);
+  return session;
+});
+ipcMain.handle("zen:stop", (_e, reason) => finishZenSession(reason || "stopped", { stopTimer: true }));
+
+async function startZenPlaylist(uri) {
+  let r = await spotify.play(uri);
+  let woke = false;
+  if (!r?.ok && (r?.code === "NO_DEVICES" || r?.code === "NO_ACTIVE_DEVICE")) {
+    woke = true;
+    try { await shell.openExternal("spotify:"); } catch {}
+    await new Promise((res) => setTimeout(res, 2500));
+    r = await spotify.play(uri);
+  }
+  if (!r?.ok) {
+    const reason =
+      r?.code === "PREMIUM_REQUIRED"
+        ? "Spotify Premium is required for remote playback."
+        : r?.code === "NO_DEVICES" || r?.code === "NO_ACTIVE_DEVICE"
+          ? "Open Spotify on desktop or phone, then start Zen again."
+          : (r?.error || "Could not start the focus playlist.");
+    try {
+      notifier.fire({
+        title: "Focus music skipped",
+        body: reason,
+        kind: "spotify",
+      });
+    } catch {}
+    return { ok: false, error: reason, code: r?.code || null, woke };
+  }
+  return { ok: true, device: r.device || null, woke };
 }
 
 // Periodic checkpoint of the active live timer into activity_sessions.
@@ -1526,7 +2275,67 @@ ipcMain.handle("tracker:categorize", (_e, app, category) => {
 
 // --- mobile wellbeing (ADB) ---
 ipcMain.handle("wellbeing:devices", () => wellbeing.devices());
+ipcMain.handle("wellbeing:diagnose", () => wellbeing.diagnose());
 ipcMain.handle("wellbeing:syncNow", () => wellbeing.syncNow());
+
+// --- mobile wellbeing (cloud — no USB) ---
+// Pulls the phone's Digital Wellbeing usage from the shared sync API and
+// writes it into activity_sessions(source='mobile'). Credentials are shared
+// with the routine guard's desktop pairing.
+ipcMain.handle("wellbeing:cloudStatus", () => wellbeing.cloudConfigured());
+ipcMain.handle("wellbeing:pullCloud", (_e, opts) => wellbeing.pullFromCloud(opts || {}));
+ipcMain.handle("wellbeing:setCloudAuto", async (_e, on) => {
+  db.setSetting("wellbeing.cloud.auto", on ? "1" : "0");
+  startCloudWellbeingAutoSync();
+  // Kick an immediate pull when enabling so the user sees data right away.
+  if (on) { try { await wellbeing.pullFromCloud(); } catch {} }
+  return wellbeing.cloudConfigured();
+});
+
+// Background pull loop — re-checks the setting each tick and self-gates, so a
+// single interval covers enable/disable without teardown bookkeeping.
+let _cloudWellbeingTimer = null;
+const CLOUD_WELLBEING_INTERVAL_MS = 15 * 60_000;
+function startCloudWellbeingAutoSync() {
+  if (_cloudWellbeingTimer) return;
+  _cloudWellbeingTimer = setInterval(async () => {
+    try {
+      const status = wellbeing.cloudConfigured();
+      if (status.auto && status.paired) {
+        // Push first (tasks/routine up), then pull (phone usage + phone task
+        // completions down) so each cycle is a full round-trip.
+        try {
+          if (routine.getConfig?.().syncEnabled) await routine.syncNow();
+        } catch { /* push is best-effort */ }
+        const pulled = await wellbeing.pullFromCloud();
+        // "I'm awake ✓" pressed on the phone's alarm → greet with the day's
+        // shape: classes + the top open task, so the desktop picks up the
+        // morning the moment the user does.
+        if (pulled?.wokeUp) {
+          try {
+            const timetable = require("./services/timetable.cjs");
+            const tt = timetable.today?.();
+            const classes = Array.isArray(tt?.classes) ? tt.classes : [];
+            const firstClass = classes[0];
+            const open = (db.listTasks?.({ kind: "task", completed: false }) || [])
+              .sort((a, b) => (a.priority || 3) - (b.priority || 3));
+            const parts = [];
+            parts.push(classes.length
+              ? `${classes.length} class${classes.length === 1 ? "" : "es"} today${firstClass ? `, first at ${firstClass.start_time}` : ""}`
+              : "No classes today");
+            if (open[0]) parts.push(`Top task: ${open[0].title}`);
+            notifier.fire({
+              title: "Good morning — you're up ✓",
+              body: parts.join(" · "),
+              kind: "wake-brief",
+            });
+          } catch { /* brief is a bonus, never fatal */ }
+        }
+      }
+    } catch { /* non-fatal */ }
+  }, CLOUD_WELLBEING_INTERVAL_MS);
+  if (_cloudWellbeingTimer.unref) _cloudWellbeingTimer.unref();
+}
 
 // --- battery-report-derived desktop screen time (Windows only) ---
 ipcMain.handle("battery:supported", () => ({ ok: true, supported: batteryReport.supported() }));
@@ -2141,6 +2950,40 @@ ipcMain.handle("spotify:likedSongs", (_e, n) => spotify.likedSongs(n));
 ipcMain.handle("spotify:isTrackSaved", (_e, uri) => spotify.isTrackSaved(uri));
 ipcMain.handle("spotify:saveTrack", (_e, uri) => spotify.saveTrack(uri));
 ipcMain.handle("spotify:unsaveTrack", (_e, uri) => spotify.unsaveTrack(uri));
+
+// ── Playlist Manager IPC handlers ─────────────────────────────────────────
+// All long-running ops accept an onProgress callback that pushes live
+// updates to the renderer via `spotify:progress` so the UI can show a bar.
+function _spProg(event) {
+  return (p) => { try { event.sender.send("spotify:progress", p); } catch { /* win closed */ } };
+}
+ipcMain.handle("spotify:exportSyncLiked", (e, opts) =>
+  spotify.exportSyncLiked(opts || {}, _spProg(e)));
+ipcMain.handle("spotify:sortPlaylist", (e, opts) =>
+  spotify.sortPlaylist(opts || {}, _spProg(e)));
+ipcMain.handle("spotify:audioDashboard", (e, opts) =>
+  spotify.audioDashboard(opts || {}, _spProg(e)));
+ipcMain.handle("spotify:detectPlaylistDuplicates", (e, opts) =>
+  spotify.detectPlaylistDuplicates(opts || {}, _spProg(e)));
+ipcMain.handle("spotify:removeExactDuplicates", (e, opts) =>
+  spotify.removeExactDuplicates(opts || {}, _spProg(e)));
+ipcMain.handle("spotify:applyMoodArc", (e, opts) =>
+  spotify.applyMoodArc(opts || {}, _spProg(e)));
+ipcMain.handle("spotify:backupPlaylist", (e, opts) =>
+  spotify.backupPlaylist(opts || {}, _spProg(e)));
+ipcMain.handle("spotify:listBackups", () => spotify.listBackups());
+ipcMain.handle("spotify:restorePlaylist", (e, opts) =>
+  spotify.restorePlaylist(opts || {}, _spProg(e)));
+ipcMain.handle("spotify:smartFilter", (e, opts) =>
+  spotify.smartFilter(opts || {}, _spProg(e)));
+ipcMain.handle("spotify:crossPlaylistDupes", (e) =>
+  spotify.crossPlaylistDupes(_spProg(e)));
+ipcMain.handle("spotify:mergePlaylists", (e, opts) =>
+  spotify.mergePlaylists(opts || {}, _spProg(e)));
+ipcMain.handle("spotify:timeMachine", (e, opts) =>
+  spotify.timeMachine(opts || {}, _spProg(e)));
+ipcMain.handle("spotify:createFocusPlaylist", (e, opts) =>
+  spotify.createFocusPlaylist(opts || {}, _spProg(e)));
 
 // Auto-play the focus playlist when a productive timer starts, if the
 // user opted in. Hooked here (not in the timer service) so we don't

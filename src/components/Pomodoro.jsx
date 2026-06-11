@@ -86,7 +86,7 @@ export default function Pomodoro({ tasks, onLogged }) {
           onChange={(e) => setSelectedId(e.target.value)}
           style={{ maxWidth: 280 }}
         >
-          <option value="">(no task — freeform)</option>
+          <option value="">(no task - freeform)</option>
           {tasks.map((t) => (
             <option key={t.id} value={String(t.id)}>
               P{t.priority} · {t.title}

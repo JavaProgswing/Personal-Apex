@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import api from "../../lib/api.js";
 import ScheduleEditor from "../ScheduleEditor.jsx";
 import WeeklyGoalsEditor from "../WeeklyGoalsEditor.jsx";
@@ -8,12 +8,13 @@ import { prettyAppName } from "../../lib/appName.js";
 // labelled sections inside a single scrollable column. This dramatically
 // cuts visual noise vs the old 12-chip strip while keeping every setting
 // reachable.
-// Settings tab order. Icons removed in favour of typographic clarity —
+// Settings tab order. Icons removed in favour of typographic clarity -
 // the labels alone read cleaner and stay consistent across themes (some
 // fonts render emoji oddly; some don't render them at all).
 const TABS = [
   { key: "schedule",      label: "Schedule" },
   { key: "activity",      label: "Activity" },
+  { key: "mobile",        label: "Mobile" },
   { key: "goals",         label: "Goals" },
   { key: "integrations",  label: "Integrations" },
   { key: "appearance",    label: "Appearance" },
@@ -49,11 +50,12 @@ export default function Settings() {
     reload();
   }
 
-  // Section descriptions — shown beneath the nav rail label on hover and
+  // Section descriptions - shown beneath the nav rail label on hover and
   // as a sublabel under the active section's title.
   const SECTION_BLURB = {
     schedule: "Timetable, classes, course materials",
-    activity: "Tracking, mobile wellbeing, idle thresholds",
+    activity: "Desktop window tracking, idle thresholds",
+    mobile: "Phone pairing · cloud sync · ADB import",
     goals: "Weekly goals, competitive-programming cadence",
     integrations: "Ollama · Spotify · GitHub",
     appearance: "Theme, accent, contrast, fonts",
@@ -64,13 +66,12 @@ export default function Settings() {
 
   return (
     <div className="settings-layout">
-      {/* Left rail — vertical section nav. Title + each section as a row
+      {/* Left rail - vertical section nav. Title + each section as a row
           with active-state tint. Stays pinned while the right pane
           scrolls. Replaces the cramped horizontal pill bar. */}
       <aside className="settings-rail">
         <div className="settings-rail-head">
           <h1 className="settings-rail-title">Settings</h1>
-          <small className="muted">Local-only · SQLite</small>
         </div>
         <nav className="settings-rail-nav">
           {TABS.map((t) => {
@@ -93,7 +94,7 @@ export default function Settings() {
         </nav>
       </aside>
 
-      {/* Right pane — single-column content, capped at a comfortable
+      {/* Right pane - single-column content, capped at a comfortable
           reading width (740px ≈ Fibonacci-friendly). */}
       <main className="settings-content">
         <div className="settings-content-head">
@@ -106,15 +107,11 @@ export default function Settings() {
       )}
 
       {tab === "activity" && (
-        <>
-          <ActivityTab all={all} setAll={setAll} save={save} setMsg={setMsg} />
-          <Collapse
-            title="Mobile wellbeing"
-            hint="Phone usage caps + mobile-app overrides"
-          >
-            <WellbeingTab all={all} setAll={setAll} save={save} setMsg={setMsg} />
-          </Collapse>
-        </>
+        <ActivityTab all={all} setAll={setAll} save={save} setMsg={setMsg} />
+      )}
+
+      {tab === "mobile" && (
+        <WellbeingTab all={all} setAll={setAll} save={save} setMsg={setMsg} />
       )}
 
       {tab === "goals" && (
@@ -171,7 +168,7 @@ export default function Settings() {
   );
 }
 
-// Reusable toggle row — label + optional sublabel on the left, a proper
+// Reusable toggle row - label + optional sublabel on the left, a proper
 // macOS-style switch on the right. Use this for any boolean setting so
 // they all read the same.
 function ToggleRow({ label, sub, checked, onChange, disabled }) {
@@ -198,7 +195,7 @@ function ToggleRow({ label, sub, checked, onChange, disabled }) {
   );
 }
 
-// Tiny collapsible — uses <details> so screen readers handle it natively.
+// Tiny collapsible - uses <details> so screen readers handle it natively.
 // Wrap rarely-touched sections so the primary content (auth + editor) is
 // the visual headline.
 function Collapse({ title, hint, children, defaultOpen = false }) {
@@ -215,7 +212,7 @@ function Collapse({ title, hint, children, defaultOpen = false }) {
 }
 
 function ScheduleTab({ all, setAll, save, setMsg }) {
-  // SRM session state — primary path is browser-login (cookies live in a
+  // SRM session state - primary path is browser-login (cookies live in a
   // persistent Electron partition so a one-time sign-in is enough).
   const [sess, setSess] = useState({
     saved: false,
@@ -267,7 +264,7 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
         setMsg("Signed in to SRM. Click Sync now to pull your timetable.");
       } else {
         setMsg(
-          "Login window closed without an active session. Try again — make sure you reach your portal home before closing.",
+          "Login window closed without an active session. Try again - make sure you reach your portal home before closing.",
         );
       }
     } finally {
@@ -297,7 +294,7 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
       } else if (res?.needsLogin) {
         setMsg(
           res.error +
-            " Click \"Log in to SRM\" to sign in — Apex will remember the session.",
+            " Click \"Log in to SRM\" to sign in - Apex will remember the session.",
         );
         await refreshState();
       } else {
@@ -326,14 +323,7 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
   return (
     <>
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-title">SRM Academia · auto-sync</div>
-        <small className="hint" style={{ display: "block", marginBottom: 10 }}>
-          Sign in once through a real browser window. Apex remembers the
-          session in a private partition and pulls your timetable and
-          academic-planner day orders on demand. Captchas, MFA, and password
-          changes are handled by your actual login flow — Apex never sees
-          your password.
-        </small>
+        <div className="card-title">SRM Academia</div>
 
         <div
           className="row"
@@ -367,7 +357,7 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
             <small className="muted" style={{ display: "block", marginTop: 2 }}>
               {sess.sessionActive
                 ? "Apex has a live SRM Academia session cookie. Sync any time."
-                : "Click \"Log in to SRM\" — a real browser window will open. Sign in there, then close it."}
+                : "Click \"Log in to SRM\" - a real browser window will open. Sign in there, then close it."}
             </small>
           </div>
           <div className="row" style={{ gap: 6, flexShrink: 0 }}>
@@ -433,38 +423,33 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
         )}
 
         <hr className="soft" style={{ margin: "12px 0 10px" }} />
-        <div className="form-row" style={{ maxWidth: 340 }}>
-          <label style={{ fontWeight: 600 }}>
+        <div className="row between" style={{ alignItems: "center", maxWidth: 520 }}>
+          <label style={{ fontWeight: 600, margin: 0 }}>
             Your batch
             <span className="muted" style={{ fontWeight: 400, marginLeft: 6 }}>
               (slot table used for timetable)
             </span>
           </label>
-          <div className="row" style={{ gap: 8, alignItems: "center" }}>
-            <select
-              id="srm-batch-override"
-              value={all["srm.batch"] || "1"}
-              onChange={async (e) => {
-                const v = e.target.value;
-                setAll({ ...all, "srm.batch": v });
-                await save("srm.batch", v);
-                // Immediately rebuild classes from cached data — no network needed.
-                const r = await api.srm.rebuildBatch();
-                if (r?.ok) {
-                  setMsg(`✓ Schedule rebuilt for Batch ${v} — ${r.classes} classes updated.`);
-                } else {
-                  setMsg(r?.error || `Batch saved. Do a full Sync to apply.`);
-                }
-              }}
-              style={{ width: 100 }}
-            >
-              <option value="1">Batch 1</option>
-              <option value="2">Batch 2</option>
-            </select>
-            <small className="muted">
-              Changes apply instantly using cached data.
-            </small>
-          </div>
+          <select
+            id="srm-batch-override"
+            value={all["srm.batch"] || "1"}
+            onChange={async (e) => {
+              const v = e.target.value;
+              setAll({ ...all, "srm.batch": v });
+              await save("srm.batch", v);
+              // Rebuilds classes instantly from cached data — no network.
+              const r = await api.srm.rebuildBatch();
+              if (r?.ok) {
+                setMsg(`✓ Schedule rebuilt for Batch ${v} - ${r.classes} classes updated.`);
+              } else {
+                setMsg(r?.error || `Batch saved. Do a full Sync to apply.`);
+              }
+            }}
+            style={{ width: 110 }}
+          >
+            <option value="1">Batch 1</option>
+            <option value="2">Batch 2</option>
+          </select>
         </div>
         {lastSync && !lastSync.ok && (
           <div className="error" style={{ marginTop: 8 }}>
@@ -485,7 +470,7 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
         <div className="settings-divider" />
         <ToggleRow
           label="Auto-sync on startup"
-          sub="Pulls your timetable silently ~4 seconds after Apex launches."
+          sub="Pulls your timetable silently on launch."
           checked={(all["srm.autoSync"] ?? "1") !== "0"}
           onChange={(v) => {
             setAll({ ...all, "srm.autoSync": v ? "1" : "0" });
@@ -494,31 +479,14 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
         />
       </div>
 
-      {/* Rarely-touched fallback paths — tucked away. Most users only need
-          the SRM auth + the editor, which are above. */}
+      {/* Rarely-needed fallback — one compact row. Only consulted when the
+          academic calendar hasn't synced a day-order for a date. */}
       <Collapse
-        title="Other import paths"
-        hint="Use when SRM Academia is unreachable"
+        title="Day-order fallback"
+        hint="Anchor a known date when the calendar isn't synced"
       >
-        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-          <button onClick={pickJson} title="Pick any timetable.json file">
-            Import timetable.json…
-          </button>
-          <button
-            onClick={scrollToEditor}
-            title="Use Ollama vision to OCR a photo or screenshot of your timetable"
-          >
-            Import from image…
-          </button>
-        </div>
-      </Collapse>
-
-      <Collapse
-        title="Day-order anchor (fallback)"
-        hint="Only used if the academic calendar isn't synced"
-      >
-        <div className="grid-2">
-          <div className="form-row">
+        <div className="row" style={{ gap: 14, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div className="form-row" style={{ margin: 0 }}>
             <label>Anchor date</label>
             <input
               type="date"
@@ -527,7 +495,7 @@ function ScheduleTab({ all, setAll, save, setMsg }) {
               onBlur={(e) => save("timetable.anchorDate", e.target.value)}
             />
           </div>
-          <div className="form-row">
+          <div className="form-row" style={{ margin: 0 }}>
             <label>Day order on that date</label>
             <select
               value={all["timetable.anchorOrder"] || "1"}
@@ -579,7 +547,7 @@ function CourseMaterialsCard() {
     refresh();
   }
   async function remove(it) {
-    if (!confirm(`Delete "${it.title || it.kind}" for ${it.course_code || "—"}?`))
+    if (!confirm(`Delete "${it.title || it.kind}" for ${it.course_code || "-"}?`))
       return;
     await api.courseMaterials.delete(it.id);
     refresh();
@@ -589,7 +557,7 @@ function CourseMaterialsCard() {
   const groups = useMemo(() => {
     const map = new Map();
     for (const it of items) {
-      const k = it.course_code || "—";
+      const k = it.course_code || "-";
       if (!map.has(k)) map.set(k, []);
       map.get(k).push(it);
     }
@@ -608,10 +576,11 @@ function CourseMaterialsCard() {
           <small className="hint" style={{ display: "block", marginTop: 4 }}>
             Paste your syllabus / unit plan / notes per course. Materials with
             <strong> Include in AI </strong> on are fed into every Ollama
-            prompt, so plan-day, recommendations, and burnout suggestions are
-            grounded in the actual course content (not generic advice).
+            prompt, including Ask Apex and Brain dump extraction, so plans,
+            recommendations, and task parsing are grounded in the actual course
+            content (not generic advice).
             <br />
-            <strong>Local only</strong> — never leaves your machine.
+            <strong>Local only</strong> - never leaves your machine.
           </small>
         </div>
         <div className="row" style={{ gap: 6 }}>
@@ -636,7 +605,7 @@ function CourseMaterialsCard() {
           {groups.map(([code, list]) => (
             <div key={code} className="course-mat-group">
               <div className="section-label" style={{ marginBottom: 6 }}>
-                {code === "—" ? "General" : code}
+                {code === "-" ? "General" : code}
                 {list[0]?.course_name && (
                   <span className="muted" style={{ marginLeft: 6 }}>
                     {list[0].course_name}
@@ -655,7 +624,7 @@ function CourseMaterialsCard() {
                         </small>
                       </div>
                       <small className="muted" style={{ display: "block" }}>
-                        updated {it.updated_at ? new Date(it.updated_at + "Z").toLocaleDateString() : "—"}
+                        updated {it.updated_at ? new Date(it.updated_at + "Z").toLocaleDateString() : "-"}
                       </small>
                     </div>
                     <div className="course-mat-row-actions">
@@ -754,7 +723,7 @@ function CourseMaterialEditor({ courses, material, onClose, onSaved }) {
                 value={form.course_code || ""}
                 onChange={(e) => pickCourse(e.target.value)}
               >
-                <option value="">— general (no course) —</option>
+                <option value="">- general (no course) -</option>
                 {courses.map((c) => (
                   <option key={c.code} value={c.code}>
                     {c.code} · {c.subject}
@@ -786,13 +755,13 @@ function CourseMaterialEditor({ courses, material, onClose, onSaved }) {
           <label>Title (optional)</label>
           <input
             value={form.title}
-            placeholder="e.g. DBMS — Unit 1: Relational Model"
+            placeholder="e.g. DBMS - Unit 1: Relational Model"
             onChange={(e) => setForm({ ...form, title: e.target.value })}
           />
         </div>
         <div className="form-row">
           <label className="row between" style={{ alignItems: "center" }}>
-            <span>Body — paste syllabus / notes</span>
+            <span>Body - paste syllabus / notes</span>
             <button
               type="button"
               className="ghost xsmall"
@@ -805,7 +774,7 @@ function CourseMaterialEditor({ courses, material, onClose, onSaved }) {
           <textarea
             rows={14}
             value={form.body}
-            placeholder="Paste your syllabus / unit plan / notes here. Plain text only — Apex feeds (a slice of) this into every academic AI prompt."
+            placeholder="Paste your syllabus / unit plan / notes here. Plain text only - Apex feeds (a slice of) this into every academic AI prompt."
             onChange={(e) => setForm({ ...form, body: e.target.value })}
             style={{ fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: 12, lineHeight: 1.5 }}
           />
@@ -899,116 +868,89 @@ function ActivityTab({ all, setAll, save, setMsg }) {
         </div>
       </div>
 
+      <CloseGuardCard all={all} setAll={setAll} save={save} />
+
       <div className="card">
         <div className="card-title">App categorization overrides</div>
         <p className="muted">Manually reclassify specific apps. Applies to all future samples (old sessions keep their original category).</p>
         <CategorizationOverrides />
       </div>
-
-      <BatteryReportCard setMsg={setMsg} />
     </>
   );
 }
 
-// Windows-only: run `powercfg /batteryreport` and show per-day active time.
-// Complements the per-app tracker (works even when the tracker is off).
-function BatteryReportCard({ setMsg }) {
-  const [supported, setSupported] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState("");
+// Close guard — the "give a reason before quitting" gate. The on/off switch
+// is a plain setting; the active hours live inside the routine config.
+function CloseGuardCard({ all, setAll, save }) {
+  const [hours, setHours] = useState({ workStart: "00:00", workEnd: "23:59" });
 
-  useEffect(() => { (async () => {
-    const s = await api.battery.supported();
-    setSupported(!!s?.supported);
-    if (s?.supported) {
-      const cached = await api.battery.latest();
-      if (cached?.ok) setData(cached);
-    }
-  })(); }, []);
+  useEffect(() => {
+    api.routine?.state?.().then((s) => {
+      if (s?.config) {
+        setHours({
+          workStart: s.config.workStart || "00:00",
+          workEnd: s.config.workEnd || "23:59",
+        });
+      }
+    }).catch(() => {});
+  }, []);
 
-  async function refresh() {
-    setLoading(true); setErr("");
-    const res = await api.battery.run(14);
-    setLoading(false);
-    if (res?.ok) { setData(res); setMsg("Battery report refreshed."); }
-    else setErr(res?.error || "Failed to run powercfg.");
+  function saveHours(patch) {
+    const next = { ...hours, ...patch };
+    setHours(next);
+    api.routine?.saveConfig?.(next).catch(() => {});
   }
 
-  if (supported === false) {
-    return (
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="card-title">Desktop screen time (battery report)</div>
-        <p className="muted">Only available on Windows — this reads <code>powercfg /batteryreport</code>.</p>
-      </div>
-    );
-  }
-  if (supported === null) return null;
-
-  const days = (data?.days || []).slice(0, 14);
-  const total = days.reduce((s, d) => s + (d.active_minutes || 0), 0);
-  const avg = days.length ? Math.round(total / days.length) : 0;
+  const alwaysOn = hours.workStart === "00:00" && hours.workEnd === "23:59";
 
   return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <div className="row between">
-        <div className="card-title">Desktop screen time (battery report)</div>
-        <button className="small primary" onClick={refresh} disabled={loading}>
-          {loading ? "Reading…" : (data ? "Refresh" : "Run now")}
-        </button>
-      </div>
-      <p className="muted small" style={{ marginTop: 4 }}>
-        Derived from Windows' own battery/usage history — active foreground time per day for the last 14 days.
-        Works even when Apex's per-app tracker is off.
-      </p>
-
-      {err && <div className="error" style={{ marginTop: 8 }}>{err}</div>}
-
-      {!data && !err && (
-        <div className="muted" style={{ marginTop: 8 }}>
-          No report yet. Hit <strong>Run now</strong> — takes a few seconds.
+    <div className="card">
+      <div className="card-title">Close guard</div>
+      <ToggleRow
+        label="Ask for a reason before quitting"
+        sub={alwaysOn
+          ? "Active all day. Quitting (✕ or tray → Quit) needs one line for the day log; hiding to tray never asks."
+          : `Active ${hours.workStart}–${hours.workEnd}. Outside these hours Apex closes silently.`}
+        checked={(all["routine.desktopGuardEnabled.v1"] ?? "1") !== "0"}
+        onChange={(v) => {
+          setAll({ ...all, "routine.desktopGuardEnabled.v1": v ? "1" : "0" });
+          save("routine.desktopGuardEnabled.v1", v ? "1" : "0");
+        }}
+      />
+      <div className="row" style={{ gap: 14, marginTop: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div className="form-row" style={{ margin: 0 }}>
+          <label>Guard from</label>
+          <input
+            type="time"
+            value={hours.workStart}
+            onChange={(e) => saveHours({ workStart: e.target.value })}
+          />
         </div>
-      )}
-
-      {data && (
-        <>
-          <div className="row" style={{ gap: 18, marginTop: 10, flexWrap: "wrap" }}>
-            <div>
-              <div className="muted small">Last 14 days</div>
-              <strong style={{ fontSize: 18 }}>{fmtHM(total)}</strong>
-            </div>
-            <div>
-              <div className="muted small">Daily avg</div>
-              <strong style={{ fontSize: 18 }}>{fmtHM(avg)}</strong>
-            </div>
-            <div>
-              <div className="muted small">Generated</div>
-              <div>{data.generatedAt ? new Date(data.generatedAt).toLocaleString() : "—"}</div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            {days.map((d) => {
-              const pct = Math.min(100, Math.round((d.active_minutes / Math.max(1, Math.max(...days.map((x) => x.active_minutes || 1)))) * 100));
-              return (
-                <div key={d.date} className="row" style={{ gap: 10, alignItems: "center", margin: "2px 0" }}>
-                  <small className="muted" style={{ width: 86 }}>{d.date}</small>
-                  <div className="bar" style={{ flex: 1, height: 6 }}>
-                    <div className="bar-fill" style={{ width: `${pct}%` }} />
-                  </div>
-                  <small style={{ width: 54, textAlign: "right" }}>{fmtHM(d.active_minutes)}</small>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
+        <div className="form-row" style={{ margin: 0 }}>
+          <label>until</label>
+          <input
+            type="time"
+            value={hours.workEnd}
+            onChange={(e) => saveHours({ workEnd: e.target.value })}
+          />
+        </div>
+        {!alwaysOn && (
+          <button
+            type="button"
+            className="ghost small"
+            onClick={() => saveHours({ workStart: "00:00", workEnd: "23:59" })}
+            title="Guard every close, any hour"
+          >
+            Always ask
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 function fmtHM(mins) {
-  if (!mins || mins <= 0) return "—";
+  if (!mins || mins <= 0) return "-";
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   if (h === 0) return `${m}m`;
@@ -1019,13 +961,18 @@ function fmtHM(mins) {
 function CategorizationOverrides() {
   const [list, setList] = useState([]);
   const [form, setForm] = useState({ app: "", category: "productive" });
+  const [recentApps, setRecentApps] = useState([]);
   const [err, setErr] = useState(null);
 
   // Rebuild the list from settings + opportunistically GC any ghost
   // entries that earlier builds left behind (empty-string values that
   // showed up as "→ <empty pill>" rows).
   async function refresh() {
-    const all = await api.settings.all();
+    const today = new Date().toISOString().slice(0, 10);
+    const [all, recent] = await Promise.all([
+      api.settings.all(),
+      api.activity?.topApps?.(today, 16).catch(() => []),
+    ]);
     const entries = Object.entries(all)
       .filter(([k]) => k.startsWith("activity.overrides."))
       .map(([k, v]) => ({
@@ -1041,6 +988,7 @@ function CategorizationOverrides() {
       .filter((x) => x.app.trim() && x.category)
       .sort((a, b) => a.app.localeCompare(b.app));
     setList(live);
+    setRecentApps(uniqueRecentApps(recent));
   }
   useEffect(() => { refresh(); }, []);
 
@@ -1070,7 +1018,7 @@ function CategorizationOverrides() {
         onSubmit={(e) => { e.preventDefault(); add(); }}
       >
         <input
-          placeholder="App name — e.g. Code.exe, chrome.exe, Discord"
+          placeholder="App name from recent activity"
           value={form.app}
           onChange={(e) => setForm({ ...form, app: e.target.value })}
         />
@@ -1087,6 +1035,23 @@ function CategorizationOverrides() {
         </select>
         <button className="primary" type="submit">Add</button>
       </form>
+      <div className="cat-recent-apps" aria-label="Recent apps">
+        {recentApps.length === 0 ? (
+          <small className="muted">Recent apps appear here once the tracker records activity.</small>
+        ) : (
+          recentApps.map((app) => (
+            <button
+              key={app}
+              type="button"
+              className={form.app.toLowerCase() === app.toLowerCase() ? "active" : ""}
+              onClick={() => setForm((f) => ({ ...f, app }))}
+              title={app}
+            >
+              {prettyAppName(app)}
+            </button>
+          ))
+        )}
+      </div>
       {err && <small className="error" style={{ display: "block", marginBottom: 8 }}>{err}</small>}
 
       {list.length === 0 ? (
@@ -1121,15 +1086,291 @@ function CategorizationOverrides() {
   );
 }
 
+function uniqueRecentApps(rows = []) {
+  const seen = new Set();
+  const out = [];
+  for (const row of rows || []) {
+    const app = String(row?.app || "").trim();
+    if (!app) continue;
+    const key = app.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(app);
+  }
+  return out.slice(0, 12);
+}
+
+// Cloud (no-USB) phone-usage sync. Pairs the desktop + phone with the shared
+// sync API; Apex then pulls Digital Wellbeing over the network on a timer.
+function CloudWellbeingPanel({ save, setMsg }) {
+  const [status, setStatus] = useState(null);
+  const [apiBase, setApiBase] = useState("https://apex.yashasviallen.is-a.dev");
+  const [adminToken, setAdminToken] = useState("");
+  const [busy, setBusy] = useState("");
+  const [code, setCode] = useState(null);
+  const [devices, setDevices] = useState([]);
+  const [selfId, setSelfId] = useState(null);
+
+  useEffect(() => { refresh(); }, []);
+  async function refresh() {
+    const s = await api.wellbeing.cloudStatus().catch(() => null);
+    setStatus(s);
+    const a = await api.settings.all().catch(() => ({}));
+    setApiBase(a["cloud.apiBase"] || s?.apiBase || "https://apex.yashasviallen.is-a.dev");
+    setAdminToken(a["cloud.adminToken"] || "");
+    if (s?.paired) loadDevices();
+  }
+
+  const [tokenDead, setTokenDead] = useState(false);
+  async function loadDevices() {
+    const r = await api.routine.listDevices().catch(() => null);
+    if (r?.ok) {
+      setDevices(r.devices || []);
+      setSelfId(r.self || null);
+      // Token works but this desktop isn't in the list → it was unlinked
+      // from another device. Either way: re-pair.
+      setTokenDead(!!r.self && !(r.devices || []).some((d) => d.id === r.self));
+    } else if (/401|Invalid device token|HTTP 401/i.test(r?.error || "")) {
+      setDevices([]);
+      setTokenDead(true);
+    }
+  }
+
+  async function unlink(d) {
+    const isSelf = d.id === selfId;
+    setBusy("unlink:" + d.id);
+    try {
+      const r = await api.routine.revokeDevice(d.id);
+      if (!r?.ok) throw new Error(r?.error || "revoke failed");
+      setMsg(isSelf ? "This desktop unpaired." : `Unlinked “${d.name}”.`);
+      await refresh();
+    } catch (e) { setMsg("Unlink failed: " + e.message); }
+    finally { setBusy(""); }
+  }
+
+  async function pairDesktop() {
+    setBusy("pair"); setMsg("");
+    try {
+      save("cloud.apiBase", apiBase); save("cloud.adminToken", adminToken);
+      const made = await api.routine.createPairingCode({ apiBase, adminToken });
+      if (!made?.ok) throw new Error(made?.error || "could not create pairing code");
+      const paired = await api.routine.pairDesktop({ apiBase, code: made.code });
+      if (!paired?.ok) throw new Error(paired?.error || "pairing failed");
+      setMsg("Desktop paired with the sync API.");
+      await refresh();
+    } catch (e) { setMsg("Pair failed: " + e.message); }
+    finally { setBusy(""); }
+  }
+
+  async function phoneCode() {
+    setBusy("code"); setMsg("");
+    try {
+      save("cloud.apiBase", apiBase); save("cloud.adminToken", adminToken);
+      const made = await api.routine.createPairingCode({ apiBase, adminToken });
+      if (!made?.ok) throw new Error(made?.error || "could not create code");
+      setCode({ code: made.code, expires_at: made.expires_at });
+    } catch (e) { setMsg("Code failed: " + e.message); }
+    finally { setBusy(""); }
+  }
+
+  async function syncNow() {
+    setBusy("sync"); setMsg("");
+    try {
+      const res = await api.wellbeing.pullCloud();
+      if (!res?.ok) throw new Error(res?.error || "sync failed");
+      setMsg(res.note === "no-mobile-data"
+        ? "No phone usage on the server yet - open Apex Mobile and tap Sync usage."
+        : `Pulled ${res.count} apps · ${res.total_minutes} min from phone (${res.daysWritten} day${res.daysWritten === 1 ? "" : "s"}).`);
+      await refresh();
+    } catch (e) { setMsg("Sync failed: " + e.message); }
+    finally { setBusy(""); }
+  }
+
+  async function toggleAuto() {
+    const next = !status?.auto;
+    const s = await api.wellbeing.setCloudAuto(next).catch(() => null);
+    if (s) setStatus(s);
+  }
+
+  const paired = !!status?.paired;
+  const phoneCount = devices.filter((d) => d.type !== "desktop").length;
+  const desktopCount = devices.filter((d) => d.type === "desktop").length;
+  const lastLabel = status?.lastSyncAt
+    ? new Date(status.lastSyncAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+    : "Never";
+
+  return (
+    <>
+      <section className={"wellbeing-hero cloud" + (paired ? " is-ready" : "")}>
+        <div className="wellbeing-hero-copy">
+          <div className="wellbeing-kicker">Cloud sync · no cable</div>
+          <h3>Phone usage over the network.</h3>
+          <small className="muted">
+            Pair this desktop and your phone with the sync API. Apex pulls Digital Wellbeing automatically - no USB, no ADB.
+          </small>
+        </div>
+        <div className={"wellbeing-status-card" + (paired ? " ok" : " warn")}>
+          <span className="wellbeing-status-dot" aria-hidden="true" />
+          <strong>{paired ? "Paired" : "Not paired"}</strong>
+          <small>Last pull · {lastLabel}</small>
+        </div>
+      </section>
+
+      <section className="wellbeing-panel">
+        <div className="wellbeing-panel-head">
+          <div>
+            <strong>Sync API</strong>
+            <small className="muted">Stored on this machine. The admin token mints pairing codes.</small>
+          </div>
+          <div className="wellbeing-actions">
+            <button type="button" className="primary" onClick={syncNow} disabled={!paired || busy === "sync"}>
+              {busy === "sync" ? "Pulling…" : "Sync phone now"}
+            </button>
+          </div>
+        </div>
+
+        <div className="form-row">
+          <label>API base</label>
+          <input
+            value={apiBase}
+            onChange={(e) => setApiBase(e.target.value)}
+            onBlur={() => save("cloud.apiBase", apiBase)}
+            placeholder="https://apex.yashasviallen.is-a.dev"
+          />
+        </div>
+        <div className="form-row">
+          <label>Admin token</label>
+          <input
+            type="password"
+            value={adminToken}
+            onChange={(e) => setAdminToken(e.target.value)}
+            onBlur={() => save("cloud.adminToken", adminToken)}
+            placeholder="APEX_SYNC_ADMIN_TOKEN"
+          />
+        </div>
+
+        <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
+          <button type="button" className="primary" onClick={pairDesktop} disabled={busy === "pair" || !apiBase || !adminToken}>
+            {busy === "pair" ? "Pairing…" : paired ? "Re-pair desktop" : "Pair this desktop"}
+          </button>
+          <button type="button" className="ghost" onClick={phoneCode} disabled={busy === "code" || !apiBase || !adminToken}>
+            {busy === "code" ? "…" : "Pair a phone"}
+          </button>
+        </div>
+        <ToggleRow
+          label="Auto-sync phone usage"
+          sub="Pulls the phone's screen time every 15 minutes while Apex runs."
+          checked={!!status?.auto}
+          disabled={!paired}
+          onChange={toggleAuto}
+        />
+
+        {code && (
+          <div className="pairing-qr-card">
+            <img
+              className="pairing-qr-img"
+              src={`${apiBase}/pairing-codes/${code.code}/qr.png`}
+              alt={`Pairing QR for code ${code.code}`}
+              width={164}
+              height={164}
+            />
+            <div className="pairing-qr-info">
+              <strong>Scan with Apex Mobile</strong>
+              <small className="muted">
+                Settings tab → <b>Scan pairing QR</b>. Or type the code:
+              </small>
+              <div className="pairing-qr-code">{code.code}</div>
+              <small className="muted">
+                Expires {new Date(code.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · single use
+              </small>
+            </div>
+          </div>
+        )}
+
+        {paired && tokenDead && (
+          <div className="error" style={{ marginTop: 12, padding: "10px 12px", borderRadius: 8 }}>
+            This desktop's pairing was revoked (likely unlinked from the phone), so sync is
+            dead even though credentials are saved. Hit <strong>Pair this desktop</strong> above
+            to re-link.
+          </div>
+        )}
+
+        {paired && (
+          <div className="paired-devices">
+            <div className="row between" style={{ marginBottom: 8 }}>
+              <div>
+                <strong>Paired devices</strong>
+                <small className="muted paired-devices-summary">
+                  {devices.length} linked · {phoneCount} phone{phoneCount === 1 ? "" : "s"} · {desktopCount} desktop{desktopCount === 1 ? "" : "s"}
+                </small>
+              </div>
+              <button type="button" className="ghost xsmall" onClick={loadDevices}>Refresh list</button>
+            </div>
+            <div className="wellbeing-note">
+              No device limit — each pairing code links one more phone or desktop.
+              Unlinking a device kills its token immediately; unlinking <em>this</em> desktop stops sync until you re-pair.
+            </div>
+            {devices.length === 0 ? (
+              <small className="muted">No devices found - hit Refresh list.</small>
+            ) : (
+              devices.map((d) => {
+                const isSelf = d.id === selfId;
+                return (
+                  <div key={d.id} className="paired-device-row">
+                    <span className={"paired-device-icon " + (d.type === "desktop" ? "desktop" : "phone")} aria-hidden>
+                      {d.type === "desktop" ? "🖥" : "📱"}
+                    </span>
+                    <div className="paired-device-info">
+                      <strong>
+                        {d.name} {isSelf && <span className="pill teal" style={{ marginLeft: 6 }}>this device</span>}
+                      </strong>
+                      <small className="muted">
+                        Paired since {new Date(d.created_at).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}
+                        {d.last_seen_at && ` · last seen ${new Date(d.last_seen_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      className="ghost small danger"
+                      onClick={() => unlink(d)}
+                      disabled={busy === "unlink:" + d.id}
+                      title={isSelf ? "Unpair this desktop (clears its token)" : "Revoke this device's access"}
+                    >
+                      {busy === "unlink:" + d.id ? "…" : "Unlink"}
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+        {status?.lastError && (
+          <small className="error" style={{ display: "block", marginTop: 8 }}>Last error: {status.lastError}</small>
+        )}
+      </section>
+    </>
+  );
+}
+
 function WellbeingTab({ all, setAll, save, setMsg }) {
   const [devices, setDevices] = useState([]);
+  const [usbDiag, setUsbDiag] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [last, setLast] = useState(null);
 
   useEffect(() => { refresh(); }, []);
   async function refresh() {
-    setDevices(await api.wellbeing.devices());
-    setLast(all["wellbeing.lastSyncAt"]);
+    const [diagnostic, latestSettings] = await Promise.all([
+      api.wellbeing.diagnose?.().catch(() => null),
+      api.settings.all(),
+    ]);
+    setUsbDiag(diagnostic);
+    const authorized = Array.isArray(diagnostic?.authorized)
+      ? diagnostic.authorized
+      : await api.wellbeing.devices().catch(() => []);
+    setDevices(Array.isArray(authorized) ? authorized : []);
+    if (latestSettings) setAll(latestSettings);
+    setLast((latestSettings || all)["wellbeing.lastSyncAt"]);
   }
   async function pickAdb() {
     const p = await api.settings.pickFile([{ name: "adb", extensions: ["exe", ""] }]);
@@ -1141,46 +1382,205 @@ function WellbeingTab({ all, setAll, save, setMsg }) {
     const res = await api.wellbeing.syncNow();
     setSyncing(false);
     if (res?.ok) {
-      setMsg(`Mobile: ${res.count} apps, ${res.total_minutes} min · device ${res.device}`);
+      setMsg(`Phone: ${res.count} apps, ${res.total_minutes} min · device ${res.device}`);
       await refresh();
     } else {
       setMsg("Sync failed: " + (res?.error || "unknown"));
     }
   }
 
-  return (
-    <>
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-title">Android Digital Wellbeing via ADB</div>
-        <p className="muted">
-          Connect your phone over USB with <strong>USB Debugging</strong> enabled. Run <code>adb devices</code> once from a terminal and authorize the prompt. Apex reads <code>adb shell dumpsys usagestats</code> and turns per-app foreground time into Activity sessions tagged <code>source='mobile'</code>.
-        </p>
-        <div className="form-row">
-          <label>adb path (optional — uses PATH if blank)</label>
-          <div className="row">
-            <input value={all["wellbeing.adbPath"] || ""} placeholder="C:\platform-tools\adb.exe"
-              onChange={(e) => setAll({ ...all, "wellbeing.adbPath": e.target.value })}
-              onBlur={(e) => save("wellbeing.adbPath", e.target.value)} />
-            <button onClick={pickAdb}>Pick…</button>
-          </div>
-        </div>
+  const adbPath = all["wellbeing.adbPath"] || "";
+  const deviceCount = devices.length;
+  const allUsbDevices = Array.isArray(usbDiag?.devices) ? usbDiag.devices : devices;
+  const unauthorizedCount = allUsbDevices.filter((d) => d.state && d.state !== "device").length;
+  const hasDevice = deviceCount > 0;
+  const adbSource = usbDiag?.adb?.source
+    ? usbDiag.adb.source
+    : adbPath.trim() ? "Custom path" : "Auto-detect";
+  const adbCommand = usbDiag?.adb?.command || (adbPath.trim() || "adb");
+  const adbOk = usbDiag?.ok !== false;
+  const lastLabel = last
+    ? new Date(last).toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "Never";
+  const deviceLabel = hasDevice
+    ? `${deviceCount} authorized`
+    : unauthorizedCount > 0
+      ? `${unauthorizedCount} needs auth`
+      : "No phone";
 
-        <hr className="soft" />
-        <div className="row between">
+  return (
+    <div className="wellbeing-shell">
+      <CloudWellbeingPanel save={save} setMsg={setMsg} />
+
+      <section className={"wellbeing-hero" + (hasDevice ? " is-ready" : "")}>
+        <div className="wellbeing-hero-copy">
+          <div className="wellbeing-kicker">USB · ADB fallback</div>
+          <h3>Wired import for local testing.</h3>
+          <small className="muted">
+            The Android app pairs with the sync API. USB import stays here for local testing.
+          </small>
+        </div>
+        <div className={"wellbeing-status-card" + (hasDevice ? " ok" : " warn")}>
+          <span className="wellbeing-status-dot" aria-hidden="true" />
+          <strong>{hasDevice ? "Ready" : "Waiting"}</strong>
+          <small>{deviceLabel}</small>
+        </div>
+      </section>
+
+      <div className="wellbeing-metrics" aria-label="Phone activity sync state">
+        <div className="wellbeing-metric">
+          <small>Last sync</small>
+          <strong title={last || "Never synced"}>{lastLabel}</strong>
+        </div>
+        <div className="wellbeing-metric">
+          <small>Device</small>
+          <strong title={devices[0]?.serial || "No device connected"}>
+            {devices[0]?.serial || "Not connected"}
+          </strong>
+        </div>
+        <div className="wellbeing-metric">
+          <small>ADB</small>
+          <strong title={adbCommand}>{adbOk ? adbSource : "Needs fix"}</strong>
+        </div>
+      </div>
+
+      <section className="wellbeing-panel">
+        <div className="wellbeing-panel-head">
           <div>
-            <strong>Devices:</strong> {devices.length === 0 ? <span className="muted">none connected</span> :
-              devices.map((d) => <span key={d.serial} className="pill teal" style={{ marginLeft: 6 }}>{d.serial}</span>)}
+            <strong>USB fallback</strong>
+            <small className="muted">Use this only when you want desktop Apex to pull phone usage over ADB.</small>
           </div>
-          <div className="row">
-            <button onClick={refresh}>Refresh</button>
-            <button className="primary" onClick={sync} disabled={syncing || devices.length === 0}>
-              {syncing ? "Syncing…" : "Sync now"}
+          <div className="wellbeing-actions">
+            <button type="button" className="ghost" onClick={refresh}>
+              Refresh
+            </button>
+            <button
+              type="button"
+              className="primary"
+              onClick={sync}
+              disabled={syncing || !hasDevice}
+            >
+              {syncing ? "Syncing..." : "Sync now"}
             </button>
           </div>
         </div>
-        {last && <small className="hint" style={{ display: "block", marginTop: 10 }}>Last sync: {new Date(last).toLocaleString()}</small>}
-      </div>
-    </>
+
+        <div className="wellbeing-grid">
+          <div className="wellbeing-tile">
+            <div className="wellbeing-tile-head">
+              <strong>ADB executable</strong>
+              <span className={"pill " + (adbOk ? "gray" : "rose")}>{adbOk ? adbSource : "Failed"}</span>
+            </div>
+            <div className="wellbeing-path-row">
+              <input
+                value={adbPath}
+                placeholder="C:\Program Files (x86)\Minimal ADB and Fastboot\adb.exe"
+                aria-label="ADB executable path"
+                onChange={(e) => setAll({ ...all, "wellbeing.adbPath": e.target.value })}
+                onBlur={(e) => save("wellbeing.adbPath", e.target.value)}
+              />
+              <button type="button" className="ghost" onClick={pickAdb}>
+                Pick...
+              </button>
+            </div>
+            <div className="wellbeing-path-resolved">
+              <small className="muted">Resolved command</small>
+              <code title={adbCommand}>{adbCommand}</code>
+            </div>
+            {!adbOk && (
+              <div className="wellbeing-diagnostic danger">
+                <strong>ADB could not run</strong>
+                <small>{usbDiag?.error || "Unknown ADB error"}</small>
+              </div>
+            )}
+          </div>
+
+          <div className="wellbeing-tile">
+            <div className="wellbeing-tile-head">
+              <strong>Authorized devices</strong>
+              <span className={"pill " + (hasDevice ? "teal" : "amber")}>
+                {hasDevice ? "Online" : "None"}
+              </span>
+            </div>
+            {allUsbDevices.length > 0 ? (
+              <div className="wellbeing-device-list">
+                {allUsbDevices.map((d) => {
+                  const authorized = d.state === "device";
+                  return (
+                  <div className={"wellbeing-device" + (authorized ? "" : " warn")} key={d.serial}>
+                    <span className={"wellbeing-device-dot" + (authorized ? "" : " warn")} aria-hidden="true" />
+                    <div>
+                      <strong title={d.serial}>{d.serial}</strong>
+                      <small className="muted">
+                        {authorized ? "authorized" : d.state || "not authorized"}
+                        {d.detail ? ` · ${d.detail}` : ""}
+                      </small>
+                    </div>
+                    <span className={"pill " + (authorized ? "teal" : "amber")}>
+                      {authorized ? "Authorized" : "Authorize"}
+                    </span>
+                  </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="wellbeing-empty">
+                <strong>No phone detected</strong>
+                <small className="muted">Authorize the phone, then refresh.</small>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <details className="wellbeing-adb-help" open={!hasDevice}>
+          <summary>
+            <strong>How to import over USB (ADB)</strong>
+            <small className="muted">Step-by-step</small>
+          </summary>
+          <ol>
+            <li>Install <b>platform-tools</b> (or “Minimal ADB and Fastboot”) on this PC. Note the path to <code>adb.exe</code>.</li>
+            <li>On the phone: <b>Settings → About phone</b>, tap <b>Build number</b> 7× to unlock Developer options.</li>
+            <li><b>Developer options → enable USB debugging</b>.</li>
+            <li>Plug the phone in by USB, then tap <b>Allow</b> on the “Allow USB debugging?” prompt.</li>
+            <li>Set the <b>ADB executable</b> path above (or leave Auto-detect), then hit <b>Refresh</b> - your device should appear under Authorized devices.</li>
+            <li>Click <b>Sync now</b> to pull today’s per-app usage into Apex.</li>
+          </ol>
+          <small className="muted">
+            No cable? Use <b>Cloud sync</b> on the Mobile tab instead - pair the phone once and it
+            syncs over the network with no USB.
+          </small>
+        </details>
+
+        <ol className="wellbeing-steps" aria-label="Phone activity setup progress">
+          <li className="done">
+            <span>1</span>
+            <div>
+              <strong>ADB</strong>
+              <small className="muted">{adbOk ? adbSource : "Path/error"}</small>
+            </div>
+          </li>
+          <li className={hasDevice ? "done" : "active"}>
+            <span>2</span>
+            <div>
+              <strong>Phone</strong>
+              <small className="muted">{hasDevice ? deviceLabel : "Needs authorization"}</small>
+            </div>
+          </li>
+          <li className={last ? "done" : ""}>
+            <span>3</span>
+            <div>
+              <strong>Import</strong>
+              <small className="muted">{last ? lastLabel : "Pending"}</small>
+            </div>
+          </li>
+        </ol>
+      </section>
+    </div>
   );
 }
 
@@ -1210,8 +1610,8 @@ function CpTab({ all, setAll, save }) {
           {Object.entries(selfStats.results).map(([plat, r]) => (
             <div key={plat} className="sub" style={{ marginTop: 6 }}>
               <strong>{plat}</strong>: {r.ok
-                ? `@${r.handle} · solved ${r.totalSolved ?? "—"}${r.rating ? ` · rating ${r.rating}` : ""}`
-                : <span className="muted">error — {r.error}</span>}
+                ? `@${r.handle} · solved ${r.totalSolved ?? "-"}${r.rating ? ` · rating ${r.rating}` : ""}`
+                : <span className="muted">error - {r.error}</span>}
             </div>
           ))}
         </div>
@@ -1376,13 +1776,13 @@ function OllamaTab({ all, setAll, save }) {
         <div className="form-row">
           <label>Extra context (free-form, structured note)</label>
           <textarea rows={3} value={all["user.extraContext"] || ""}
-            placeholder="Anything else the model should know — constraints, preferences, ongoing projects…"
+            placeholder="Anything else the model should know - constraints, preferences, ongoing projects…"
             onChange={(e) => setAll({ ...all, "user.extraContext": e.target.value })}
             onBlur={(e) => save("user.extraContext", e.target.value)} />
         </div>
       </div>
 
-      {/* About me — free-form profile prompt the user can paste from any
+      {/* About me - free-form profile prompt the user can paste from any
           other LLM ("write a profile of me as if I were briefing my own
           assistant"). Goes to the TOP of every system prompt. */}
       <div className="card" style={{ marginBottom: 16 }}>
@@ -1390,7 +1790,7 @@ function OllamaTab({ all, setAll, save }) {
         <small className="hint" style={{ display: "block", marginBottom: 10 }}>
           A free-form description of you, your work style, ongoing projects,
           how you want help framed. This sits at the TOP of every Ollama
-          prompt — recommendations, plan-day, evening review, repo chat all
+          prompt - recommendations, plan-day, evening review, repo chat all
           see it. Paste from another LLM if you want; tweak as needed.
         </small>
         <div className="form-row">
@@ -1403,7 +1803,7 @@ function OllamaTab({ all, setAll, save }) {
               onClick={() => {
                 const seed =
                   "I'm a CS undergrad at SRM Kattankulathur. I care about " +
-                  "shipping real things — local-first apps, AI tooling, " +
+                  "shipping real things - local-first apps, AI tooling, " +
                   "competitive programming. I prefer concrete, specific advice " +
                   "over motivational fluff. When I ask for a plan I want " +
                   "realistic time estimates, not aspirational ones. I'm " +
@@ -1445,7 +1845,7 @@ function OllamaTab({ all, setAll, save }) {
           />
           <small className="hint" style={{ marginTop: 6 }}>
             Apex also auto-pulls your courses, today's classes, open tasks,
-            completed-today, and any active timer into every prompt — no need
+            completed-today, and any active timer into every prompt - no need
             to repeat that here.
           </small>
         </div>
@@ -1460,22 +1860,15 @@ function OllamaTab({ all, setAll, save }) {
 function SrmDiagnosePanel({ report }) {
   if (!report) return null;
   return (
-    <div
-      style={{
-        marginTop: 12,
-        padding: 12,
-        border: "1px solid var(--border)",
-        borderRadius: 10,
-        background: "var(--bg-elev)",
-      }}
-    >
-      <div className="row between" style={{ alignItems: "center" }}>
-        <strong>Diagnostic report</strong>
-        <small className="muted">
-          {report.cookieCount} cookies ·{" "}
-          {report.isLoggedIn ? "session active" : "session inactive"}
+    <details className="srm-diag-panel" style={{ marginTop: 12 }}>
+      <summary>
+        <span className="srm-diag-badge" aria-hidden>⚒</span>
+        <strong>Troubleshooting report</strong>
+        <small className="muted" style={{ marginLeft: "auto" }}>
+          {report.cookieCount} cookies · {report.isLoggedIn ? "session active" : "session inactive"}
         </small>
-      </div>
+      </summary>
+      <div className="srm-diag-body">
       {report.suggestion && (
         <p style={{ margin: "8px 0", fontSize: 13 }}>
           <strong>↳ </strong>
@@ -1488,7 +1881,7 @@ function SrmDiagnosePanel({ report }) {
         </small>
       )}
 
-      <details style={{ marginTop: 8 }} open>
+      <details style={{ marginTop: 8 }}>
         <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
           Timetable attempts ({report.timetableAttempts?.length || 0})
         </summary>
@@ -1520,15 +1913,15 @@ function SrmDiagnosePanel({ report }) {
                     <br />
                     <small className="muted">{a.url}</small>
                   </td>
-                  <td style={{ textAlign: "center" }}>{a.status ?? "—"}</td>
+                  <td style={{ textAlign: "center" }}>{a.status ?? "-"}</td>
                   <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                     {a.bodyLen}
                   </td>
                   <td style={{ textAlign: "center" }}>{a.sanitizeMatches}</td>
                   <td style={{ textAlign: "center" }}>
-                    {a.courseTblFound ? "✓" : a.mainDivFound ? "div" : "—"}
+                    {a.courseTblFound ? "✓" : a.mainDivFound ? "div" : "-"}
                   </td>
-                  <td style={{ textAlign: "center" }}>{a.looksLikeLogin ? "⚠" : "—"}</td>
+                  <td style={{ textAlign: "center" }}>{a.looksLikeLogin ? "⚠" : "-"}</td>
                 </tr>
               ))}
             </tbody>
@@ -1568,13 +1961,13 @@ function SrmDiagnosePanel({ report }) {
                     <br />
                     <small className="muted">{a.url}</small>
                   </td>
-                  <td style={{ textAlign: "center" }}>{a.status ?? "—"}</td>
+                  <td style={{ textAlign: "center" }}>{a.status ?? "-"}</td>
                   <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                     {a.bodyLen}
                   </td>
                   <td style={{ textAlign: "center" }}>{a.sanitizeMatches}</td>
-                  <td style={{ textAlign: "center" }}>{a.hasDoColumn ? "✓" : "—"}</td>
-                  <td style={{ textAlign: "center" }}>{a.looksLikeLogin ? "⚠" : "—"}</td>
+                  <td style={{ textAlign: "center" }}>{a.hasDoColumn ? "✓" : "-"}</td>
+                  <td style={{ textAlign: "center" }}>{a.looksLikeLogin ? "⚠" : "-"}</td>
                 </tr>
               ))}
             </tbody>
@@ -1592,7 +1985,8 @@ function SrmDiagnosePanel({ report }) {
           </code>
         </details>
       )}
-    </div>
+      </div>
+    </details>
   );
 }
 
@@ -1615,7 +2009,7 @@ function GithubTab({ all, setAll, save }) {
         </small>
       </div>
       <div className="form-row" style={{ marginTop: 10 }}>
-        <label>Personal access token (optional — boosts rate limit to 5000/hr)</label>
+        <label>Personal access token (optional - boosts rate limit to 5000/hr)</label>
         <input type="password" value={all["github.token"] || ""} placeholder="ghp_…"
           onChange={(e) => setAll({ ...all, "github.token": e.target.value })}
           onBlur={(e) => save("github.token", e.target.value)} />
@@ -1627,7 +2021,7 @@ function GithubTab({ all, setAll, save }) {
   );
 }
 
-// Seed tab — one-click bulk insert of CS-student-oriented starter content.
+// Seed tab - one-click bulk insert of CS-student-oriented starter content.
 // Idempotent: each row is upserted by title so rerunning doesn't duplicate.
 function SeedTab({ setMsg }) {
   const [busy, setBusy] = useState(false);
@@ -1711,7 +2105,7 @@ const STARTERS = {
   ],
 };
 
-// Danger zone — bulk-clear actions. Each row is a small card with an
+// Danger zone - bulk-clear actions. Each row is a small card with an
 // explanation + a button that opens an inline confirm before firing the
 // IPC. Confirm uses a "type DELETE" pattern for the "everything" path so
 // nobody nukes their DB by misclick.
@@ -1831,7 +2225,7 @@ function BackupTab({ setMsg }) {
   }
   async function importDb() {
     const res = await api.backup.import();
-    if (res.ok) setMsg("Database replaced — Apex will relaunch.");
+    if (res.ok) setMsg("Database replaced - Apex will relaunch.");
     else if (!res.canceled) setMsg("Error: " + (res.error || "unknown"));
   }
 
@@ -1931,7 +2325,7 @@ function SpotifyTab({ setMsg }) {
           <div>
             <div className="card-title" style={{ margin: 0 }}>Spotify · connection</div>
             <small className="hint" style={{ display: "block", marginTop: 4 }}>
-              Sign in once via OAuth (PKCE — no password handling on our side).
+              Sign in once via OAuth (PKCE - no password handling on our side).
               Apex can show what's playing and start a focus playlist when a
               productive timer kicks off.
             </small>
@@ -1953,7 +2347,7 @@ function SpotifyTab({ setMsg }) {
             <>
               <small className="muted">
                 Signed in as{" "}
-                <strong>{status.user?.displayName || status.user?.id || "—"}</strong>
+                <strong>{status.user?.displayName || status.user?.id || "-"}</strong>
               </small>
               <button className="ghost" onClick={disconnect}>Disconnect</button>
             </>
@@ -1971,7 +2365,7 @@ function SpotifyTab({ setMsg }) {
         {showCustomId && (
           <div className="form-row" style={{ marginTop: 10 }}>
             <label>
-              Custom client_id <small className="muted">(optional — yours from developer.spotify.com)</small>
+              Custom client_id <small className="muted">(optional - yours from developer.spotify.com)</small>
             </label>
             <div className="row" style={{ gap: 6 }}>
               <input
@@ -1986,6 +2380,21 @@ function SpotifyTab({ setMsg }) {
               If using your own, register{" "}
               <code>http://127.0.0.1:8000/callback</code> as a redirect URI.
             </small>
+          </div>
+        )}
+
+        {status.connected && status.needsReconnectForPlaylistWrite && (
+          <div
+            className="notice warn"
+            style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
+          >
+            <span style={{ flex: 1, minWidth: 220 }}>
+              Spotify is connected, but this token is missing playlist write permission.
+              Reconnect once to let Apex create/update Zen focus playlists.
+            </span>
+            <button className="ghost small" onClick={connect} disabled={busy}>
+              Reconnect Spotify
+            </button>
           </div>
         )}
       </div>
@@ -2076,7 +2485,7 @@ function SpotifyTab({ setMsg }) {
           <small className="hint" style={{ display: "block", marginTop: 8 }}>
             Auto-play needs an active Spotify session (desktop app, phone, or
             web player) and a Premium account. If nothing's open, Apex will
-            try to wake the desktop app — but starting Spotify yourself is
+            try to wake the desktop app - but starting Spotify yourself is
             most reliable.
           </small>
 
@@ -2168,23 +2577,26 @@ function SpotifyTab({ setMsg }) {
 // Theme picker with live preview swatches. Also exposes the legacy density
 // + reduced-motion toggles if we add them later.
 function AppearanceTab({ all, setAll, save }) {
-  const current = all["ui.theme"] || "library";
+  const current = all["ui.theme"] || "apex-focus";
   const customAccent = all["ui.customAccent"] || "";
   const [filter, setFilter] = useState(""); // search box
   const [tag, setTag] = useState("All");    // category filter
 
-  // Curated themes catalog — ordered intentionally:
-  //   1. Foundations (default-dark / light) — clean Inter, neutral.
-  //   2. Dev favourites — Slate, Tokyo Night, Catppuccin, Dracula, One Dark.
-  //   3. Modern minimal — Vercel, Stripe.
-  //   4. Vibrant — Synthwave, Cyberpunk, Matrix, Aurora.
-  //   5. Warm / serif — Library, Paper, Rosé Pine, Gruvbox, Nord, Solarized.
-  //   6. OLED + violet — Obsidian, Eclipse.
-  //   7. Light — Solarized Light, Latte.
+  // Curated themes catalog - ordered intentionally:
+  //   1. Foundations (default-dark / light) - clean Inter, neutral.
+  //   2. Dev favourites - Slate, Tokyo Night, Catppuccin, Dracula, One Dark.
+  //   3. Modern minimal - Vercel, Stripe.
+  //   4. Vibrant - Synthwave, Cyberpunk, Matrix, Aurora.
+  //   5. Warm / serif - Library, Paper, Rosé Pine, Gruvbox, Nord, Solarized.
+  //   6. OLED + violet - Obsidian, Eclipse.
+  //   7. Light - Solarized Light, Latte.
   // Each has its own font assignment in the CSS layer + a unique colour
   // family so no two themes feel the same when you flip between them.
   const THEMES = [
     // Foundations
+    { key: "apex-focus", label: "Apex Focus", tags: ["Dark", "Default", "Cool"],
+      desc: "Graphite surfaces, teal focus, coral drift, amber leisure.",
+      swatches: ["#0b0d12", "#38d8c4", "#ff6b7a", "#f5b84b"] },
     { key: "default-dark", label: "Default · Dark", tags: ["Dark", "Default", "Cool"],
       desc: "Neutral modern dark · Inter · soft blue accent.",
       swatches: ["#0e1014", "#6aa7ff", "#5fc89c", "#ef6f6c"] },
@@ -2205,7 +2617,7 @@ function AppearanceTab({ all, setAll, save }) {
       desc: "Cult-classic purple-pink · Sora.",
       swatches: ["#282a36", "#bd93f9", "#ff79c6", "#50fa7b"] },
     { key: "one-dark", label: "One Dark", tags: ["Dark", "Cool"],
-      desc: "Atom's classic — slate blue + warm coral · Inter.",
+      desc: "Atom's classic - slate blue + warm coral · Inter.",
       swatches: ["#282c34", "#61afef", "#c678dd", "#98c379"] },
     // Modern minimal
     { key: "vercel", label: "Vercel", tags: ["Dark", "High contrast"],
@@ -2318,13 +2730,14 @@ function AppearanceTab({ all, setAll, save }) {
 
   return (
     <>
+
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="row between" style={{ alignItems: "baseline", marginBottom: 6 }}>
           <div className="card-title" style={{ margin: 0 }}>Theme</div>
           <small className="muted">{filteredThemes.length} of {THEMES.length}</small>
         </div>
         <small className="hint" style={{ display: "block", marginBottom: 12 }}>
-          Pick a palette — changes are instant. Filter by tag or search by
+          Pick a palette - changes are instant. Filter by tag or search by
           name. Custom accent below overrides the theme's default colour.
         </small>
 
@@ -2464,30 +2877,70 @@ function AppearanceTab({ all, setAll, save }) {
 // without needing a restart.
 function SystemStartupCard({ all, setAll, save }) {
   const [status, setStatus] = useState(null);
+  const [repairing, setRepairing] = useState(false);
+  const [lastAction, setLastAction] = useState(null);
   useEffect(() => {
-    api.window?.startupStatus?.().then(setStatus).catch(() => {});
+    refreshStatus();
   }, []);
+
+  async function refreshStatus() {
+    try {
+      const next = await api.window?.startupStatus?.();
+      if (next) setStatus(next);
+    } catch {}
+  }
+
+  async function applyStartupSettings(action = "saved") {
+    setRepairing(true);
+    try {
+      const r = await api.window?.applyStartup?.();
+      if (r?.status) setStatus(r.status);
+      else await refreshStatus();
+      if (r?.ok) {
+        setLastAction(action);
+        setTimeout(() => setLastAction(null), 1800);
+      }
+      return r;
+    } finally {
+      setRepairing(false);
+    }
+  }
 
   async function flip(key, value) {
     setAll({ ...all, [key]: value ? "1" : "0" });
     await save(key, value ? "1" : "0");
-    const r = await api.window?.applyStartup?.();
-    if (r?.ok) {
-      // Re-pull status so the UI shows the actual OS-level state.
-      api.window?.startupStatus?.().then(setStatus).catch(() => {});
-    }
+    await applyStartupSettings("saved");
   }
 
   const trayOn = (all["ui.minimizeToTray"] ?? "0") === "1";
   const autoOn = (all["ui.autostart"] ?? "0") === "1";
+  const osOn = !!status?.openAtLogin;
+  const mismatch = !!status?.hasMismatchedStartupArgs;
+  const devSafe = status?.requiresAppPathArg;
+  const launchMode = devSafe ? "Electron dev-safe" : "Packaged Apex";
+  const startupState =
+    autoOn && osOn ? "Registered"
+    : autoOn && mismatch ? "Repair ready"
+    : autoOn ? "Needs repair"
+    : "Off";
+  const startupTone =
+    autoOn && osOn ? "ok"
+    : autoOn ? "warn"
+    : "muted";
 
   return (
-    <div className="card" style={{ marginBottom: 16 }}>
-      <div className="card-title">System</div>
-      <small className="hint" style={{ display: "block", marginBottom: 12 }}>
-        How Apex behaves around the OS — start with your machine, hide to
-        the tray instead of quitting when you close the window.
-      </small>
+    <div className="card system-startup-card" style={{ marginBottom: 16 }}>
+      <div className="settings-card-head">
+        <div>
+          <div className="card-title">System</div>
+          <small className="hint">
+            Windows login, tray, and background launch behavior.
+          </small>
+        </div>
+        <div className={"startup-health " + startupTone}>
+          <span>{startupState}</span>
+        </div>
+      </div>
 
       <ToggleRow
         label="Minimize to system tray"
@@ -2508,11 +2961,49 @@ function SystemStartupCard({ all, setAll, save }) {
       />
 
       {status && (
-        <small className="muted" style={{ display: "block", marginTop: 10, fontSize: 11 }}>
-          OS state: login-item is <strong>{status.openAtLogin ? "on" : "off"}</strong>
-          {" · "}tray icon is <strong>{status.trayActive ? "active" : "off"}</strong>.
-        </small>
+        <div className="startup-status-panel">
+          <div className="startup-status-grid">
+            <StatusPill label="Windows login" value={status.openAtLogin ? "On" : "Off"} tone={status.openAtLogin ? "ok" : "muted"} />
+            <StatusPill label="Tray" value={status.trayActive ? "Active" : "Off"} tone={status.trayActive ? "ok" : "muted"} />
+            <StatusPill label="Launch mode" value={mismatch ? "Old command" : launchMode} tone={mismatch ? "warn" : devSafe ? "info" : "ok"} />
+          </div>
+          {mismatch && autoOn ? (
+            <small className="startup-note warn">
+              Windows has an older startup command. Repair rewrites it with the Apex app folder.
+            </small>
+          ) : devSafe && autoOn && (
+            <small className="startup-note">
+              Startup is registered with the Apex app folder, so Windows does not open the Electron sample screen.
+            </small>
+          )}
+          {autoOn && (
+            <div className="startup-actions">
+              <button
+                type="button"
+                className="ghost small"
+                disabled={repairing}
+                onClick={() => applyStartupSettings("repaired")}
+              >
+                {repairing ? "Repairing..." : "Repair startup entry"}
+              </button>
+              {lastAction && (
+                <small className="muted">
+                  {lastAction === "repaired" ? "Startup entry repaired." : "Startup settings saved."}
+                </small>
+              )}
+            </div>
+          )}
+        </div>
       )}
+    </div>
+  );
+}
+
+function StatusPill({ label, value, tone = "muted" }) {
+  return (
+    <div className={"startup-status-pill " + tone}>
+      <small>{label}</small>
+      <strong>{value}</strong>
     </div>
   );
 }

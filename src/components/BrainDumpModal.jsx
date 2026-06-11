@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import api from "../lib/api.js";
 
-// Brain dump — paste any wall of text (chat transcript, plan email,
+// Brain dump - paste any wall of text (chat transcript, plan email,
 // meeting notes, reading list) and Apex extracts structured tasks. The
 // user reviews them in a preview, deselects/edits any noise, then bulk-
 // creates the kept rows. Created tasks carry `apex-import` so they're
@@ -24,11 +24,16 @@ export default function BrainDumpModal({ open, onClose, onCreated }) {
   const [topic, setTopic] = useState("");
   const [tasks, setTasks] = useState([]); // [{ ...task, _keep: true, _id: idx }]
   const [creating, setCreating] = useState(false);
+  const [courseContext, setCourseContext] = useState(null);
+  const [includeCourseContext, setIncludeCourseContext] = useState(true);
   const textRef = useRef(null);
 
   useEffect(() => {
     if (open) {
       setTimeout(() => textRef.current?.focus(), 30);
+      api.courseMaterials?.context?.({ maxChars: 5000 })
+        .then((ctx) => setCourseContext(ctx || null))
+        .catch(() => setCourseContext(null));
     } else {
       // Reset on close so a fresh open starts clean.
       setPhase("paste");
@@ -38,6 +43,8 @@ export default function BrainDumpModal({ open, onClose, onCreated }) {
       setSummary("");
       setTopic("");
       setTasks([]);
+      setCourseContext(null);
+      setIncludeCourseContext(true);
     }
   }, [open]);
 
@@ -51,9 +58,10 @@ export default function BrainDumpModal({ open, onClose, onCreated }) {
       const res = await api.ollama.extractTasks({
         text: text.trim(),
         intent: intent.trim() || null,
+        courseContext: includeCourseContext ? (courseContext?.block || "") : "",
       });
       if (!res?.ok && !res?.tasks) {
-        setErr(res?.error || "Couldn't extract — Ollama may be offline.");
+        setErr(res?.error || "Couldn't extract - Ollama may be offline.");
       } else {
         setSummary(res.summary || "");
         setTopic(res.topic || "");
@@ -98,6 +106,7 @@ export default function BrainDumpModal({ open, onClose, onCreated }) {
         await api.tasks.create({
           title: t.title,
           description: t.description || "",
+          source: "brain-dump",
           kind: t.kind || "task",
           category: t.category || "Personal",
           priority: Math.max(1, Math.min(5, +t.priority || 3)),
@@ -124,7 +133,7 @@ export default function BrainDumpModal({ open, onClose, onCreated }) {
             <h3 style={{ margin: 0 }}>Brain dump → tasks</h3>
             <small className="muted">
               {phase === "paste"
-                ? "Paste anything — chat transcript, plan email, reading list. Apex extracts structured tasks you can review."
+                ? "Paste anything - chat transcript, plan email, reading list. Apex extracts structured tasks you can review."
                 : `Extracted ${tasks.length} task${tasks.length === 1 ? "" : "s"}. Uncheck any noise, edit fields inline, then add the keepers.`}
             </small>
           </div>
@@ -135,7 +144,7 @@ export default function BrainDumpModal({ open, onClose, onCreated }) {
           <>
             <div className="form-row">
               <label>
-                Intent <small className="muted">(optional — gives the model a steer)</small>
+                Intent <small className="muted">(optional - gives the model a steer)</small>
               </label>
               <input
                 value={intent}
@@ -143,6 +152,21 @@ export default function BrainDumpModal({ open, onClose, onCreated }) {
                 onChange={(e) => setIntent(e.target.value)}
               />
             </div>
+            {courseContext?.included > 0 && (
+              <label className="brain-dump-context-toggle">
+                <input
+                  type="checkbox"
+                  checked={includeCourseContext}
+                  onChange={(e) => setIncludeCourseContext(e.target.checked)}
+                />
+                <span>
+                  Use syllabus context
+                  <small className="muted">
+                    {courseContext.included}/{courseContext.total} course materials included
+                  </small>
+                </span>
+              </label>
+            )}
             <div className="form-row">
               <label>
                 Paste source

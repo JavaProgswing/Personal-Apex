@@ -213,7 +213,7 @@ export default function ActivityFeed({ onOpenPerson, onOpenRepo }) {
             ({filtered.length})
           </span>
         </div>
-        {/* Compact filter cluster — range chips, then two slim selects,
+        {/* Compact filter cluster - range chips, then two slim selects,
             then a single layout toggle. The wide person dropdown was
             dropped from the inline row to cut clutter; you can filter to
             one person by clicking their card in the grid below. */}
@@ -381,7 +381,7 @@ function PushRow({
   // that do something else.
   const openOverview = (e) => {
     if (e) {
-      // Children that have their own click handlers — let them run instead
+      // Children that have their own click handlers - let them run instead
       // of double-firing the parent. .push-repo also calls onOpenRepo, so
       // skipping here just avoids redundancy.
       const interactive = e.target?.closest?.(
@@ -503,7 +503,7 @@ function PushRow({
 
       {expanded && (
         <div className="push-expanded">
-          {/* AI summary action row — sits at the top of the expand panel. */}
+          {/* AI summary action row - sits at the top of the expand panel. */}
           <div className="push-expanded-actions">
             <button
               type="button"
@@ -543,7 +543,7 @@ function PushRow({
             </div>
           )}
 
-          {/* Commit list — live commits from the GitHub API take priority,
+          {/* Commit list - live commits from the GitHub API take priority,
               cached gh events are a fallback. */}
           <div className="section-label" style={{ marginTop: 10 }}>
             Recent commits
@@ -606,7 +606,7 @@ function PushRow({
             (!cachedCommits || cachedCommits.length === 0) &&
             !cachedLoading && (
               <div className="muted">
-                Couldn't pull commits — repo may be private, rate-limited, or
+                Couldn't pull commits - repo may be private, rate-limited, or
                 empty for the chosen window.
               </div>
             )}
@@ -619,9 +619,9 @@ function PushRow({
 // ─── helpers ────────────────────────────────────────────────────────────
 
 function dayKey(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const d = new Date(iso);
-  if (Number.isNaN(+d)) return "—";
+  if (Number.isNaN(+d)) return "-";
   const today = new Date();
   const y = new Date();
   y.setDate(today.getDate() - 1);

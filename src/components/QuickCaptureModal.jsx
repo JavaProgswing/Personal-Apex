@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+﻿import React, { useEffect, useRef, useState } from "react";
 import api from "../lib/api.js";
 
-// Quick-capture modal — triggered by Cmd/Ctrl+Shift+N from anywhere
+// Quick-capture modal - triggered by Cmd/Ctrl+Shift+N from anywhere
 // (including when Apex is in the background, via a globalShortcut in
 // main.cjs). One input, Enter to save, Esc to cancel.
 //
@@ -61,31 +61,71 @@ export default function QuickCaptureModal({ open, onClose, onCreated }) {
   return (
     <div
       className="modal-scrim quick-capture-scrim"
+      style={{
+        alignItems: "flex-start",
+        paddingTop: "15vh",
+        background: "rgba(0, 0, 0, 0.6)",
+        backdropFilter: "blur(4px)"
+      }}
       onClick={(e) => e.target === e.currentTarget && onClose?.()}
     >
-      <div className="modal quick-capture-modal">
-        <form onSubmit={submit} className="quick-capture-form">
-          <div className="quick-capture-prefix">+</div>
+      <div className="quick-capture-palette" style={{
+        width: "100%",
+        maxWidth: 600,
+        background: "var(--bg-elev)",
+        borderRadius: 16,
+        boxShadow: "0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px var(--border)",
+        overflow: "hidden"
+      }}>
+        <form onSubmit={submit} className="quick-capture-form" style={{
+          display: "flex",
+          alignItems: "center",
+          padding: "16px 20px",
+          borderBottom: preview ? "1px solid var(--border)" : "none"
+        }}>
+          <div className="quick-capture-prefix" style={{
+            fontSize: 24,
+            fontWeight: 300,
+            color: "var(--accent)",
+            marginRight: 16
+          }}>+</div>
           <input
             ref={inputRef}
             value={text}
-            placeholder="Quick capture — what needs doing?"
+            placeholder="Quick capture - what needs doing?"
             onChange={(e) => setText(e.target.value)}
             disabled={busy}
             spellCheck={false}
+            style={{
+              flex: 1,
+              background: "transparent",
+              border: "none",
+              fontSize: 20,
+              outline: "none",
+              color: "var(--text)"
+            }}
           />
           <button
             type="submit"
             className="primary"
             disabled={busy || !text.trim()}
+            style={{ padding: "8px 16px", borderRadius: 8 }}
           >
-            {busy ? "…" : "Add"}
+            {busy ? "…" : "Capture"}
           </button>
         </form>
         {preview && (
-          <div className="quick-capture-preview muted">
+          <div className="quick-capture-preview muted" style={{
+            padding: "12px 20px",
+            background: "var(--bg-card)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            fontSize: 14
+          }}>
             <span>
-              <strong className="text">{preview.title}</strong>
+              <strong className="text" style={{ color: "var(--text)" }}>{preview.title}</strong>
             </span>
             {preview.priority != null && (
               <span className="pill rose">P{preview.priority}</span>
@@ -110,15 +150,23 @@ export default function QuickCaptureModal({ open, onClose, onCreated }) {
             )}
           </div>
         )}
-        <div className="quick-capture-hints muted">
+        <div className="quick-capture-hints muted" style={{
+          padding: "12px 20px",
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+          fontSize: 12,
+          borderTop: preview ? "1px solid var(--border)" : "1px solid var(--border)",
+          background: "rgba(0,0,0,0.2)"
+        }}>
           <span><kbd>p1</kbd>–<kbd>p5</kbd> priority</span>
-          <span><kbd>30m</kbd> / <kbd>1h</kbd> estimate</span>
-          <span><kbd>due fri</kbd> / <kbd>due tomorrow</kbd></span>
-          <span><kbd>@health</kbd> category</span>
-          <span><kbd>!habit</kbd> kind</span>
-          <span><kbd>Esc</kbd> close</span>
+          <span><kbd>30m</kbd> / <kbd>1h</kbd></span>
+          <span><kbd>due fri</kbd></span>
+          <span><kbd>@health</kbd></span>
+          <span><kbd>!habit</kbd></span>
+          <span style={{ marginLeft: "auto" }}><kbd>Esc</kbd> close</span>
         </div>
-        {err && <div className="error" style={{ marginTop: 8 }}>{err}</div>}
+        {err && <div className="error" style={{ padding: "8px 20px", background: "var(--rose-bg)", color: "var(--rose-fg)" }}>{err}</div>}
       </div>
     </div>
   );
@@ -157,7 +205,7 @@ function parseQuickInput(raw) {
   const kind = s.match(/\s!(task|habit|interest)\b/i);
   if (kind) { out.kind = kind[1].toLowerCase(); s = s.replace(kind[0], " "); }
 
-  // Category — explicit @-prefixed first, then bare keywords
+  // Category - explicit @-prefixed first, then bare keywords
   const cat = s.match(/\s(@[a-z]+)\b/i);
   if (cat) {
     const k = cat[1].toLowerCase();
@@ -174,7 +222,7 @@ function parseQuickInput(raw) {
     }
   }
 
-  // Deadline — "due tomorrow", "due fri", "due 5pm", "due in 2h"
+  // Deadline - "due tomorrow", "due fri", "due 5pm", "due in 2h"
   const due = s.match(/\sdue\s+([a-z0-9: ]+?)(?=\s|$)/i);
   if (due) {
     const target = due[1].toLowerCase();
@@ -226,3 +274,4 @@ function parseRelativeDate(target) {
   }
   return null;
 }
+

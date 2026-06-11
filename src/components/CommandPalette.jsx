@@ -4,7 +4,7 @@ import api from "../lib/api.js";
 // Cmd/Ctrl+K opens the action launcher. Designed as a verb-first command
 // palette: most rows are ACTIONS that execute immediately rather than just
 // navigations. Pages are still jumpable via "Go to ..." rows. Quick task
-// capture is the empty-state default — type and press Enter to create.
+// capture is the empty-state default - type and press Enter to create.
 export default function CommandPalette({ open, onClose, onNavigate }) {
   const [q, setQ] = useState("");
   const [idx, setIdx] = useState(0);
@@ -39,7 +39,7 @@ export default function CommandPalette({ open, onClose, onNavigate }) {
   // ─── Action catalog ───────────────────────────────────────────────────
   const actions = useMemo(() => {
     const a = [];
-    // — Timer —
+    // - Timer -
     if (!activeTimer) {
       a.push({ kind: "Timer", icon: "▶", label: "Start 25-min focus timer",
         keywords: "timer pomodoro 25 focus", run: async () => {
@@ -67,7 +67,7 @@ export default function CommandPalette({ open, onClose, onNavigate }) {
         } });
     }
 
-    // — Quick capture —
+    // - Quick capture -
     a.push({ kind: "Capture", icon: "✎", label: "Brain dump",
       keywords: "brain dump capture jot note", run: () => go("brain") });
     a.push({ kind: "Capture", icon: "+", label: "New task...",
@@ -77,13 +77,13 @@ export default function CommandPalette({ open, onClose, onNavigate }) {
         setTimeout(() => inputRef.current?.focus(), 0);
       }, stayOpen: true });
 
-    // — AI / planning —
+    // - AI / planning -
     a.push({ kind: "AI", icon: "✱", label: "Plan my day (Apex AI)",
       keywords: "plan day morning brief ai apex", run: () => go("apex") });
     a.push({ kind: "AI", icon: "✱", label: "Evening review",
       keywords: "evening review reflection day", run: () => go("apex") });
 
-    // — Sync —
+    // - Sync -
     if (api.srm?.syncNow) {
       a.push({ kind: "Sync", icon: "↻", label: "Sync SRM timetable",
         keywords: "sync srm academia timetable refresh", run: async () => {
@@ -92,7 +92,7 @@ export default function CommandPalette({ open, onClose, onNavigate }) {
         } });
     }
 
-    // — Spotify —
+    // - Spotify -
     a.push({ kind: "Spotify", icon: "♪", label: "Start focus playlist",
       keywords: "spotify focus play music playlist", run: async () => {
         try { await api.spotify?.playFocusPlaylist?.(); } catch {}
@@ -113,8 +113,8 @@ export default function CommandPalette({ open, onClose, onNavigate }) {
         close();
       } });
 
-    // — Themes — quick switcher (top picks)
-    // Curated list — kept in the same order as the Appearance picker.
+    // - Themes - quick switcher (top picks)
+    // Curated list - kept in the same order as the Appearance picker.
     // Internal CSS may still have variants like Mono/Midnight/Carbon, but
     // they're not surfaced here to keep the chooser snappy and coherent.
     const themes = [
@@ -141,7 +141,7 @@ export default function CommandPalette({ open, onClose, onNavigate }) {
       });
     }
 
-    // — Page jumps —
+    // - Page jumps -
     const PAGES = [
       ["dashboard", "Dashboard"], ["tasks", "Tasks"], ["schedule", "Schedule"],
       ["habits", "Habits"], ["cp", "Competitive programming"], ["activity", "Activity"],
@@ -156,12 +156,12 @@ export default function CommandPalette({ open, onClose, onNavigate }) {
       });
     }
 
-    // — Tasks (open) — quick navigate to a task
+    // - Tasks (open) - quick navigate to a task
     for (const t of tasks.slice(0, 25)) {
       a.push({
         kind: "Task", icon: "✓", label: t.title,
         keywords: `task ${t.title} ${t.category || ""} ${t.course_code || ""}`,
-        sub: `P${t.priority} · ${t.category || "—"}`,
+        sub: `P${t.priority} · ${t.category || "-"}`,
         run: () => go("tasks"),
       });
     }
@@ -171,7 +171,7 @@ export default function CommandPalette({ open, onClose, onNavigate }) {
 
   // ─── Filter ─────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
-    // Detect "task: foo" mode — let the user create a task inline.
+    // Detect "task: foo" mode - let the user create a task inline.
     const taskMatch = q.match(/^task:\s*(.+)$/i);
     if (taskMatch) {
       const title = taskMatch[1].trim();

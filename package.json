@@ -13,14 +13,14 @@
     "build": "vite build",
     "start": "cross-env NODE_ENV=production electron .",
     "dist": "vite build && electron-builder",
-    "rebuild": "electron-rebuild -f -w better-sqlite3"
+    "postinstall": "electron-builder install-app-deps",
+    "rebuild": "electron-builder install-app-deps"
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",
     "cheerio": "^1.0.0"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.0",
     "@vitejs/plugin-react": "^4.3.3",
     "concurrently": "^9.0.1",
     "cross-env": "^7.0.3",
@@ -37,16 +37,21 @@
     "files": [
       "electron/**/*",
       "dist/**/*",
-      "db/**/*"
+      "db/**/*",
+      "build/icon.png",
+      "build/tray.png"
     ],
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
+    "afterPack": "tools/electron-after-pack.cjs",
     "win": {
       "target": [
         "nsis",
         "portable"
       ],
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "signtoolOptions": null
     },
@@ -54,6 +59,8 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Apex"

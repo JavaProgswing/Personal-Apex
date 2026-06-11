@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="apex_bg">#0B0D12</color>
+    <color name="apex_panel">#141922</color>
+    <color name="apex_panel_2">#1B2230</color>
+    <color name="apex_text">#F4F7FB</color>
+    <color name="apex_muted">#9AA8BA</color>
+    <color name="apex_accent">#38D8C4</color>
+</resources>
