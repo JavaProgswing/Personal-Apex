@@ -94,6 +94,7 @@ object WellbeingReader {
         // last timestamps instead of a coarse daily total.
         val agg = HashMap<String, Agg>()
         val active = HashMap<String, Long>()
+        val firstEventSeen = HashSet<String>()
         val events = usage.queryEvents(start, now)
         if (events != null) {
             val ev = UsageEvents.Event()
@@ -104,12 +105,21 @@ object WellbeingReader {
                     UsageEvents.Event.MOVE_TO_FOREGROUND -> {
                         // A second foreground without a pause: close the prior
                         // interval at this point so its time isn't lost.
+                        firstEventSeen.add(pkg)
                         active.remove(pkg)?.let { s -> agg.getOrPut(pkg) { Agg() }.credit(s, ev.timeStamp) }
                         active[pkg] = ev.timeStamp
                         agg.getOrPut(pkg) { Agg() }.launches += 1
                     }
                     UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                        active.remove(pkg)?.let { s -> agg.getOrPut(pkg) { Agg() }.credit(s, ev.timeStamp) }
+                        val s = active.remove(pkg)
+                        if (s != null) {
+                            agg.getOrPut(pkg) { Agg() }.credit(s, ev.timeStamp)
+                        } else if (firstEventSeen.add(pkg) && ev.timeStamp - start < 6 * 60 * 60_000L) {
+                            // First thing we see for this app today is it LEAVING the
+                            // foreground → it was open across midnight. Credit from
+                            // 00:00 so the day starts complete (capped at 6h sanity).
+                            agg.getOrPut(pkg) { Agg() }.credit(start, ev.timeStamp)
+                        }
                     }
                     // Screen off / keyguard / shutdown: nothing is "in use"
                     // anymore even though no MOVE_TO_BACKGROUND fired. Without
@@ -151,7 +161,9 @@ object WellbeingReader {
         val stats = usage.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, now) ?: emptyList()
         return stats
             .asSequence()
-            .filter { it.totalTimeInForeground >= 60_000 && it.packageName !in ignored && isRealApp(packageManager, it.packageName) }
+            // lastTimeUsed >= start: OEM rolling buckets return YESTERDAY's
+            // totals after midnight — without this, "today" starts stale.
+            .filter { it.lastTimeUsed >= start && it.totalTimeInForeground >= 60_000 && it.packageName !in ignored && isRealApp(packageManager, it.packageName) }
             .sortedByDescending { it.totalTimeInForeground }
             .take(120)
             .map { stat ->

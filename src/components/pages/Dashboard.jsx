@@ -214,6 +214,31 @@ export default function Dashboard({ go }) {
     return () => clearInterval(pollRef.current);
   }, []);
 
+  // Repaint the moment a cloud pull lands fresh phone rows — the graph and
+  // phone filter were going stale until a manual refresh.
+  useEffect(() => {
+    const off = api.activity?.onRefresh?.(() => refreshActivity());
+    return () => off?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Midnight rollover: an app left running overnight kept showing yesterday.
+  // When the ISO date changes, snap the selected day to the new today and
+  // refetch everything.
+  useEffect(() => {
+    let lastDay = new Date().toISOString().slice(0, 10);
+    const id = setInterval(() => {
+      const day = new Date().toISOString().slice(0, 10);
+      if (day !== lastDay) {
+        lastDay = day;
+        setTopAppsDate(day);
+        refreshActivity();
+      }
+    }, 60_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Whenever the user picks a different day in the trail, re-fetch top apps
   // for that date. For *today* we additionally re-poll every 60s so the list
   // updates as the tracker checkpoints the current session.

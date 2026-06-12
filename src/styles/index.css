@@ -5,7 +5,7 @@
    so first paint is never blocked. System fallbacks at the end so
    offline renders stay clean. */
 
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 :root {
   --r-sm: 8px;
@@ -16,109 +16,35 @@
   --font-ui:
     "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     Helvetica, Arial, sans-serif;
-  --font-display: var(--font-ui);
+  /* Sora for brand + page titles — same display face as the web app, so
+     desktop / web / mobile share one wordmark voice. */
+  --font-display: "Sora", var(--font-ui);
   --font-mono:
     "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
 /* ─── THEMES ─────────────────────────────────────────────────────────────
-   Apply via <html data-theme="library|slate|paper|mono">. App.jsx hydrates
-   this on mount from settings. All other CSS targets the var() tokens so
-   no rules below need to change for new themes. */
+   Curated, bare-minimum set — five palettes that each earn their place:
 
-/* ─── DEFAULT-DARK - the neutral foundation ─────────────────────────────
-   Used as the fallback for anyone who hasn't picked a theme yet. Modern
-   neutral dark, Inter font, soft blue accent. Coolors-style cohesion:
-   bg ramp on a 12-step neutral scale, single accent hue, categoricals
-   tuned to ~55% saturation so nothing screams.                          */
-[data-theme="default-dark"] {
-  --bg: #0e1014;
-  --bg-elev: #161920;
-  --bg-elev-2: #1f232c;
-  --border: #2b303a;
+     apex-focus     graphite + teal          the signature (default)
+     library        coffee + honey amber     warm reading-room
+     tokyo-night    indigo + pastel blues    cool dev classic
+     obsidian       OLED black + cyan        lights-off
+     default-light  off-white + indigo       daylight
 
-  --text: #eef0f4;
-  --text-dim: #a4abb6;
-  --text-faint: #6b7280;
+   Apply via <html data-theme="...">. App.jsx hydrates this on mount and
+   maps any legacy/removed theme key onto the nearest survivor. All other
+   CSS targets the var() tokens, so nothing below the token layer needs to
+   change for a new theme.
 
-  --accent: #6aa7ff;
-  --accent-soft: rgba(106, 167, 255, 0.18);
-  --accent-strong: #8cbcff;
+   Every theme defines the same contract:
+     bg ramp (3 steps + border) · text ramp (3 steps) · accent triplet ·
+     five category colours (+soft) · status aliases · two gradients
+     (--grad-accent for fills, --grad-bg for the ambient page wash) ·
+     shadows · color-scheme. */
 
-  --productive: #5fc89c;
-  --productive-soft: rgba(95, 200, 156, 0.16);
-  --distraction: #ef6f6c;
-  --distraction-soft: rgba(239, 111, 108, 0.16);
-  --leisure: #f0a85a;
-  --leisure-soft: rgba(240, 168, 90, 0.16);
-  --rest: #7ec0db;
-  --rest-soft: rgba(126, 192, 219, 0.16);
-  --neutral: #a4abb6;
-  --neutral-soft: rgba(164, 171, 182, 0.16);
-  --mobile: #b393e0;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: var(--leisure);
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #6aa7ff, #8cbcff);
-  --grad-card: linear-gradient(135deg, rgba(106,167,255,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.5);
-
-  color-scheme: dark;
-}
-
-/* ─── DEFAULT-LIGHT - neutral foundation, light ─────────────────────────
-   Clean off-white surface, same accent family as default-dark so users
-   can switch without losing brand. Tinted toward warm-grey for less
-   eye strain than pure white. */
-[data-theme="default-light"] {
-  --bg: #fafbfc;
-  --bg-elev: #f3f5f8;
-  --bg-elev-2: #e7ebef;
-  --border: #d6dce4;
-
-  --text: #1d2330;
-  --text-dim: #4a5365;
-  --text-faint: #7b8493;
-
-  --accent: #2563eb;
-  --accent-soft: rgba(37, 99, 235, 0.10);
-  --accent-strong: #1d4ed8;
-
-  --productive: #16a34a;
-  --productive-soft: rgba(22, 163, 74, 0.10);
-  --distraction: #dc2626;
-  --distraction-soft: rgba(220, 38, 38, 0.10);
-  --leisure: #ea580c;
-  --leisure-soft: rgba(234, 88, 12, 0.10);
-  --rest: #0891b2;
-  --rest-soft: rgba(8, 145, 178, 0.10);
-  --neutral: #4a5365;
-  --neutral-soft: rgba(74, 83, 101, 0.10);
-  --mobile: #7c3aed;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: var(--leisure);
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #2563eb, #7c3aed);
-  --grad-card: linear-gradient(135deg, rgba(37,99,235,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 2px rgba(20, 30, 60, 0.06);
-  --shadow-md: 0 6px 22px rgba(20, 30, 60, 0.08);
-
-  color-scheme: light;
-}
-
-/* Apex Focus - the new workhorse palette for lock-in sessions. Neutral
-   graphite base, teal focus accent, coral drift, amber leisure, blue rest. */
+/* ─── Apex - graphite surfaces, teal focus. The signature. ─────────────── */
+:root,
 [data-theme="apex-focus"] {
   --bg: #0b0d12;
   --bg-elev: #121720;
@@ -151,8 +77,12 @@
   --bad: var(--distraction);
   --info: var(--rest);
 
-  --grad-accent: linear-gradient(135deg, #38d8c4, #7db7ff);
-  --grad-card: linear-gradient(135deg, rgba(56,216,196,0.05), transparent 62%);
+  /* Brand ramp — same teal→blue as the web app + mobile wordmark. */
+  --grad-accent: linear-gradient(120deg, #38d8c4, #2ba8d8);
+  --grad-card: linear-gradient(135deg, rgba(56, 216, 196, 0.05), transparent 62%);
+  --grad-bg:
+    radial-gradient(1100px 600px at 85% -10%, rgba(56, 216, 196, 0.055), transparent 60%),
+    radial-gradient(900px 540px at -12% 108%, rgba(125, 183, 255, 0.045), transparent 60%);
 
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
   --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.48);
@@ -160,9 +90,7 @@
   color-scheme: dark;
 }
 
-/* Library - warm coffee + honey amber. Default. Ramp tightened, categories
-   share a warm undertone so they feel related to the amber accent. */
-:root,
+/* ─── Library - warm coffee + honey amber reading room. ────────────────── */
 [data-theme="library"] {
   --bg: #14110e;
   --bg-elev: #1d1814;
@@ -195,8 +123,11 @@
   --bad: #c4493b;
   --info: var(--rest);
 
-  --grad-accent: linear-gradient(135deg, #e8a23a, #f5b94a);
-  --grad-card: linear-gradient(135deg, rgba(232,162,58,0.04), transparent 60%);
+  --grad-accent: linear-gradient(120deg, #e8a23a, #d97742);
+  --grad-card: linear-gradient(135deg, rgba(232, 162, 58, 0.05), transparent 62%);
+  --grad-bg:
+    radial-gradient(1100px 600px at 85% -10%, rgba(232, 162, 58, 0.05), transparent 60%),
+    radial-gradient(900px 540px at -12% 108%, rgba(224, 122, 95, 0.04), transparent 60%);
 
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.45);
@@ -204,559 +135,7 @@
   color-scheme: dark;
 }
 
-/* Slate - modern cool palette inspired by Linear / Vercel. Softer
-   neutrals, more accessible accent, cohesive cool-blue undertone. */
-[data-theme="slate"] {
-  --bg: #0d1117;
-  --bg-elev: #161b22;
-  --bg-elev-2: #21262d;
-  --border: #30363d;
-
-  --text: #e6edf3;
-  --text-dim: #8b949e;
-  --text-faint: #6e7681;
-
-  --accent: #58a6ff;
-  --accent-soft: rgba(88, 166, 255, 0.16);
-  --accent-strong: #79b8ff;
-
-  --productive: #7ee787;
-  --productive-soft: rgba(126, 231, 135, 0.14);
-  --distraction: #ff7b72;
-  --distraction-soft: rgba(255, 123, 114, 0.14);
-  --leisure: #d2a8ff;
-  --leisure-soft: rgba(210, 168, 255, 0.14);
-  --rest: #79c0ff;
-  --rest-soft: rgba(121, 192, 255, 0.14);
-  --neutral: #8d96a6;
-  --neutral-soft: rgba(141, 150, 166, 0.14);
-  --mobile: #c47cff;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #ffa657;
-  --bad: #ff7b72;
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #56b6c2, #7ecedb);
-  --grad-card: linear-gradient(135deg, rgba(86,182,194,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.6);
-
-  color-scheme: dark;
-}
-
-/* Paper - light cream parchment. Day mode. */
-[data-theme="paper"] {
-  --bg: #f4ecd8;
-  --bg-elev: #faf3e0;
-  --bg-elev-2: #ece2c4;
-  --border: #d8caa3;
-
-  --text: #3a2f1f;
-  --text-dim: #6b5b41;
-  --text-faint: #998767;
-
-  --accent: #9c5b25;
-  --accent-soft: rgba(156, 91, 37, 0.10);
-  --accent-strong: #b46d2c;
-
-  --productive: #5a8761;
-  --productive-soft: rgba(90, 135, 97, 0.12);
-  --distraction: #b04b32;
-  --distraction-soft: rgba(176, 75, 50, 0.12);
-  --leisure: #a05978;
-  --leisure-soft: rgba(160, 89, 120, 0.12);
-  --rest: #4a7b8e;
-  --rest-soft: rgba(74, 123, 142, 0.12);
-  --neutral: #7a6a4d;
-  --neutral-soft: rgba(122, 106, 77, 0.12);
-  --mobile: #7a5fa6;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: var(--accent);
-  --bad: #a8331f;
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #9c5b25, #b46d2c);
-  --grad-card: linear-gradient(135deg, rgba(156,91,37,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 2px rgba(60, 40, 10, 0.10);
-  --shadow-md: 0 6px 18px rgba(60, 40, 10, 0.18);
-
-  color-scheme: light;
-}
-
-/* Mono - high-contrast greyscale + single accent. Minimalist. */
-[data-theme="mono"] {
-  --bg: #0a0a0a;
-  --bg-elev: #161616;
-  --bg-elev-2: #1f1f1f;
-  --border: #2c2c2c;
-
-  --text: #f0f0f0;
-  --text-dim: #aaaaaa;
-  --text-faint: #6a6a6a;
-
-  --accent: #e8a23a;
-  --accent-soft: rgba(232, 162, 58, 0.12);
-  --accent-strong: #f5b94a;
-
-  --productive: #cccccc;
-  --productive-soft: rgba(204, 204, 204, 0.10);
-  --distraction: #888888;
-  --distraction-soft: rgba(136, 136, 136, 0.10);
-  --leisure: #aaaaaa;
-  --leisure-soft: rgba(170, 170, 170, 0.10);
-  --rest: #999999;
-  --rest-soft: rgba(153, 153, 153, 0.10);
-  --neutral: #777777;
-  --neutral-soft: rgba(119, 119, 119, 0.10);
-  --mobile: #b3b3b3;
-
-  --ok: var(--accent);
-  --ok-soft: var(--accent-soft);
-  --warn: var(--accent);
-  --bad: #ff6b5a;
-  --info: var(--text-dim);
-
-  --grad-accent: linear-gradient(135deg, var(--accent), var(--accent-strong));
-  --grad-card: linear-gradient(135deg, rgba(255,255,255,0.02), transparent 60%);
-
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
-  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.7);
-
-  color-scheme: dark;
-}
-
-/* Dracula - purple/pink dev classic. */
-[data-theme="dracula"] {
-  --bg: #282a36;
-  --bg-elev: #313442;
-  --bg-elev-2: #3a3d4d;
-  --border: #44475a;
-
-  --text: #f8f8f2;
-  --text-dim: #a8a8b8;
-  --text-faint: #6c6f80;
-
-  --accent: #ff79c6;
-  --accent-soft: rgba(255, 121, 198, 0.14);
-  --accent-strong: #ffaee0;
-
-  --productive: #50fa7b;
-  --productive-soft: rgba(80, 250, 123, 0.14);
-  --distraction: #ff5555;
-  --distraction-soft: rgba(255, 85, 85, 0.14);
-  --leisure: #bd93f9;
-  --leisure-soft: rgba(189, 147, 249, 0.14);
-  --rest: #8be9fd;
-  --rest-soft: rgba(139, 233, 253, 0.14);
-  --neutral: #a0a0b0;
-  --neutral-soft: rgba(160, 160, 176, 0.14);
-  --mobile: #bd93f9;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #f1fa8c;
-  --bad: #ff5555;
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #ff79c6, #bd93f9);
-  --grad-card: linear-gradient(135deg, rgba(189,147,249,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.55);
-
-  color-scheme: dark;
-}
-
-/* Nord - cool blue, popular dev theme. */
-[data-theme="nord"] {
-  --bg: #2e3440;
-  --bg-elev: #3b4252;
-  --bg-elev-2: #434c5e;
-  --border: #4c566a;
-
-  --text: #eceff4;
-  --text-dim: #b3becd;
-  --text-faint: #6f7a8c;
-
-  --accent: #88c0d0;
-  --accent-soft: rgba(136, 192, 208, 0.14);
-  --accent-strong: #a3d4e0;
-
-  --productive: #a3be8c;
-  --productive-soft: rgba(163, 190, 140, 0.14);
-  --distraction: #bf616a;
-  --distraction-soft: rgba(191, 97, 106, 0.14);
-  --leisure: #b48ead;
-  --leisure-soft: rgba(180, 142, 173, 0.14);
-  --rest: #81a1c1;
-  --rest-soft: rgba(129, 161, 193, 0.14);
-  --neutral: #93a1b3;
-  --neutral-soft: rgba(147, 161, 179, 0.14);
-  --mobile: #b48ead;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #ebcb8b;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #88c0d0, #81a1c1);
-  --grad-card: linear-gradient(135deg, rgba(136,192,208,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.55);
-
-  color-scheme: dark;
-}
-
-/* Solarized Dark - the canonical low-contrast dark. */
-[data-theme="solarized-dark"] {
-  --bg: #002b36;
-  --bg-elev: #073642;
-  --bg-elev-2: #0d4250;
-  --border: #1f5f6e;
-
-  --text: #fdf6e3;
-  --text-dim: #93a1a1;
-  --text-faint: #586e75;
-
-  --accent: #b58900;
-  --accent-soft: rgba(181, 137, 0, 0.14);
-  --accent-strong: #d6a30b;
-
-  --productive: #859900;
-  --productive-soft: rgba(133, 153, 0, 0.14);
-  --distraction: #dc322f;
-  --distraction-soft: rgba(220, 50, 47, 0.14);
-  --leisure: #d33682;
-  --leisure-soft: rgba(211, 54, 130, 0.14);
-  --rest: #268bd2;
-  --rest-soft: rgba(38, 139, 210, 0.14);
-  --neutral: #93a1a1;
-  --neutral-soft: rgba(147, 161, 161, 0.14);
-  --mobile: #6c71c4;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #cb4b16;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #b58900, #cb4b16);
-  --grad-card: linear-gradient(135deg, rgba(181,137,0,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.55);
-
-  color-scheme: dark;
-}
-
-/* Solarized Light - the light counterpart. */
-[data-theme="solarized-light"] {
-  --bg: #fdf6e3;
-  --bg-elev: #f5eedc;
-  --bg-elev-2: #eee8d5;
-  --border: #d8d0bc;
-
-  --text: #073642;
-  --text-dim: #586e75;
-  --text-faint: #93a1a1;
-
-  --accent: #b58900;
-  --accent-soft: rgba(181, 137, 0, 0.10);
-  --accent-strong: #d6a30b;
-
-  --productive: #859900;
-  --productive-soft: rgba(133, 153, 0, 0.12);
-  --distraction: #dc322f;
-  --distraction-soft: rgba(220, 50, 47, 0.10);
-  --leisure: #d33682;
-  --leisure-soft: rgba(211, 54, 130, 0.10);
-  --rest: #268bd2;
-  --rest-soft: rgba(38, 139, 210, 0.10);
-  --neutral: #586e75;
-  --neutral-soft: rgba(88, 110, 117, 0.10);
-  --mobile: #6c71c4;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #cb4b16;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #b58900, #cb4b16);
-  --grad-card: linear-gradient(135deg, rgba(181,137,0,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 2px rgba(7, 54, 66, 0.10);
-  --shadow-md: 0 6px 18px rgba(7, 54, 66, 0.18);
-
-  color-scheme: light;
-}
-
-/* Midnight - deep blue/black, OLED-friendly. Heightened contrast with
-   electric indigo, near-black ramp, vivid categoricals that share the
-   same indigo-violet undertone. */
-[data-theme="midnight"] {
-  --bg: #03050e;
-  --bg-elev: #0a0e1c;
-  --bg-elev-2: #131830;
-  --border: #232a52;
-
-  --text: #f0f2ff;
-  --text-dim: #9aa0d0;
-  --text-faint: #5c628a;
-
-  --accent: #7c7cff;
-  --accent-soft: rgba(124, 124, 255, 0.18);
-  --accent-strong: #a5a5ff;
-
-  --productive: #5ce5b0;
-  --productive-soft: rgba(92, 229, 176, 0.16);
-  --distraction: #ff6788;
-  --distraction-soft: rgba(255, 103, 136, 0.16);
-  --leisure: #e088f0;
-  --leisure-soft: rgba(224, 136, 240, 0.16);
-  --rest: #5fcaff;
-  --rest-soft: rgba(95, 202, 255, 0.16);
-  --neutral: #9aa0d0;
-  --neutral-soft: rgba(154, 160, 208, 0.16);
-  --mobile: #e088f0;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #ffd166;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #6f6cff, #9696ff);
-  --grad-card: linear-gradient(135deg, rgba(111,108,255,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.6);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.75);
-
-  color-scheme: dark;
-}
-
-/* Forest - deep green, calm. Smoother bg ramp with a hint of forest blue
-   in the shadows; categories share a warm-mossy undertone. */
-[data-theme="forest"] {
-  --bg: #0d1a14;
-  --bg-elev: #14241d;
-  --bg-elev-2: #1c2f26;
-  --border: #2c4738;
-
-  --text: #ecf5ee;
-  --text-dim: #9eb1a4;
-  --text-faint: #647668;
-
-  --accent: #82d4b0;
-  --accent-soft: rgba(130, 212, 176, 0.18);
-  --accent-strong: #9be0c0;
-
-  --productive: #9adfb5;
-  --productive-soft: rgba(154, 223, 181, 0.16);
-  --distraction: #d97a5a;
-  --distraction-soft: rgba(217, 122, 90, 0.16);
-  --leisure: #d4b485;
-  --leisure-soft: rgba(212, 180, 133, 0.16);
-  --rest: #94c6d6;
-  --rest-soft: rgba(148, 198, 214, 0.16);
-  --neutral: #9eb1a4;
-  --neutral-soft: rgba(158, 177, 164, 0.16);
-  --mobile: #b8a9d6;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #d8b657;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #7fc8a9, #95d5ba);
-  --grad-card: linear-gradient(135deg, rgba(127,200,169,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.55);
-
-  color-scheme: dark;
-}
-
-/* Sunset - orange/purple gradient vibe. Tighter bg ramp transitioning
-   from plum to dusk; categoricals all live on the warm-magenta gradient. */
-[data-theme="sunset"] {
-  --bg: #170a1c;
-  --bg-elev: #221128;
-  --bg-elev-2: #321a35;
-  --border: #4a274d;
-
-  --text: #faecd8;
-  --text-dim: #cba8b3;
-  --text-faint: #8a6470;
-
-  --accent: #ff8366;
-  --accent-soft: rgba(255, 131, 102, 0.18);
-  --accent-strong: #ffa080;
-
-  --productive: #ffce63;
-  --productive-soft: rgba(255, 206, 99, 0.16);
-  --distraction: #d04c97;
-  --distraction-soft: rgba(208, 76, 151, 0.16);
-  --leisure: #c490e0;
-  --leisure-soft: rgba(196, 144, 224, 0.16);
-  --rest: #8eb8d4;
-  --rest-soft: rgba(142, 184, 212, 0.16);
-  --neutral: #cba8b3;
-  --neutral-soft: rgba(203, 168, 179, 0.16);
-  --mobile: #c490e0;
-
-  --ok: #95d5ba;
-  --ok-soft: rgba(149, 213, 186, 0.14);
-  --warn: var(--accent);
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #ff7e5f, #c1408e);
-  --grad-card: linear-gradient(135deg, rgba(255,126,95,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.65);
-
-  color-scheme: dark;
-}
-
-/* Synthwave - neon pink + cyan over deep purple. Vaporwave aesthetic. */
-[data-theme="synthwave"] {
-  --bg: #1a0b2e;
-  --bg-elev: #241246;
-  --bg-elev-2: #321b5f;
-  --border: #4a2680;
-
-  --text: #f8e9ff;
-  --text-dim: #c8a2dc;
-  --text-faint: #7e5aa0;
-
-  --accent: #ff2a6d;
-  --accent-soft: rgba(255, 42, 109, 0.18);
-  --accent-strong: #ff5390;
-
-  --productive: #05d9e8;
-  --productive-soft: rgba(5, 217, 232, 0.16);
-  --distraction: #ff2a6d;
-  --distraction-soft: rgba(255, 42, 109, 0.16);
-  --leisure: #d300c5;
-  --leisure-soft: rgba(211, 0, 197, 0.16);
-  --rest: #00f5d4;
-  --rest-soft: rgba(0, 245, 212, 0.14);
-  --neutral: #c8a2dc;
-  --neutral-soft: rgba(200, 162, 220, 0.14);
-  --mobile: #d300c5;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #ffd60a;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #ff2a6d, #05d9e8);
-  --grad-card: linear-gradient(135deg, rgba(255,42,109,0.06), rgba(5,217,232,0.03) 60%, transparent);
-
-  --shadow-sm: 0 1px 3px rgba(255, 42, 109, 0.12);
-  --shadow-md: 0 0 28px rgba(255, 42, 109, 0.16), 0 6px 22px rgba(0, 0, 0, 0.65);
-
-  color-scheme: dark;
-}
-
-/* Cyberpunk - yellow + cyan on near-black. High-contrast neon. */
-[data-theme="cyberpunk"] {
-  --bg: #0a0a0a;
-  --bg-elev: #14141a;
-  --bg-elev-2: #1c1c25;
-  --border: #2d2d3d;
-
-  --text: #fcee0a;
-  --text-dim: #b9b54a;
-  --text-faint: #6a6428;
-
-  --accent: #00f0ff;
-  --accent-soft: rgba(0, 240, 255, 0.16);
-  --accent-strong: #5ef7ff;
-
-  --productive: #fcee0a;
-  --productive-soft: rgba(252, 238, 10, 0.14);
-  --distraction: #ff003c;
-  --distraction-soft: rgba(255, 0, 60, 0.16);
-  --leisure: #d300c5;
-  --leisure-soft: rgba(211, 0, 197, 0.14);
-  --rest: #00f0ff;
-  --rest-soft: rgba(0, 240, 255, 0.12);
-  --neutral: #888899;
-  --neutral-soft: rgba(136, 136, 153, 0.14);
-  --mobile: #d300c5;
-
-  --ok: #39ff14;
-  --ok-soft: rgba(57, 255, 20, 0.14);
-  --warn: var(--productive);
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #fcee0a, #00f0ff);
-  --grad-card: linear-gradient(135deg, rgba(252,238,10,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 2px rgba(0, 240, 255, 0.18);
-  --shadow-md: 0 0 24px rgba(0, 240, 255, 0.10), 0 6px 24px rgba(0, 0, 0, 0.8);
-
-  color-scheme: dark;
-}
-
-/* Matrix - pure green-on-black. Hacker-movie aesthetic. */
-[data-theme="matrix"] {
-  --bg: #000000;
-  --bg-elev: #0a0f0a;
-  --bg-elev-2: #121a12;
-  --border: #1f2e1f;
-
-  --text: #39ff14;
-  --text-dim: #2ab512;
-  --text-faint: #186a08;
-
-  --accent: #00ff41;
-  --accent-soft: rgba(0, 255, 65, 0.14);
-  --accent-strong: #4dff7c;
-
-  --productive: #00ff41;
-  --productive-soft: rgba(0, 255, 65, 0.14);
-  --distraction: #ff4136;
-  --distraction-soft: rgba(255, 65, 54, 0.14);
-  --leisure: #b3ff66;
-  --leisure-soft: rgba(179, 255, 102, 0.14);
-  --rest: #66ffaa;
-  --rest-soft: rgba(102, 255, 170, 0.14);
-  --neutral: #2ab512;
-  --neutral-soft: rgba(42, 181, 18, 0.14);
-  --mobile: #b3ff66;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #d8ff00;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #00ff41, #b3ff66);
-  --grad-card: linear-gradient(135deg, rgba(0,255,65,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 2px rgba(0, 255, 65, 0.12);
-  --shadow-md: 0 0 22px rgba(0, 255, 65, 0.08), 0 6px 22px rgba(0, 0, 0, 0.85);
-
-  color-scheme: dark;
-}
-
-/* Tokyo Night - canonical values from the upstream theme. Pastels +
-   indigo midnight; one of the cleanest dark themes anywhere. */
+/* ─── Tokyo Night - indigo midnight + pastel blues. ────────────────────── */
 [data-theme="tokyo-night"] {
   --bg: #1a1b26;
   --bg-elev: #1f2335;
@@ -789,8 +168,11 @@
   --bad: var(--distraction);
   --info: var(--rest);
 
-  --grad-accent: linear-gradient(135deg, #7aa2f7, #bb9af7);
-  --grad-card: linear-gradient(135deg, rgba(122,162,247,0.04), transparent 60%);
+  --grad-accent: linear-gradient(120deg, #7aa2f7, #bb9af7);
+  --grad-card: linear-gradient(135deg, rgba(122, 162, 247, 0.05), transparent 62%);
+  --grad-bg:
+    radial-gradient(1100px 600px at 85% -10%, rgba(122, 162, 247, 0.06), transparent 60%),
+    radial-gradient(900px 540px at -12% 108%, rgba(187, 154, 247, 0.05), transparent 60%);
 
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.65);
@@ -798,313 +180,7 @@
   color-scheme: dark;
 }
 
-/* Catppuccin Mocha - internet-darling pastel night palette. */
-[data-theme="catppuccin"] {
-  --bg: #1e1e2e;
-  --bg-elev: #313244;
-  --bg-elev-2: #45475a;
-  --border: #585b70;
-
-  --text: #cdd6f4;
-  --text-dim: #bac2de;
-  --text-faint: #7f849c;
-
-  --accent: #cba6f7;
-  --accent-soft: rgba(203, 166, 247, 0.14);
-  --accent-strong: #d8baff;
-
-  --productive: #a6e3a1;
-  --productive-soft: rgba(166, 227, 161, 0.14);
-  --distraction: #f38ba8;
-  --distraction-soft: rgba(243, 139, 168, 0.14);
-  --leisure: #f5c2e7;
-  --leisure-soft: rgba(245, 194, 231, 0.14);
-  --rest: #89b4fa;
-  --rest-soft: rgba(137, 180, 250, 0.14);
-  --neutral: #bac2de;
-  --neutral-soft: rgba(186, 194, 222, 0.14);
-  --mobile: #f5c2e7;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #f9e2af;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #cba6f7, #f5c2e7);
-  --grad-card: linear-gradient(135deg, rgba(203,166,247,0.05), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.65);
-
-  color-scheme: dark;
-}
-
-/* Gruvbox Dark - retro-grove warm dev theme. */
-[data-theme="gruvbox"] {
-  --bg: #282828;
-  --bg-elev: #3c3836;
-  --bg-elev-2: #504945;
-  --border: #665c54;
-
-  --text: #ebdbb2;
-  --text-dim: #d5c4a1;
-  --text-faint: #928374;
-
-  --accent: #fabd2f;
-  --accent-soft: rgba(250, 189, 47, 0.14);
-  --accent-strong: #fee066;
-
-  --productive: #b8bb26;
-  --productive-soft: rgba(184, 187, 38, 0.14);
-  --distraction: #fb4934;
-  --distraction-soft: rgba(251, 73, 52, 0.14);
-  --leisure: #d3869b;
-  --leisure-soft: rgba(211, 134, 155, 0.14);
-  --rest: #83a598;
-  --rest-soft: rgba(131, 165, 152, 0.14);
-  --neutral: #928374;
-  --neutral-soft: rgba(146, 131, 116, 0.14);
-  --mobile: #d3869b;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: var(--accent);
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #fabd2f, #fb4934);
-  --grad-card: linear-gradient(135deg, rgba(250,189,47,0.05), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
-  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.55);
-
-  color-scheme: dark;
-}
-
-/* Rosé Pine - soft burgundy + warm pastels. Cozy night. */
-[data-theme="rose-pine"] {
-  --bg: #191724;
-  --bg-elev: #1f1d2e;
-  --bg-elev-2: #26233a;
-  --border: #403d52;
-
-  --text: #e0def4;
-  --text-dim: #908caa;
-  --text-faint: #6e6a86;
-
-  --accent: #eb6f92;
-  --accent-soft: rgba(235, 111, 146, 0.14);
-  --accent-strong: #f291ad;
-
-  --productive: #9ccfd8;
-  --productive-soft: rgba(156, 207, 216, 0.14);
-  --distraction: #eb6f92;
-  --distraction-soft: rgba(235, 111, 146, 0.14);
-  --leisure: #c4a7e7;
-  --leisure-soft: rgba(196, 167, 231, 0.14);
-  --rest: #31748f;
-  --rest-soft: rgba(49, 116, 143, 0.14);
-  --neutral: #908caa;
-  --neutral-soft: rgba(144, 140, 170, 0.14);
-  --mobile: #c4a7e7;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #f6c177;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #eb6f92, #c4a7e7);
-  --grad-card: linear-gradient(135deg, rgba(235,111,146,0.05), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.65);
-
-  color-scheme: dark;
-}
-
-/* One Dark - Atom's classic. Slate blue + warm orange. */
-[data-theme="one-dark"] {
-  --bg: #282c34;
-  --bg-elev: #21252b;
-  --bg-elev-2: #2c313a;
-  --border: #3e4451;
-
-  --text: #abb2bf;
-  --text-dim: #828997;
-  --text-faint: #5c6370;
-
-  --accent: #61afef;
-  --accent-soft: rgba(97, 175, 239, 0.14);
-  --accent-strong: #82c0ff;
-
-  --productive: #98c379;
-  --productive-soft: rgba(152, 195, 121, 0.14);
-  --distraction: #e06c75;
-  --distraction-soft: rgba(224, 108, 117, 0.14);
-  --leisure: #c678dd;
-  --leisure-soft: rgba(198, 120, 221, 0.14);
-  --rest: #56b6c2;
-  --rest-soft: rgba(86, 182, 194, 0.14);
-  --neutral: #828997;
-  --neutral-soft: rgba(130, 137, 151, 0.14);
-  --mobile: #c678dd;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #e5c07b;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #61afef, #c678dd);
-  --grad-card: linear-gradient(135deg, rgba(97,175,239,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.65);
-
-  color-scheme: dark;
-}
-
-/* Crimson - deep oxblood + gold. Bold, editorial. Smoother bg ramp,
-   warm-tinted categoricals so everything reads as one editorial palette. */
-[data-theme="crimson"] {
-  --bg: #170808;
-  --bg-elev: #221010;
-  --bg-elev-2: #301818;
-  --border: #4d2828;
-
-  --text: #f7eadb;
-  --text-dim: #c8aa9e;
-  --text-faint: #84605b;
-
-  --accent: #d8a44e;
-  --accent-soft: rgba(216, 164, 78, 0.18);
-  --accent-strong: #e8bd6a;
-
-  --productive: #a4cd92;
-  --productive-soft: rgba(164, 205, 146, 0.16);
-  --distraction: #d8493e;
-  --distraction-soft: rgba(216, 73, 62, 0.16);
-  --leisure: #c97894;
-  --leisure-soft: rgba(201, 120, 148, 0.16);
-  --rest: #92acba;
-  --rest-soft: rgba(146, 172, 186, 0.16);
-  --neutral: #c8aa9e;
-  --neutral-soft: rgba(200, 170, 158, 0.16);
-  --mobile: #c97894;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: var(--accent);
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #d4a04a, #d4453a);
-  --grad-card: linear-gradient(135deg, rgba(212,69,58,0.05), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.7);
-
-  color-scheme: dark;
-}
-
-/* Ocean - deep teal + coral. Cool tropical-night blend. Smoother teal
-   ramp with a touch of cyan in the highlights; categoricals follow the
-   complementary teal/coral split so everything reads as a single mood. */
-[data-theme="ocean"] {
-  --bg: #021824;
-  --bg-elev: #062a3a;
-  --bg-elev-2: #0c3d52;
-  --border: #145672;
-
-  --text: #d8f2fa;
-  --text-dim: #9bc1cd;
-  --text-faint: #5a7682;
-
-  --accent: #ff8366;
-  --accent-soft: rgba(255, 131, 102, 0.18);
-  --accent-strong: #ffa080;
-
-  --productive: #38d8c4;
-  --productive-soft: rgba(56, 216, 196, 0.16);
-  --distraction: #ff8366;
-  --distraction-soft: rgba(255, 131, 102, 0.16);
-  --leisure: #b298fb;
-  --leisure-soft: rgba(178, 152, 251, 0.16);
-  --rest: #6ce9f7;
-  --rest-soft: rgba(108, 233, 247, 0.16);
-  --neutral: #9bc1cd;
-  --neutral-soft: rgba(155, 193, 205, 0.16);
-  --mobile: #b298fb;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #fbbf24;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #2dd4bf, #ff7a59);
-  --grad-card: linear-gradient(135deg, rgba(45,212,191,0.05), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 30, 50, 0.5);
-  --shadow-md: 0 6px 22px rgba(0, 30, 50, 0.7);
-
-  color-scheme: dark;
-}
-
-/* Latte - Catppuccin Latte light variant. Soft cream + lavender. */
-[data-theme="latte"] {
-  --bg: #eff1f5;
-  --bg-elev: #e6e9ef;
-  --bg-elev-2: #dce0e8;
-  --border: #ccd0da;
-
-  --text: #4c4f69;
-  --text-dim: #6c6f85;
-  --text-faint: #8c8fa1;
-
-  --accent: #8839ef;
-  --accent-soft: rgba(136, 57, 239, 0.10);
-  --accent-strong: #9b50ff;
-
-  --productive: #40a02b;
-  --productive-soft: rgba(64, 160, 43, 0.10);
-  --distraction: #d20f39;
-  --distraction-soft: rgba(210, 15, 57, 0.10);
-  --leisure: #ea76cb;
-  --leisure-soft: rgba(234, 118, 203, 0.10);
-  --rest: #1e66f5;
-  --rest-soft: rgba(30, 102, 245, 0.10);
-  --neutral: #6c6f85;
-  --neutral-soft: rgba(108, 111, 133, 0.10);
-  --mobile: #ea76cb;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #df8e1d;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #8839ef, #ea76cb);
-  --grad-card: linear-gradient(135deg, rgba(136,57,239,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 2px rgba(60, 60, 100, 0.08);
-  --shadow-md: 0 6px 20px rgba(60, 60, 100, 0.10);
-
-  color-scheme: light;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
-   ULTRA-DARK / HIGH-CONTRAST THEMES
-   Pure-void backgrounds, electric accents, max text contrast. Designed for
-   OLED displays + bright rooms. Each category colour is fully saturated to
-   stay legible against the deep black surfaces.
-   ───────────────────────────────────────────────────────────────────────── */
-
-/* Obsidian - pure void black + electric cyan. The OLED-optimised one.
-   Every surface is near-perfectly black (so OLED pixels actually switch
-   off), text is bright white, accent glows. */
+/* ─── Obsidian - true OLED black, cyan glow. Lights off. ───────────────── */
 [data-theme="obsidian"] {
   --bg: #000000;
   --bg-elev: #060608;
@@ -1116,17 +192,17 @@
   --text-faint: #6a6a7a;
 
   --accent: #00e5ff;
-  --accent-soft: rgba(0, 229, 255, 0.18);
+  --accent-soft: rgba(0, 229, 255, 0.16);
   --accent-strong: #4df0ff;
 
-  --productive: #00ffa3;
-  --productive-soft: rgba(0, 255, 163, 0.18);
-  --distraction: #ff3b6b;
-  --distraction-soft: rgba(255, 59, 107, 0.18);
-  --leisure: #ff7ad9;
-  --leisure-soft: rgba(255, 122, 217, 0.18);
+  --productive: #2fe6a0;
+  --productive-soft: rgba(47, 230, 160, 0.16);
+  --distraction: #ff4d72;
+  --distraction-soft: rgba(255, 77, 114, 0.16);
+  --leisure: #f0a85a;
+  --leisure-soft: rgba(240, 168, 90, 0.16);
   --rest: #5fc8ff;
-  --rest-soft: rgba(95, 200, 255, 0.18);
+  --rest-soft: rgba(95, 200, 255, 0.16);
   --neutral: #8a8aa3;
   --neutral-soft: rgba(138, 138, 163, 0.16);
   --mobile: #c084fc;
@@ -1137,42 +213,44 @@
   --bad: var(--distraction);
   --info: var(--rest);
 
-  --grad-accent: linear-gradient(135deg, #00e5ff, #00ffa3);
-  --grad-card: linear-gradient(135deg, rgba(0,229,255,0.06), transparent 60%);
+  --grad-accent: linear-gradient(120deg, #00e5ff, #2fe6a0);
+  --grad-card: linear-gradient(135deg, rgba(0, 229, 255, 0.05), transparent 62%);
+  --grad-bg:
+    radial-gradient(1100px 600px at 85% -10%, rgba(0, 229, 255, 0.05), transparent 60%),
+    radial-gradient(900px 540px at -12% 108%, rgba(47, 230, 160, 0.035), transparent 60%);
 
-  --shadow-sm: 0 1px 2px rgba(0, 229, 255, 0.10);
-  --shadow-md: 0 0 32px rgba(0, 229, 255, 0.10), 0 8px 28px rgba(0, 0, 0, 0.95);
+  --shadow-sm: 0 1px 2px rgba(0, 229, 255, 0.08);
+  --shadow-md: 0 0 30px rgba(0, 229, 255, 0.08), 0 8px 28px rgba(0, 0, 0, 0.95);
 
   color-scheme: dark;
 }
 
-/* Carbon - charcoal industrial + neon-lime. Stark, technical, high
-   contrast. Everything reads with a slight industrial edge. */
-[data-theme="carbon"] {
-  --bg: #0a0c0e;
-  --bg-elev: #14161a;
-  --bg-elev-2: #1d2026;
-  --border: #2c303a;
+/* ─── Daylight - warm-tinted off-white, indigo accent. ─────────────────── */
+[data-theme="default-light"] {
+  --bg: #fafbfc;
+  --bg-elev: #ffffff;
+  --bg-elev-2: #eef1f6;
+  --border: #dbe1ea;
 
-  --text: #f4f7f9;
-  --text-dim: #aab2bc;
-  --text-faint: #5e6670;
+  --text: #1d2330;
+  --text-dim: #4a5365;
+  --text-faint: #7b8493;
 
-  --accent: #b3ff00;
-  --accent-soft: rgba(179, 255, 0, 0.16);
-  --accent-strong: #c8ff4d;
+  --accent: #4263eb;
+  --accent-soft: rgba(66, 99, 235, 0.10);
+  --accent-strong: #2f4fd8;
 
-  --productive: #b3ff00;
-  --productive-soft: rgba(179, 255, 0, 0.14);
-  --distraction: #ff5c4c;
-  --distraction-soft: rgba(255, 92, 76, 0.16);
-  --leisure: #ff9f47;
-  --leisure-soft: rgba(255, 159, 71, 0.16);
-  --rest: #4dd0ff;
-  --rest-soft: rgba(77, 208, 255, 0.16);
-  --neutral: #aab2bc;
-  --neutral-soft: rgba(170, 178, 188, 0.14);
-  --mobile: #c084fc;
+  --productive: #16a34a;
+  --productive-soft: rgba(22, 163, 74, 0.10);
+  --distraction: #dc2626;
+  --distraction-soft: rgba(220, 38, 38, 0.10);
+  --leisure: #ea580c;
+  --leisure-soft: rgba(234, 88, 12, 0.10);
+  --rest: #0891b2;
+  --rest-soft: rgba(8, 145, 178, 0.10);
+  --neutral: #4a5365;
+  --neutral-soft: rgba(74, 83, 101, 0.10);
+  --mobile: #7c3aed;
 
   --ok: var(--productive);
   --ok-soft: var(--productive-soft);
@@ -1180,187 +258,16 @@
   --bad: var(--distraction);
   --info: var(--rest);
 
-  --grad-accent: linear-gradient(135deg, #b3ff00, #4dd0ff);
-  --grad-card: linear-gradient(135deg, rgba(179,255,0,0.04), transparent 60%);
+  --grad-accent: linear-gradient(120deg, #4263eb, #7c3aed);
+  --grad-card: linear-gradient(135deg, rgba(66, 99, 235, 0.04), transparent 62%);
+  --grad-bg:
+    radial-gradient(1100px 600px at 85% -10%, rgba(66, 99, 235, 0.045), transparent 60%),
+    radial-gradient(900px 540px at -12% 108%, rgba(124, 58, 237, 0.035), transparent 60%);
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.7);
-  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.85);
+  --shadow-sm: 0 1px 2px rgba(20, 30, 60, 0.06);
+  --shadow-md: 0 6px 22px rgba(20, 30, 60, 0.08);
 
-  color-scheme: dark;
-}
-
-/* Aurora - coolors-inspired arctic palette: deep indigo night base
-   with an accent gradient running teal → emerald → magenta.
-   Coolors-style cohesion via shared cool undertone in every category. */
-[data-theme="aurora"] {
-  --bg: #0a0e1a;
-  --bg-elev: #131932;
-  --bg-elev-2: #1c2349;
-  --border: #2a3260;
-
-  --text: #e6ecff;
-  --text-dim: #9fa9d6;
-  --text-faint: #5d6694;
-
-  --accent: #7df9d4;
-  --accent-soft: rgba(125, 249, 212, 0.18);
-  --accent-strong: #a4ffe0;
-
-  --productive: #7df9d4;
-  --productive-soft: rgba(125, 249, 212, 0.16);
-  --distraction: #ff5e94;
-  --distraction-soft: rgba(255, 94, 148, 0.16);
-  --leisure: #b685ff;
-  --leisure-soft: rgba(182, 133, 255, 0.16);
-  --rest: #6dc1ff;
-  --rest-soft: rgba(109, 193, 255, 0.16);
-  --neutral: #9fa9d6;
-  --neutral-soft: rgba(159, 169, 214, 0.16);
-  --mobile: #b685ff;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #ffd86b;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #7df9d4 0%, #6dc1ff 35%, #b685ff 70%, #ff5e94 100%);
-  --grad-card: linear-gradient(135deg, rgba(125,249,212,0.06), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.55);
-  --shadow-md: 0 0 28px rgba(125, 249, 212, 0.10), 0 8px 26px rgba(0, 0, 0, 0.7);
-
-  color-scheme: dark;
-}
-
-/* Vercel - pure-black surface, white-90 text, a single electric accent.
-   Inspired by vercel.com - radically minimal, almost monochromatic. */
-[data-theme="vercel"] {
-  --bg: #000000;
-  --bg-elev: #0a0a0a;
-  --bg-elev-2: #161616;
-  --border: #2a2a2a;
-
-  --text: #fafafa;
-  --text-dim: #a1a1aa;
-  --text-faint: #525252;
-
-  --accent: #ffffff;
-  --accent-soft: rgba(255, 255, 255, 0.12);
-  --accent-strong: #ffffff;
-
-  --productive: #50e3c2;
-  --productive-soft: rgba(80, 227, 194, 0.14);
-  --distraction: #ff4757;
-  --distraction-soft: rgba(255, 71, 87, 0.14);
-  --leisure: #c084fc;
-  --leisure-soft: rgba(192, 132, 252, 0.14);
-  --rest: #79b8ff;
-  --rest-soft: rgba(121, 184, 255, 0.14);
-  --neutral: #a1a1aa;
-  --neutral-soft: rgba(161, 161, 170, 0.14);
-  --mobile: #c084fc;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #f5a623;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #ffffff, #a1a1aa);
-  --grad-card: linear-gradient(135deg, rgba(255,255,255,0.04), transparent 60%);
-
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.7);
-  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.8);
-
-  color-scheme: dark;
-}
-
-/* Stripe - clean cool slate with electric purple. Inspired by the
-   Stripe dashboard - calm, professional, very legible. */
-[data-theme="stripe"] {
-  --bg: #0a0e1f;
-  --bg-elev: #14182d;
-  --bg-elev-2: #1d2240;
-  --border: #2c3357;
-
-  --text: #f0f4ff;
-  --text-dim: #a3aac4;
-  --text-faint: #6b7396;
-
-  --accent: #635bff;
-  --accent-soft: rgba(99, 91, 255, 0.18);
-  --accent-strong: #847dff;
-
-  --productive: #00d4a4;
-  --productive-soft: rgba(0, 212, 164, 0.16);
-  --distraction: #ff6b9d;
-  --distraction-soft: rgba(255, 107, 157, 0.16);
-  --leisure: #a78bfa;
-  --leisure-soft: rgba(167, 139, 250, 0.16);
-  --rest: #5dd6ff;
-  --rest-soft: rgba(93, 214, 255, 0.16);
-  --neutral: #a3aac4;
-  --neutral-soft: rgba(163, 170, 196, 0.16);
-  --mobile: #a78bfa;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #ffd166;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #635bff 0%, #a78bfa 100%);
-  --grad-card: linear-gradient(135deg, rgba(99,91,255,0.05), transparent 60%);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.6);
-
-  color-scheme: dark;
-}
-
-/* Eclipse - pitch-black with deep violet accent. The mysterious one.
-   Almost-black surfaces, royal violet glow, vibrant saturated categoricals
-   that all lean cool/violet. */
-[data-theme="eclipse"] {
-  --bg: #050308;
-  --bg-elev: #0c0810;
-  --bg-elev-2: #16101e;
-  --border: #261a36;
-
-  --text: #f0e8ff;
-  --text-dim: #a896c4;
-  --text-faint: #5e4f7a;
-
-  --accent: #a855f7;
-  --accent-soft: rgba(168, 85, 247, 0.20);
-  --accent-strong: #c47dff;
-
-  --productive: #4ade80;
-  --productive-soft: rgba(74, 222, 128, 0.16);
-  --distraction: #f43f5e;
-  --distraction-soft: rgba(244, 63, 94, 0.16);
-  --leisure: #ec4899;
-  --leisure-soft: rgba(236, 72, 153, 0.16);
-  --rest: #38bdf8;
-  --rest-soft: rgba(56, 189, 248, 0.16);
-  --neutral: #a896c4;
-  --neutral-soft: rgba(168, 150, 196, 0.16);
-  --mobile: #ec4899;
-
-  --ok: var(--productive);
-  --ok-soft: var(--productive-soft);
-  --warn: #fbbf24;
-  --bad: var(--distraction);
-  --info: var(--rest);
-
-  --grad-accent: linear-gradient(135deg, #a855f7, #ec4899);
-  --grad-card: linear-gradient(135deg, rgba(168,85,247,0.06), transparent 60%);
-
-  --shadow-sm: 0 1px 2px rgba(168, 85, 247, 0.10);
-  --shadow-md: 0 0 28px rgba(168, 85, 247, 0.10), 0 8px 28px rgba(0, 0, 0, 0.9);
-
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 /* ─── Per-theme typography ───────────────────────────────────────────────
@@ -1391,10 +298,13 @@ body,
 }
 
 body {
-  /* Flat background - let cards do the surface lifting. Letter-spacing
-     -0.01em tightens body copy slightly to feel modern; line-height 1.55
-     gives the text breathing room (φ-ish ratio against 14px). */
-  background: var(--bg);
+  /* Near-flat background: base colour + the theme's ambient corner washes
+     (--grad-bg). Subtle enough that cards still do the surface lifting.
+     Letter-spacing -0.01em tightens body copy slightly to feel modern;
+     line-height 1.55 gives the text breathing room (φ-ish vs 14px). */
+  background-color: var(--bg);
+  background-image: var(--grad-bg, none);
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-ui);
   font-size: 14px;
@@ -1580,6 +490,19 @@ html[data-sidebar="collapsed"] .sidebar .nav-item {
   font-size: 13px;
   color: var(--text-faint);
   flex-shrink: 0;
+  transition: color 120ms ease;
+}
+.sidebar .nav-item .nav-icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+/* Gradient wordmark — same ramp as the web app + Android header. */
+.sidebar .brand .brand-text {
+  background: var(--grad-accent, var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 .sidebar .nav-item .nav-label {
   flex: 1;
@@ -10453,9 +9376,7 @@ button.primary {
   border: none;
   font-weight: 700;
 }
-[data-theme="paper"] button.primary,
-[data-theme="solarized-light"] button.primary,
-[data-theme="latte"] button.primary { color: #fff; }
+[data-theme="default-light"] button.primary { color: #fff; }
 
 button.small,
 button.xsmall {

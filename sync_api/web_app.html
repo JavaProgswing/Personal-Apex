@@ -1,0 +1,1213 @@
+<!doctype html>
+<!--
+  Apex Web — browser version of Apex, served by the sync API at /web.
+  Single self-contained file: Three.js animated background + GSAP motion.
+  Auth: pairs as its own device via the normal /pair flow. The desktop's
+  "Open web app" button passes a one-shot pairing code in the URL hash
+  (#pair=123456) so first launch is zero-typing; afterwards the device
+  token lives in localStorage and the hash is scrubbed.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0B0D12" />
+<title>Apex · Web</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0B0D12;
+    --panel: rgba(20, 25, 34, 0.72);
+    --panel-solid: #141922;
+    --panel2: rgba(27, 34, 48, 0.82);
+    --panel2-solid: #1B2230;
+    --border: rgba(56, 216, 196, 0.10);
+    --border2: #2A3444;
+    --text: #F4F7FB;
+    --muted: #9AA8BA;
+    --faint: #667386;
+    --accent: #38D8C4;
+    --accent-soft: rgba(56, 216, 196, 0.14);
+    --amber: #F5B84B;
+    --green: #3DD68C;
+    --red: #E5675C;
+    --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    overflow-x: hidden;
+  }
+  ::selection { background: rgba(56, 216, 196, 0.35); }
+
+  #bg3d {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+    pointer-events: none;
+  }
+  /* radial vignette so cards always sit on something dark enough */
+  #veil {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(1200px 700px at 70% -10%, rgba(56,216,196,0.07), transparent 60%),
+      radial-gradient(900px 600px at 10% 110%, rgba(245,184,75,0.05), transparent 60%),
+      radial-gradient(ellipse at center, transparent 30%, rgba(11,13,18,0.75) 100%);
+  }
+
+  #app {
+    position: relative; z-index: 1;
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: 26px clamp(14px, 4vw, 36px) 80px;
+    min-height: 100%;
+  }
+
+  /* ── header ─────────────────────────────────────────────────────────── */
+  header {
+    display: flex; align-items: center; gap: 14px;
+    margin-bottom: 26px;
+  }
+  .logo {
+    font-family: Sora, Inter, sans-serif;
+    font-weight: 800; font-size: 30px; letter-spacing: 0.04em;
+    background: linear-gradient(100deg, #7CF5E6 0%, var(--accent) 45%, #2BA8D8 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    user-select: none;
+  }
+  .logo-tag {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.22em;
+    color: var(--bg);
+    background: linear-gradient(120deg, var(--accent), #2BA8D8);
+    padding: 3px 8px; border-radius: 7px;
+    transform: translateY(-9px);
+  }
+  .head-spacer { flex: 1; }
+  .conn {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; color: var(--muted);
+    background: var(--panel); border: 1px solid var(--border);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    padding: 7px 13px; border-radius: 999px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--amber); flex: none; }
+  .dot.ok { background: var(--green); box-shadow: 0 0 10px rgba(61,214,140,0.8); }
+  .dot.bad { background: var(--red); }
+
+  /* ── glass card ─────────────────────────────────────────────────────── */
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    padding: 22px;
+    margin-bottom: 18px;
+  }
+  .card h3 {
+    margin: 0 0 14px;
+    font-family: Sora, Inter, sans-serif;
+    font-size: 16px; font-weight: 700; letter-spacing: 0.01em;
+  }
+  .kicker {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--faint);
+    margin: 0 0 6px;
+  }
+
+  /* ── pair screen ────────────────────────────────────────────────────── */
+  #pairScreen {
+    max-width: 460px; margin: 9vh auto 0;
+    text-align: center;
+    display: none;
+  }
+  #pairScreen .card { padding: 34px 30px; }
+  #pairScreen h2 {
+    font-family: Sora, Inter, sans-serif;
+    margin: 6px 0 8px; font-size: 26px; font-weight: 800;
+  }
+  #pairScreen p { color: var(--muted); font-size: 13.5px; margin: 0 0 22px; }
+  .otp { display: flex; gap: 9px; justify-content: center; margin-bottom: 22px; }
+  .otp input {
+    width: 48px; height: 58px;
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border2); border-radius: 12px;
+    font-family: Sora, monospace; font-size: 24px; font-weight: 700;
+    text-align: center; outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  }
+  .otp input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+    transform: translateY(-2px);
+  }
+  #pairErr { color: var(--red); font-size: 12.5px; min-height: 18px; margin: 10px 0 0; }
+
+  /* ── stats strip ────────────────────────────────────────────────────── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px; margin-bottom: 18px;
+  }
+  .stat {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 15px; padding: 14px 16px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    position: relative; overflow: hidden;
+  }
+  .stat::after {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--c, var(--accent)), transparent);
+    opacity: 0.65;
+  }
+  .stat b {
+    display: block;
+    font-family: Sora, Inter, sans-serif;
+    font-size: 24px; font-weight: 800; line-height: 1.2;
+  }
+  .stat small {
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--faint);
+  }
+
+  /* ── tabs ───────────────────────────────────────────────────────────── */
+  nav.tabs {
+    position: relative;
+    display: flex; gap: 4px;
+    background: var(--panel); border: 1px solid var(--border);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-radius: 999px; padding: 5px;
+    margin-bottom: 20px;
+    width: max-content; max-width: 100%;
+  }
+  nav.tabs button {
+    position: relative; z-index: 1;
+    background: none; border: 0; cursor: pointer;
+    color: var(--muted); font: 600 13.5px Inter, sans-serif;
+    padding: 9px 20px; border-radius: 999px;
+    transition: color 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  nav.tabs button.on { color: var(--bg); }
+  #tabPill {
+    position: absolute; top: 5px; left: 0; height: calc(100% - 10px);
+    border-radius: 999px;
+    background: linear-gradient(120deg, var(--accent), #2BC4D8);
+    z-index: 0;
+  }
+
+  /* ── content rows ───────────────────────────────────────────────────── */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+
+  .greet {
+    font-family: Sora, Inter, sans-serif;
+    font-size: clamp(26px, 5vw, 38px); font-weight: 800;
+    margin: 4px 0 2px; line-height: 1.15;
+  }
+  .greet .hl { color: var(--accent); }
+  .date-line { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+
+  #focusBanner {
+    display: none;
+    align-items: center; gap: 12px;
+    background: linear-gradient(110deg, rgba(56,216,196,0.16), rgba(43,168,216,0.10));
+    border: 1px solid rgba(56,216,196,0.45);
+    border-radius: 15px; padding: 13px 18px; margin-bottom: 18px;
+    font-weight: 600; font-size: 14px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+  #focusBanner .pulse {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--accent); flex: none;
+  }
+
+  .row-item {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--panel2);
+    border: 1px solid var(--border2);
+    border-radius: 13px; padding: 12px 14px;
+    margin-bottom: 9px;
+  }
+  .row-item:last-child { margin-bottom: 0; }
+  .row-item .grow { flex: 1; min-width: 0; }
+  .row-item .t { font-size: 14px; font-weight: 500; }
+  .row-item .m { font-size: 11.5px; color: var(--faint); }
+  .row-item.overdue { border-color: rgba(229,103,92,0.55); }
+  .row-item.overdue .m { color: var(--red); }
+
+  .tick {
+    width: 26px; height: 26px; border-radius: 50%; flex: none;
+    border: 2px solid var(--faint);
+    background: none; cursor: pointer;
+    display: grid; place-items: center;
+    color: transparent; font-size: 14px; font-weight: 800;
+    transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.1s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tick:hover { border-color: var(--accent); transform: scale(1.1); }
+  .tick.done { border-color: var(--green); background: rgba(61,214,140,0.18); color: var(--green); }
+  .row-item.is-done .t { text-decoration: line-through; color: var(--faint); }
+
+  .sec-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.15em;
+    text-transform: uppercase; margin: 18px 0 9px;
+  }
+  .sec-label:first-child { margin-top: 0; }
+
+  /* inputs + buttons */
+  .inline-add { display: flex; gap: 9px; margin-bottom: 16px; }
+  input[type="text"], textarea {
+    width: 100%;
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border2); border-radius: 12px;
+    font: 500 14px Inter, sans-serif;
+    padding: 11px 14px; outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  textarea { resize: vertical; min-height: 92px; }
+  input:focus, textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  input::placeholder, textarea::placeholder { color: var(--faint); }
+  .btn {
+    border: 0; cursor: pointer;
+    font: 600 13.5px Inter, sans-serif;
+    border-radius: 12px; padding: 11px 20px;
+    color: var(--bg);
+    background: linear-gradient(120deg, var(--accent), #2BC4D8);
+    transition: transform 0.12s, box-shadow 0.12s, opacity 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    white-space: nowrap;
+  }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(56,216,196,0.28); }
+  .btn:active { transform: translateY(0); }
+  .btn[disabled] { opacity: 0.5; cursor: default; }
+  .btn.ghost {
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border2);
+  }
+  .btn.ghost:hover { box-shadow: none; border-color: var(--accent); }
+  .btn.tiny { padding: 7px 13px; font-size: 12px; border-radius: 9px; }
+  .btn.danger { background: var(--panel2); border: 1px solid var(--border2); color: var(--red); }
+  .btn.danger:hover { border-color: var(--red); box-shadow: none; }
+
+  /* activity bars */
+  .bar-track {
+    height: 7px; border-radius: 4px;
+    background: rgba(255,255,255,0.05);
+    overflow: hidden; margin-top: 7px;
+  }
+  .bar-fill {
+    height: 100%; border-radius: 4px;
+    transform-origin: left center;
+  }
+  .metric-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .metric {
+    border-radius: 13px; padding: 12px 14px;
+    background: var(--panel2); border: 1px solid var(--border2);
+  }
+  .metric b { display: block; font-family: Sora, sans-serif; font-size: 17px; }
+  .metric small {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .empty { color: var(--muted); font-size: 13px; padding: 6px 2px; }
+
+  footer {
+    margin-top: 30px; text-align: center;
+    color: var(--faint); font-size: 11.5px;
+  }
+  footer button { background: none; border: 0; color: var(--faint); cursor: pointer; font-size: 11.5px; text-decoration: underline; }
+  footer button:hover { color: var(--red); }
+
+  /* toast */
+  #toast {
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+    z-index: 10;
+    background: var(--panel-solid); border: 1px solid var(--border2);
+    border-radius: 999px; padding: 10px 20px;
+    font-size: 13px; font-weight: 500;
+    box-shadow: var(--shadow);
+    opacity: 0; pointer-events: none;
+    max-width: 88vw; text-align: center;
+  }
+
+  #dash { display: none; }
+  .g-rise { opacity: 0; }      /* GSAP reveals these */
+  noscript { display: block; padding: 40px; text-align: center; color: var(--muted); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .g-rise { opacity: 1 !important; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+<canvas id="bg3d"></canvas>
+<div id="veil"></div>
+
+<div id="app">
+  <header>
+    <span class="logo">APEX</span><span class="logo-tag">WEB</span>
+    <span class="head-spacer"></span>
+    <span class="conn"><span class="dot" id="connDot"></span><span id="connText">connecting…</span></span>
+  </header>
+
+  <!-- ── pairing ─────────────────────────────────────────────────────── -->
+  <section id="pairScreen">
+    <div class="card g-rise">
+      <p class="kicker">Link this browser</p>
+      <h2>Pair with Apex</h2>
+      <p>On desktop Apex open <b>Settings → Mobile</b> and hit <b>“Pair a phone”</b> — then type the six-digit code here. Codes are single-use and expire in 15 minutes.</p>
+      <div class="otp" id="otpBox">
+        <input inputmode="numeric" maxlength="1" /><input inputmode="numeric" maxlength="1" /><input inputmode="numeric" maxlength="1" /><input inputmode="numeric" maxlength="1" /><input inputmode="numeric" maxlength="1" /><input inputmode="numeric" maxlength="1" />
+      </div>
+      <button class="btn" id="pairBtn" style="width:100%">Pair this browser</button>
+      <p id="pairErr"></p>
+    </div>
+  </section>
+
+  <!-- ── dashboard ───────────────────────────────────────────────────── -->
+  <section id="dash">
+    <div class="greet g-rise" id="greet"></div>
+    <div class="date-line g-rise" id="dateLine"></div>
+
+    <div id="focusBanner" class="g-rise">
+      <span class="pulse"></span><span id="focusText"></span>
+    </div>
+
+    <div class="stats">
+      <div class="stat g-rise" style="--c: var(--accent)"><b id="stOpen">0</b><small>Open tasks</small></div>
+      <div class="stat g-rise" style="--c: var(--amber)"><b id="stDue">0</b><small>Due today</small></div>
+      <div class="stat g-rise" style="--c: var(--red)"><b id="stScreen">—</b><small>Phone screen time</small></div>
+      <div class="stat g-rise" style="--c: var(--green)"><b id="stRoutine">—</b><small>Wake · Sleep</small></div>
+    </div>
+
+    <nav class="tabs g-rise" id="tabs">
+      <div id="tabPill"></div>
+      <button data-tab="today" class="on">Today</button>
+      <button data-tab="tasks">Tasks</button>
+      <button data-tab="notes">Notes</button>
+      <button data-tab="activity">Activity</button>
+    </nav>
+
+    <!-- Today -->
+    <div class="panel" id="panel-today">
+      <div class="grid2">
+        <div class="card g-rise">
+          <h3>Today's plan</h3>
+          <div id="planBox"><div class="empty">Loading…</div></div>
+        </div>
+        <div>
+          <div class="card g-rise">
+            <h3>Now</h3>
+            <div id="nowBox"><div class="empty">Loading…</div></div>
+          </div>
+          <div class="card g-rise">
+            <h3>Recent notes</h3>
+            <div id="recentNotes"><div class="empty">Loading…</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tasks -->
+    <div class="panel" id="panel-tasks" style="display:none">
+      <div class="card">
+        <h3>Tasks</h3>
+        <div class="inline-add">
+          <input type="text" id="taskInput" placeholder="e.g. Submit DBMS assignment — Enter to add" />
+          <button class="btn" id="taskAddBtn">Add</button>
+        </div>
+        <div id="taskList"><div class="empty">Loading…</div></div>
+      </div>
+    </div>
+
+    <!-- Notes -->
+    <div class="panel" id="panel-notes" style="display:none">
+      <div class="grid2">
+        <div class="card">
+          <h3>Write</h3>
+          <input type="text" id="noteTitle" placeholder="Title (optional)" style="margin-bottom:10px" />
+          <textarea id="noteBody" placeholder="What happened, what changed, what to remember…"></textarea>
+          <div style="display:flex; gap:9px; margin-top:12px">
+            <button class="btn" id="noteSaveBtn">Save note</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>All notes</h3>
+          <div id="noteList"><div class="empty">Loading…</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Activity -->
+    <div class="panel" id="panel-activity" style="display:none">
+      <div class="card">
+        <h3>Phone screen time · today</h3>
+        <b id="actTotal" style="font-family:Sora,sans-serif;font-size:34px;font-weight:800">—</b>
+        <div id="actInsight" class="empty" style="margin:2px 0 16px"></div>
+        <div class="metric-strip" id="metricStrip"></div>
+        <div id="actBars"></div>
+      </div>
+    </div>
+
+    <footer>
+      <span id="footWho"></span> · refreshes every minute ·
+      <button id="unpairBtn">unpair this browser</button>
+    </footer>
+  </section>
+</div>
+
+<div id="toast"></div>
+<noscript>Apex Web needs JavaScript.</noscript>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module">
+/* ════════════════════════════════════════════════════════════════════════
+   Apex Web client
+   ════════════════════════════════════════════════════════════════════════ */
+
+// GSAP may be blocked/offline — shim enough that the app still functions.
+const G = window.gsap || {
+  to: (t, v) => { applyEnd(t, v); return { kill() {} }; },
+  fromTo: (t, a, b) => { applyEnd(t, b); return { kill() {} }; },
+  set: (t, v) => applyEnd(t, v),
+  timeline: () => ({ to() { return this; }, fromTo() { return this; }, set() { return this; } }),
+};
+function applyEnd(targets, vars) {
+  const list = typeof targets === "string" ? document.querySelectorAll(targets)
+    : targets.length !== undefined ? targets : [targets];
+  for (const el of list) {
+    if (!el || !el.style) continue;
+    if (vars.autoAlpha !== undefined) { el.style.opacity = vars.autoAlpha; el.style.visibility = vars.autoAlpha ? "visible" : "hidden"; }
+    if (vars.opacity !== undefined) el.style.opacity = vars.opacity;
+    el.style.transform = "";
+  }
+  if (vars.onComplete) vars.onComplete();
+}
+const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ── tiny DOM helpers ────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+};
+function toast(msg, bad = false) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.style.borderColor = bad ? "var(--red)" : "var(--border2)";
+  G.to(t, { autoAlpha: 1, y: -6, duration: 0.25, onComplete: () => {
+    G.to(t, { autoAlpha: 0, y: 0, duration: 0.4, delay: 2.6 });
+  }});
+}
+
+// ── API layer ───────────────────────────────────────────────────────────
+const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+const API = (hashParams.get("api") || localStorage.getItem("apex.web.api") || location.origin).replace(/\/+$/, "");
+if (hashParams.get("api")) localStorage.setItem("apex.web.api", API);
+
+const store = {
+  get token() { return localStorage.getItem("apex.web.token") || ""; },
+  set token(v) { v ? localStorage.setItem("apex.web.token", v) : localStorage.removeItem("apex.web.token"); },
+  get deviceName() { return localStorage.getItem("apex.web.name") || ""; },
+  set deviceName(v) { localStorage.setItem("apex.web.name", v); },
+};
+
+async function api(path, { method = "GET", body } = {}) {
+  const res = await fetch(API + path, {
+    method,
+    headers: {
+      ...(body ? { "Content-Type": "application/json" } : {}),
+      ...(store.token ? { Authorization: "Bearer " + store.token } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || data.error || "HTTP " + res.status);
+  return data;
+}
+
+// ── state ───────────────────────────────────────────────────────────────
+let tasks = [], notes = [], routine = null, reminders = [], focus = null, wellbeing = [];
+let currentTab = "today";
+const todayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+// ── boot ────────────────────────────────────────────────────────────────
+boot();
+async function boot() {
+  startScene(); // 3D background loads independently; failure is cosmetic only
+  const pairCode = (hashParams.get("pair") || "").trim();
+
+  if (store.token) {
+    try {
+      const me = await api("/me");
+      scrubHash();
+      return enterDash(me);
+    } catch {
+      store.token = ""; // revoked/stale — fall through to pairing
+    }
+  }
+  if (/^\d{6}$/.test(pairCode)) {
+    setConn("pairing…", "");
+    try {
+      await pairWith(pairCode);
+      scrubHash();
+      return;
+    } catch (e) {
+      scrubHash();
+      showPair("Auto-pair failed: " + e.message + " — mint a fresh code on desktop.");
+      return;
+    }
+  }
+  showPair();
+}
+function scrubHash() {
+  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+}
+function setConn(text, cls) {
+  $("connText").textContent = text;
+  $("connDot").className = "dot " + cls;
+}
+
+function browserLabel() {
+  const ua = navigator.userAgent;
+  const b = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox"
+    : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "Browser";
+  const os = /Windows/.test(ua) ? "Windows" : /Android/.test(ua) ? "Android"
+    : /Mac/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : "device";
+  return `Web · ${b} on ${os}`;
+}
+
+async function pairWith(code) {
+  const out = await api("/pair", {
+    method: "POST",
+    body: { code, device_name: browserLabel(), device_type: "web" },
+  });
+  store.token = out.token;
+  store.deviceName = out.device?.name || browserLabel();
+  toast("Paired ✓ — this browser is now linked.");
+  enterDash(out.device);
+}
+
+// ── pairing screen ──────────────────────────────────────────────────────
+function showPair(err = "") {
+  setConn("not paired", "");
+  $("pairScreen").style.display = "block";
+  $("dash").style.display = "none";
+  $("pairErr").textContent = err;
+  const inputs = [...$("otpBox").querySelectorAll("input")];
+  inputs.forEach((inp, i) => {
+    inp.value = "";
+    inp.oninput = () => {
+      inp.value = inp.value.replace(/\D/g, "").slice(0, 1);
+      if (inp.value && i < 5) inputs[i + 1].focus();
+      if (inputs.every((x) => x.value)) doPair();
+    };
+    inp.onkeydown = (e) => {
+      if (e.key === "Backspace" && !inp.value && i > 0) inputs[i - 1].focus();
+      if (e.key === "Enter") doPair();
+    };
+    inp.onpaste = (e) => {
+      const txt = (e.clipboardData.getData("text") || "").replace(/\D/g, "");
+      if (txt.length >= 6) {
+        e.preventDefault();
+        inputs.forEach((x, j) => (x.value = txt[j] || ""));
+        doPair();
+      }
+    };
+  });
+  inputs[0].focus();
+  $("pairBtn").onclick = doPair;
+  async function doPair() {
+    const code = inputs.map((x) => x.value).join("");
+    if (code.length !== 6) { $("pairErr").textContent = "Enter all six digits."; return; }
+    $("pairBtn").disabled = true; $("pairErr").textContent = "";
+    try {
+      await pairWith(code);
+    } catch (e) {
+      $("pairErr").textContent = e.message;
+      G.fromTo("#otpBox", { x: -7 }, { x: 0, duration: 0.4, ease: "elastic.out(2, 0.3)" });
+    } finally {
+      $("pairBtn").disabled = false;
+    }
+  }
+  G.fromTo("#pairScreen .card", { autoAlpha: 0, y: 26 }, { autoAlpha: 1, y: 0, duration: 0.7, ease: "power3.out" });
+}
+
+// ── dashboard ───────────────────────────────────────────────────────────
+let introPlayed = false;
+async function enterDash(device) {
+  $("pairScreen").style.display = "none";
+  $("dash").style.display = "block";
+  setConn(device?.name || store.deviceName || "paired", "ok");
+  $("footWho").textContent = "Apex Web · paired as " + (device?.name || store.deviceName || "this browser");
+
+  renderGreeting();
+  playIntro();
+  await loadAll();
+  setInterval(refreshLight, 60_000);
+
+  $("taskAddBtn").onclick = addTask;
+  $("taskInput").onkeydown = (e) => { if (e.key === "Enter") addTask(); };
+  $("noteSaveBtn").onclick = saveNote;
+  $("unpairBtn").onclick = unpair;
+  initTabs();
+}
+
+function renderGreeting() {
+  const h = new Date().getHours();
+  const word = h < 5 ? "Late night" : h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  const glyph = h < 5 || h >= 17 ? "☽" : "☀";
+  $("greet").innerHTML = `${word}<span class="hl"> ${glyph}</span>`;
+  $("dateLine").textContent = new Date().toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+
+function playIntro() {
+  if (introPlayed) return;
+  introPlayed = true;
+  if (REDUCED || !window.gsap) {
+    document.querySelectorAll(".g-rise").forEach((n) => (n.style.opacity = 1));
+    return;
+  }
+  gsap.fromTo("#dash .g-rise",
+    { autoAlpha: 0, y: 28 },
+    { autoAlpha: 1, y: 0, duration: 0.85, stagger: 0.07, ease: "power3.out", delay: 0.15, clearProps: "transform" });
+}
+
+async function loadAll() {
+  try {
+    const [boot, rem, foc, pull] = await Promise.all([
+      api("/bootstrap"),
+      api("/reminders/due").catch(() => []),
+      api("/focus").catch(() => null),
+      api("/sync/pull?since=" + todayIso()).catch(() => ({ wellbeing: [] })),
+    ]);
+    tasks = boot.tasks || [];
+    notes = (boot.notes || []).filter((n) => (n.body || "").trim());
+    routine = (boot.routines || []).find((r) => r.date === todayIso()) || null;
+    reminders = rem || [];
+    focus = foc;
+    wellbeing = (pull.wellbeing || []).filter((w) => w.date === todayIso());
+    renderAll();
+  } catch (e) {
+    toast("Load failed: " + e.message, true);
+    if (/401/.test(e.message)) { store.token = ""; location.reload(); }
+  }
+}
+
+// Light refresh: focus + reminders only (cheap, keeps zen banner live).
+async function refreshLight() {
+  try {
+    focus = await api("/focus");
+    reminders = await api("/reminders/due");
+    renderFocus(); renderNow();
+  } catch { /* transient network — next tick retries */ }
+}
+
+function renderAll() {
+  renderStats(); renderFocus(); renderPlan(); renderNow();
+  renderRecentNotes(); renderTasks(); renderNotes(); renderActivity();
+}
+
+// ── stats ───────────────────────────────────────────────────────────────
+function countUp(node, target, fmt = (v) => Math.round(v)) {
+  if (REDUCED || !window.gsap) { node.textContent = fmt(target); return; }
+  const o = { v: 0 };
+  gsap.to(o, { v: target, duration: 1.1, ease: "power2.out", onUpdate: () => (node.textContent = fmt(o.v)) });
+}
+const openTasks = () => tasks.filter((t) => t.status !== "done" && t.status !== "archived");
+const fmtMins = (m) => { m = Math.round(m); const h = (m / 60) | 0; return h > 0 ? `${h}h ${m % 60}m` : `${m}m`; };
+
+function renderStats() {
+  const open = openTasks();
+  countUp($("stOpen"), open.length);
+  countUp($("stDue"), open.filter((t) => (t.due_at || "").slice(0, 10) === todayIso()).length);
+  const totalMin = wellbeing.reduce((s, w) => s + (w.minutes || 0), 0);
+  if (totalMin > 0) countUp($("stScreen"), totalMin, fmtMins);
+  else $("stScreen").textContent = "—";
+  $("stRoutine").textContent = routine ? `${routine.wake_time || "--"} · ${routine.sleep_time || "--"}` : "07:00 · 23:30";
+}
+
+function renderFocus() {
+  const b = $("focusBanner");
+  if (focus?.active) {
+    const until = focus.ends_at ? " · until " + new Date(focus.ends_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+    $("focusText").textContent = `ZEN MODE — ${focus.title || "Focus"}${until}`;
+    b.style.display = "flex";
+    if (window.gsap && !b._pulse && !REDUCED) {
+      b._pulse = gsap.to(b.querySelector(".pulse"), { opacity: 0.25, scale: 0.7, duration: 0.9, yoyo: true, repeat: -1, ease: "sine.inOut" });
+    }
+  } else {
+    b.style.display = "none";
+    if (b._pulse) { b._pulse.kill(); b._pulse = null; }
+  }
+}
+
+// ── today panel ─────────────────────────────────────────────────────────
+function taskMeta(t) {
+  const today = todayIso();
+  const bits = [];
+  const day = (t.due_at || "").slice(0, 10);
+  if (day) {
+    const hm = t.due_at.length >= 16 && t.due_at[10] === "T" ? " " + t.due_at.slice(11, 16) : "";
+    bits.push(day === today ? "due today" + hm : day < today ? "was due " + day.slice(5) : "due " + day.slice(5) + hm);
+  }
+  const p = t.payload?.priority;
+  if (p && p <= 2) bits.push("P" + p);
+  if (t.payload?.category) bits.push(t.payload.category);
+  if (t.source && t.source !== "desktop") bits.push("via " + t.source);
+  return bits.join("  ·  ");
+}
+
+function taskRow(t) {
+  const today = todayIso();
+  const isDone = t.status === "done";
+  const isOverdue = !isDone && t.due_at && t.due_at.slice(0, 10) < today;
+  const row = el("div", "row-item" + (isOverdue ? " overdue" : "") + (isDone ? " is-done" : ""));
+  const tick = el("button", "tick" + (isDone ? " done" : ""), "✓");
+  if (!isDone) tick.onclick = () => completeTask(t, row);
+  row.appendChild(tick);
+  const grow = el("div", "grow");
+  grow.appendChild(el("div", "t", t.title));
+  const meta = taskMeta(t);
+  if (meta) grow.appendChild(el("div", "m", meta));
+  row.appendChild(grow);
+  const del = el("button", "btn tiny danger", "✕");
+  del.title = "Delete task";
+  del.onclick = () => deleteTask(t, row);
+  row.appendChild(del);
+  return row;
+}
+
+function renderPlan() {
+  const box = $("planBox");
+  box.innerHTML = "";
+  const today = todayIso();
+  const open = openTasks();
+  const planned = [
+    ...open.filter((t) => (t.due_at || "9999").slice(0, 10) < today),
+    ...open.filter((t) => (t.due_at || "").slice(0, 10) === today),
+    ...open.filter((t) => !t.due_at && (t.payload?.priority || 3) <= 2),
+  ].filter((t, i, a) => a.findIndex((x) => x.id === t.id) === i).slice(0, 5);
+  if (!planned.length) {
+    box.appendChild(el("div", "empty", open.length
+      ? `Nothing due today. ${open.length} open task${open.length === 1 ? "" : "s"} in the backlog.`
+      : "No open tasks — add one in the Tasks tab."));
+    return;
+  }
+  planned.forEach((t) => box.appendChild(taskRow(t)));
+  staggerIn(box);
+}
+
+function renderNow() {
+  const box = $("nowBox");
+  box.innerHTML = "";
+  if (!reminders.length) {
+    const open = openTasks().length;
+    box.appendChild(el("div", "empty", `All clear right now.${open ? ` ${open} open task${open === 1 ? "" : "s"}.` : ""}`));
+    return;
+  }
+  reminders.forEach((r) => {
+    const row = el("div", "row-item" + (r.overdue ? " overdue" : ""));
+    const glyph = r.overdue ? "⚠" : r.kind === "wake" ? "☀" : r.kind === "sleep" ? "☽" : "•";
+    const g = el("div", "", glyph);
+    g.style.cssText = "font-size:17px;flex:none;color:" +
+      (r.overdue ? "var(--red)" : r.kind === "wake" ? "var(--amber)" : r.kind === "sleep" ? "var(--accent)" : "var(--muted)");
+    row.appendChild(g);
+    const grow = el("div", "grow");
+    grow.appendChild(el("div", "t", r.title));
+    if (r.overdue) grow.appendChild(el("div", "m", "overdue"));
+    row.appendChild(grow);
+    if (r.kind === "wake" || r.kind === "sleep") {
+      const btn = el("button", "btn tiny ghost", r.kind === "wake" ? "I'm up" : "Wrapping up");
+      btn.onclick = async () => {
+        try {
+          await api("/events", { method: "POST", body: { kind: r.kind + "_done", payload: { source: "web" } } });
+          toast("Logged ✓");
+          reminders = await api("/reminders/due");
+          renderNow();
+        } catch (e) { toast(e.message, true); }
+      };
+      row.appendChild(btn);
+    } else if (r.task) {
+      const btn = el("button", "btn tiny ghost", "Done");
+      btn.onclick = () => completeTask(r.task, row);
+      row.appendChild(btn);
+    }
+    box.appendChild(row);
+  });
+  staggerIn(box);
+}
+
+function renderRecentNotes() {
+  const box = $("recentNotes");
+  box.innerHTML = "";
+  const recent = notes.slice(0, 3);
+  if (!recent.length) { box.appendChild(el("div", "empty", "No notes yet — write one in the Notes tab.")); return; }
+  recent.forEach((n) => {
+    const row = el("div", "row-item");
+    const grow = el("div", "grow");
+    grow.appendChild(el("div", "t", n.title || (n.body || "").split("\n")[0].slice(0, 60) || "Note"));
+    grow.appendChild(el("div", "m", `${(n.date || "").slice(5)} · ${(n.body || "").split("\n")[0].slice(0, 90)}`));
+    row.appendChild(grow);
+    box.appendChild(row);
+  });
+}
+
+// ── tasks panel ─────────────────────────────────────────────────────────
+function renderTasks() {
+  const box = $("taskList");
+  box.innerHTML = "";
+  const visible = tasks.filter((t) => t.status !== "archived");
+  if (!visible.length) { box.appendChild(el("div", "empty", "No tasks yet — add one above. Desktop pushes its list every ~15 min.")); return; }
+  const today = todayIso();
+  const open = visible.filter((t) => t.status !== "done");
+  const groups = [
+    ["Overdue", "var(--red)", open.filter((t) => (t.due_at || "9999").slice(0, 10) < today)],
+    ["Today", "var(--amber)", open.filter((t) => (t.due_at || "").slice(0, 10) === today)],
+    ["Upcoming", "var(--accent)", open.filter((t) => (t.due_at || "").slice(0, 10) > today).sort((a, b) => (a.due_at > b.due_at ? 1 : -1))],
+    ["Someday", "var(--muted)", open.filter((t) => !t.due_at)],
+    ["Done", "var(--faint)", visible.filter((t) => t.status === "done").slice(0, 8)],
+  ];
+  for (const [name, color, items] of groups) {
+    if (!items.length) continue;
+    const lab = el("div", "sec-label", `${name} · ${items.length}`);
+    lab.style.color = color;
+    box.appendChild(lab);
+    items.forEach((t) => box.appendChild(taskRow(t)));
+  }
+  if (!open.length) box.appendChild(el("div", "empty", "All caught up ✓"));
+  staggerIn(box);
+}
+
+async function addTask() {
+  const inp = $("taskInput");
+  const title = inp.value.trim();
+  if (!title) return;
+  inp.value = "";
+  try {
+    const created = await api("/tasks", {
+      method: "POST",
+      body: { title: title.slice(0, 220), status: "open", source: "web", payload: { priority: 3 } },
+    });
+    tasks = [created, ...tasks];
+    renderTasks(); renderPlan(); renderStats();
+    toast("Task added ✓ — desktop imports it next sync.");
+  } catch (e) { toast(e.message, true); }
+}
+
+async function completeTask(t, row) {
+  const tick = row.querySelector(".tick");
+  if (tick) tick.classList.add("done");
+  if (window.gsap && !REDUCED) {
+    gsap.to(row, { opacity: 0.45, duration: 0.35 });
+    gsap.fromTo(tick, { scale: 0.4 }, { scale: 1, duration: 0.5, ease: "back.out(3)" });
+  }
+  try {
+    await api("/tasks", { method: "POST", body: {
+      id: t.id, title: t.title, status: "done", due_at: t.due_at, source: t.source || "web", payload: t.payload || {},
+    }});
+    tasks = tasks.map((x) => (x.id === t.id ? { ...x, status: "done" } : x));
+    setTimeout(() => { renderTasks(); renderPlan(); renderStats(); }, 420);
+    toast(`“${t.title.slice(0, 40)}” done ✓`);
+  } catch (e) { toast(e.message, true); if (tick) tick.classList.remove("done"); }
+}
+
+async function deleteTask(t, row) {
+  try {
+    await api("/tasks/" + encodeURIComponent(t.id), { method: "DELETE" });
+    tasks = tasks.filter((x) => x.id !== t.id);
+    if (window.gsap && !REDUCED) gsap.to(row, { autoAlpha: 0, height: 0, marginBottom: 0, duration: 0.3, onComplete: () => { renderTasks(); renderPlan(); renderStats(); } });
+    else { renderTasks(); renderPlan(); renderStats(); }
+    toast("Task deleted.");
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── notes panel ─────────────────────────────────────────────────────────
+function renderNotes() {
+  const box = $("noteList");
+  box.innerHTML = "";
+  if (!notes.length) { box.appendChild(el("div", "empty", "No notes yet.")); return; }
+  let lastDate = "";
+  const today = todayIso();
+  const yest = new Date(Date.now() - 864e5);
+  const yestIso = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, "0")}-${String(yest.getDate()).padStart(2, "0")}`;
+  notes.forEach((n) => {
+    const d = n.date || "undated";
+    if (d !== lastDate) {
+      box.appendChild(el("div", "sec-label", d === today ? "Today" : d === yestIso ? "Yesterday" : d));
+      lastDate = d;
+    }
+    const row = el("div", "row-item");
+    const grow = el("div", "grow");
+    grow.appendChild(el("div", "t", n.title || (n.body || "").split("\n")[0].slice(0, 60) || "Note"));
+    grow.appendChild(el("div", "m", (n.body || "").split("\n")[0].slice(0, 110)));
+    row.appendChild(grow);
+    const delBtn = el("button", "btn tiny danger", "✕");
+    delBtn.onclick = async () => {
+      try {
+        await api("/notes/" + encodeURIComponent(n.id), { method: "DELETE" });
+        notes = notes.filter((x) => x.id !== n.id);
+        renderNotes(); renderRecentNotes();
+        toast("Note deleted.");
+      } catch (e) { toast(e.message, true); }
+    };
+    row.appendChild(delBtn);
+    box.appendChild(row);
+  });
+  staggerIn(box);
+}
+
+async function saveNote() {
+  const body = $("noteBody").value.trim();
+  if (!body) return;
+  const title = $("noteTitle").value.trim() || body.split("\n")[0].slice(0, 80) || "Web note";
+  try {
+    const saved = await api("/notes", { method: "POST", body: {
+      date: todayIso(), title, body, kind: "day_note", source: "web",
+    }});
+    $("noteBody").value = ""; $("noteTitle").value = "";
+    notes = [saved, ...notes.filter((n) => n.id !== saved.id)];
+    renderNotes(); renderRecentNotes();
+    toast("Note synced ✓");
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── activity panel ──────────────────────────────────────────────────────
+const catColor = (c) => c === "productive" ? "var(--green)" : c === "distraction" ? "var(--red)" : c === "leisure" ? "var(--amber)" : "var(--accent)";
+
+function renderActivity() {
+  const byPkg = new Map();
+  for (const w of wellbeing) {
+    const k = w.package_name;
+    const cur = byPkg.get(k) || { name: w.app_name || k.split(".").pop(), minutes: 0, category: w.category, launches: 0 };
+    cur.minutes += w.minutes || 0;
+    cur.launches += w.payload?.launches || 0;
+    byPkg.set(k, cur);
+  }
+  const apps = [...byPkg.values()].sort((a, b) => b.minutes - a.minutes);
+  const total = apps.reduce((s, a) => s + a.minutes, 0);
+  $("actTotal").textContent = total ? fmtMins(total) : "No data yet";
+  const sum = (cat) => apps.filter((a) => a.category === cat).reduce((s, a) => s + a.minutes, 0);
+  const strip = $("metricStrip");
+  strip.innerHTML = "";
+  if (total) {
+    for (const [label, cat] of [["Focus", "productive"], ["Watch", "distraction"], ["Leisure", "leisure"]]) {
+      const m = el("div", "metric");
+      m.appendChild(el("b", "", fmtMins(sum(cat))));
+      const s = el("small", "", label);
+      s.style.color = catColor(cat);
+      m.appendChild(s);
+      strip.appendChild(m);
+    }
+    const launches = apps.reduce((s, a) => s + a.launches, 0);
+    $("actInsight").textContent = `Top: ${apps[0].name}` + (launches ? ` · ${launches} app opens` : "") + " · synced from your phone";
+  } else {
+    $("actInsight").textContent = "Open Apex Mobile and tap “Sync usage” — screen time lands here.";
+  }
+  const bars = $("actBars");
+  bars.innerHTML = "";
+  const max = apps.length ? apps[0].minutes : 1;
+  apps.slice(0, 9).forEach((a) => {
+    const row = el("div", "row-item");
+    row.style.display = "block";
+    const head = el("div");
+    head.style.cssText = "display:flex;justify-content:space-between;gap:10px";
+    head.appendChild(el("span", "t", a.name));
+    head.appendChild(el("span", "m", fmtMins(a.minutes) + (a.launches ? ` · ${a.launches}×` : "")));
+    row.appendChild(head);
+    const track = el("div", "bar-track");
+    const fill = el("div", "bar-fill");
+    fill.style.background = catColor(a.category);
+    fill.style.width = Math.max(3, (a.minutes / max) * 100) + "%";
+    track.appendChild(fill);
+    row.appendChild(track);
+    bars.appendChild(row);
+  });
+  const fills = bars.querySelectorAll(".bar-fill");
+  if (window.gsap && !REDUCED && fills.length) {
+    gsap.fromTo(fills, { scaleX: 0 }, { scaleX: 1, duration: 0.9, stagger: 0.06, ease: "power3.out" });
+  }
+}
+
+// ── shared row stagger ──────────────────────────────────────────────────
+function staggerIn(box) {
+  if (!window.gsap || REDUCED || !box.querySelector(".row-item")) return;
+  gsap.fromTo(box.querySelectorAll(".row-item"),
+    { autoAlpha: 0, y: 12 },
+    { autoAlpha: 1, y: 0, duration: 0.45, stagger: 0.045, ease: "power2.out", clearProps: "transform" });
+}
+
+// ── tabs ────────────────────────────────────────────────────────────────
+const TAB_HUES = { today: 0x38d8c4, tasks: 0xf5b84b, notes: 0x3dd68c, activity: 0xe5675c };
+function initTabs() {
+  const nav = $("tabs");
+  const buttons = [...nav.querySelectorAll("button")];
+  const movePill = (btn, animate = true) => {
+    const pill = $("tabPill");
+    const target = { left: btn.offsetLeft, width: btn.offsetWidth };
+    if (window.gsap && animate && !REDUCED) gsap.to(pill, { ...target, duration: 0.45, ease: "back.out(1.5)" });
+    else { pill.style.left = target.left + "px"; pill.style.width = target.width + "px"; }
+  };
+  buttons.forEach((btn) => {
+    btn.onclick = () => {
+      const tab = btn.dataset.tab;
+      if (tab === currentTab) return;
+      buttons.forEach((b) => b.classList.toggle("on", b === btn));
+      movePill(btn);
+      const old = $("panel-" + currentTab);
+      const next = $("panel-" + tab);
+      currentTab = tab;
+      old.style.display = "none";
+      next.style.display = "block";
+      if (window.gsap && !REDUCED) {
+        gsap.fromTo(next, { autoAlpha: 0, y: 18 }, { autoAlpha: 1, y: 0, duration: 0.45, ease: "power3.out", clearProps: "transform" });
+      }
+      sceneTabKick(TAB_HUES[tab]);
+    };
+  });
+  movePill(buttons[0], false);
+  window.addEventListener("resize", () => movePill(nav.querySelector("button.on"), false));
+}
+
+async function unpair() {
+  if (!confirm("Unpair this browser? You'll need a fresh code to come back.")) return;
+  try {
+    const me = await api("/me").catch(() => null);
+    if (me?.id) await api("/devices/" + encodeURIComponent(me.id), { method: "DELETE" }).catch(() => {});
+  } finally {
+    store.token = "";
+    location.reload();
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Three.js background — particle field + twin wireframe torus knots.
+   Pure decoration: failures (offline CDN, no WebGL) are swallowed and the
+   app keeps working on the flat dark background.
+   ════════════════════════════════════════════════════════════════════════ */
+let sceneAPI = { kick: () => {} };
+function sceneTabKick(hue) { sceneAPI.kick(hue); }
+
+async function startScene() {
+  if (REDUCED) return;
+  let THREE;
+  try { THREE = await import("three"); } catch { return; }
+  try {
+    const canvas = $("bg3d");
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x0b0d12, 0.012);
+    const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 400);
+    camera.position.set(0, 0, 46);
+
+    // particle shell — teal / amber / white dust
+    const COUNT = 1700;
+    const pos = new Float32Array(COUNT * 3);
+    const col = new Float32Array(COUNT * 3);
+    const palette = [new THREE.Color(0x38d8c4), new THREE.Color(0x38d8c4), new THREE.Color(0xf5b84b), new THREE.Color(0xdfe9f5)];
+    for (let i = 0; i < COUNT; i++) {
+      // shell distribution: radius 26..120 so the center stays readable
+      const r = 26 + Math.pow(Math.random(), 0.65) * 94;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      pos[i * 3 + 2] = r * Math.cos(phi);
+      const c = palette[(Math.random() * palette.length) | 0];
+      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    const points = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 0.9, vertexColors: true, transparent: true, opacity: 0.8,
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+    }));
+    scene.add(points);
+
+    const knotMat = new THREE.MeshBasicMaterial({ color: 0x38d8c4, wireframe: true, transparent: true, opacity: 0.13 });
+    const knot = new THREE.Mesh(new THREE.TorusKnotGeometry(11, 3.2, 200, 32), knotMat);
+    scene.add(knot);
+    const knot2 = new THREE.Mesh(
+      new THREE.TorusKnotGeometry(15, 0.7, 140, 16),
+      new THREE.MeshBasicMaterial({ color: 0xf5b84b, wireframe: true, transparent: true, opacity: 0.045 }),
+    );
+    knot2.rotation.x = Math.PI / 3;
+    scene.add(knot2);
+
+    // intro dolly + mouse parallax
+    if (window.gsap) {
+      camera.position.z = 130;
+      gsap.to(camera.position, { z: 46, duration: 2.4, ease: "power3.out" });
+      gsap.fromTo(knot.scale, { x: 0.55, y: 0.55, z: 0.55 }, { x: 1, y: 1, z: 1, duration: 2.4, ease: "power2.out" });
+    }
+    const target = { x: 0, y: 0 };
+    window.addEventListener("pointermove", (e) => {
+      target.x = (e.clientX / window.innerWidth - 0.5) * 6;
+      target.y = -(e.clientY / window.innerHeight - 0.5) * 4;
+    }, { passive: true });
+
+    // tab switches re-tint the knot + give it a spin kick
+    sceneAPI.kick = (hue) => {
+      if (!hue) return;
+      if (window.gsap) {
+        const c = new THREE.Color(hue);
+        gsap.to(knotMat.color, { r: c.r, g: c.g, b: c.b, duration: 0.8 });
+        gsap.to(knot.rotation, { z: knot.rotation.z + Math.PI / 2, duration: 1.1, ease: "power2.inOut" });
+      } else knotMat.color.set(hue);
+    };
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(() => {
+      if (document.hidden) return;
+      const t = clock.getElapsedTime();
+      points.rotation.y = t * 0.018;
+      points.rotation.x = Math.sin(t * 0.05) * 0.05;
+      knot.rotation.x = t * 0.08;
+      knot.rotation.y = t * 0.11;
+      knot2.rotation.y = -t * 0.05;
+      knot2.rotation.z = t * 0.03;
+      const s = 1 + Math.sin(t * 0.6) * 0.02; // slow breathing
+      knot.scale.setScalar(knot.scale.x * 0.9 + s * 0.1);
+      camera.position.x += (target.x - camera.position.x) * 0.03;
+      camera.position.y += (target.y - camera.position.y) * 0.03;
+      camera.lookAt(0, 0, 0);
+      renderer.render(scene, camera);
+    });
+  } catch { /* WebGL unavailable — flat background is fine */ }
+}
+</script>
+</body>
+</html>

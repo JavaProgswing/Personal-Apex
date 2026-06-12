@@ -596,6 +596,22 @@ def health() -> dict[str, Any]:
     return {"ok": True, "name": APP_NAME, "time": now_iso()}
 
 
+WEB_APP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web_app.html")
+
+
+@app.get("/web")
+def web_app() -> Response:
+    """Browser version of Apex. Single self-contained page; pairs as its own
+    device via /pair, so it needs no special auth here. no-store keeps
+    redeploys instant (the page is tiny; the heavy libs are CDN-cached)."""
+    try:
+        with open(WEB_APP_PATH, encoding="utf-8") as f:
+            html = f.read()
+    except FileNotFoundError:
+        raise HTTPException(404, "Web app is not bundled on this server")
+    return Response(content=html, media_type="text/html", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/me")
 def whoami(device: Device = Depends(current_device)) -> Device:
     """Return the calling device - lets a client confirm its token is valid

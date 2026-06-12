@@ -512,7 +512,7 @@ async function pullFromCloud({ since } = {}) {
         }
         continue;
       }
-      if (t.source !== "mobile") continue; // ignore other agents' rows
+      if (t.source !== "mobile" && t.source !== "web") continue; // ignore other agents' rows
       const mapKey = "cloudtask.map." + t.id;
       const mappedId = db.getSetting(mapKey);
       if (!mappedId) {
@@ -521,9 +521,9 @@ async function pullFromCloud({ since } = {}) {
           deadline: t.due_at || null,
           category: t.payload?.category || "Personal",
           priority: t.payload?.priority || 3,
-          tags: ["mobile"],
+          tags: [t.source],
           kind: "task",
-          source: "mobile",
+          source: t.source,
         });
         db.setSetting(mapKey, String(row.id));
         taskStats.imported += 1;
@@ -547,7 +547,7 @@ async function pullFromCloud({ since } = {}) {
   try {
     for (const n of Array.isArray(body.notes) ? body.notes : []) {
       if (!n || !n.id || !n.date || !String(n.body || "").trim()) continue;
-      if (n.source && n.source !== "mobile") continue;
+      if (n.source && n.source !== "mobile" && n.source !== "web") continue;
       const mapKey = "cloudnote.map." + n.id;
       if (db.getSetting(mapKey)) continue;
 
@@ -560,9 +560,10 @@ async function pullFromCloud({ since } = {}) {
         continue;
       }
 
-      const title = String(n.title || "Phone note").trim().slice(0, 120);
+      const from = n.source === "web" ? "Web" : "Phone";
+      const title = String(n.title || `${from} note`).trim().slice(0, 120);
       const at = String(n.updated_at || n.created_at || "").slice(11, 16);
-      const header = at ? `[Phone ${at}] ${title}` : `[Phone] ${title}`;
+      const header = at ? `[${from} ${at}] ${title}` : `[${from}] ${title}`;
       const addition = `${marker}\n${header}\n${String(n.body || "").trim()}`;
       db.upsertDayNote({
         date,

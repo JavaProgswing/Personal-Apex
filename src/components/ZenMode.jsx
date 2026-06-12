@@ -45,7 +45,19 @@ export default function ZenMode({ onChanged, onActiveChange }) {
   const [recentApps, setRecentApps] = useState([]);
   const [attentionApps, setAttentionApps] = useState([]);
   const [activeTimer, setActiveTimer] = useState(null);
-  const [createMusic, setCreateMusic] = useState(true);
+  // Off by default — building/playing a Spotify playlist on every Zen start
+  // was producing "Focus music skipped" noise whenever no device was active.
+  // The choice persists in settings.
+  const [createMusic, setCreateMusic] = useState(false);
+  useEffect(() => {
+    api.settings?.get?.("zen.createMusic").then((v) => {
+      if (v === "1") setCreateMusic(true);
+    }).catch(() => {});
+  }, []);
+  function persistCreateMusic(on) {
+    setCreateMusic(on);
+    api.settings?.set?.("zen.createMusic", on ? "1" : "0").catch(() => {});
+  }
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(null);
   const [message, setMessage] = useState(null);
@@ -400,7 +412,7 @@ export default function ZenMode({ onChanged, onActiveChange }) {
           profile={profile}
           setProfile={setProfile}
           createMusic={createMusic}
-          setCreateMusic={setCreateMusic}
+          setCreateMusic={persistCreateMusic}
           allowed={allowed}
           allowedText={allowedText}
           syncAllowedText={syncAllowedText}

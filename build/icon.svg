@@ -1,56 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Apex app icon">
+  <!-- Refined minimal mark: gradient "A" peak on graphite. One idea, no noise.
+       The teal→blue ramp is the same brand gradient used by the desktop
+       sidebar wordmark, the web app logo, and the Android header. -->
   <defs>
-    <linearGradient id="bg" x1="164" y1="78" x2="858" y2="946" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#101622"/>
-      <stop offset="0.52" stop-color="#090d13"/>
-      <stop offset="1" stop-color="#05070a"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#141b28"/>
+      <stop offset="0.55" stop-color="#0c1018"/>
+      <stop offset="1" stop-color="#07090d"/>
     </linearGradient>
-    <radialGradient id="tealGlow" cx="20%" cy="76%" r="54%">
-      <stop offset="0" stop-color="#26d8c4" stop-opacity="0.33"/>
-      <stop offset="1" stop-color="#26d8c4" stop-opacity="0"/>
+    <linearGradient id="mark" x1="300" y1="812" x2="744" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2ba8d8"/>
+      <stop offset="0.55" stop-color="#38d8c4"/>
+      <stop offset="1" stop-color="#7cf5e6"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="34%" r="62%">
+      <stop offset="0" stop-color="#38d8c4" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#38d8c4" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="emberGlow" cx="76%" cy="28%" r="62%">
-      <stop offset="0" stop-color="#ffa430" stop-opacity="0.32"/>
-      <stop offset="1" stop-color="#ffa430" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="leftPeak" x1="222" y1="846" x2="552" y2="96" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ff8e26"/>
-      <stop offset="0.52" stop-color="#ffc75f"/>
-      <stop offset="1" stop-color="#fff2b5"/>
-    </linearGradient>
-    <linearGradient id="rightPeak" x1="520" y1="126" x2="826" y2="860" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffd168"/>
-      <stop offset="0.55" stop-color="#ff9c2f"/>
-      <stop offset="1" stop-color="#b94a16"/>
-    </linearGradient>
-    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="22"/>
-      <feOffset dx="0" dy="18" result="offset"/>
-      <feComponentTransfer>
-        <feFuncA type="linear" slope="0.55"/>
-      </feComponentTransfer>
-      <feMerge>
-        <feMergeNode/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
   </defs>
 
-  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
-  <rect width="1024" height="1024" rx="224" fill="url(#tealGlow)"/>
-  <rect width="1024" height="1024" rx="224" fill="url(#emberGlow)"/>
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+  <rect width="1024" height="1024" rx="230" fill="url(#glow)"/>
 
-  <g filter="url(#softShadow)">
-    <path d="M150 820 512 126 874 820H688L512 476 336 820Z" fill="#ff9d2e"/>
-    <path d="M150 820 512 126v350L336 820Z" fill="url(#leftPeak)"/>
-    <path d="M512 126 874 820H688L512 476Z" fill="url(#rightPeak)"/>
-    <path d="M512 318 622 666h-62l-48-114-48 114h-62Z" fill="#080b10" opacity="0.94"/>
-    <path d="M338 714h348l39 76H299Z" fill="#23dec9"/>
-    <path d="M371 734h282l17 32H354Z" fill="#bcffec" opacity="0.44"/>
-    <path d="M512 126c44 84 84 162 120 234 38 76 75 153 110 230 42 92 86 168 132 230" fill="none" stroke="#fff0ba" stroke-width="18" stroke-linecap="round" opacity="0.56"/>
-    <path d="M150 820h186l176-344 176 344h186" fill="none" stroke="#ffb236" stroke-width="16" stroke-linecap="round" opacity="0.74"/>
-  </g>
+  <!-- A peak -->
+  <path d="M512 248 282 776" fill="none" stroke="url(#mark)" stroke-width="96" stroke-linecap="round"/>
+  <path d="M512 248 742 776" fill="none" stroke="url(#mark)" stroke-width="96" stroke-linecap="round"/>
+  <!-- crossbar, slightly low for stance -->
+  <path d="M400 624h224" fill="none" stroke="url(#mark)" stroke-width="84" stroke-linecap="round"/>
+  <!-- summit light -->
+  <circle cx="512" cy="248" r="58" fill="#7cf5e6"/>
+  <circle cx="512" cy="248" r="58" fill="url(#mark)" opacity="0.35"/>
 
-  <path d="M744 184 764 230 811 249 764 268 744 315 724 268 677 249 724 230Z" fill="#36e5d0" opacity="0.88"/>
-  <rect x="72" y="72" width="880" height="880" rx="190" fill="none" stroke="#ffc958" stroke-width="18" opacity="0.23"/>
+  <!-- hairline ring for definition on light surfaces -->
+  <rect x="10" y="10" width="1004" height="1004" rx="222" fill="none" stroke="#ffffff" stroke-opacity="0.05" stroke-width="20"/>
 </svg>

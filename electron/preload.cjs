@@ -261,6 +261,8 @@ contextBridge.exposeInMainWorld("apex", {
     feed: (opts) => invoke("activity:feed", opts),
     buckets: (d) => invoke("activity:buckets", d),
     clearAll: () => invoke("activity:clearAll"),
+    // Fired by main whenever a cloud pull writes fresh phone rows.
+    onRefresh: (h) => on("activity:refresh", h),
     openApps: () => invoke("activity:openApps"),
   },
   leisure: {

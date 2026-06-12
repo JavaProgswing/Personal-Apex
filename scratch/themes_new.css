@@ -1,0 +1,246 @@
+/* ─── THEMES ─────────────────────────────────────────────────────────────
+   Curated, bare-minimum set — five palettes that each earn their place:
+
+     apex-focus     graphite + teal          the signature (default)
+     library        coffee + honey amber     warm reading-room
+     tokyo-night    indigo + pastel blues    cool dev classic
+     obsidian       OLED black + cyan        lights-off
+     default-light  off-white + indigo       daylight
+
+   Apply via <html data-theme="...">. App.jsx hydrates this on mount and
+   maps any legacy/removed theme key onto the nearest survivor. All other
+   CSS targets the var() tokens, so nothing below the token layer needs to
+   change for a new theme.
+
+   Every theme defines the same contract:
+     bg ramp (3 steps + border) · text ramp (3 steps) · accent triplet ·
+     five category colours (+soft) · status aliases · two gradients
+     (--grad-accent for fills, --grad-bg for the ambient page wash) ·
+     shadows · color-scheme. */
+
+/* ─── Apex - graphite surfaces, teal focus. The signature. ─────────────── */
+:root,
+[data-theme="apex-focus"] {
+  --bg: #0b0d12;
+  --bg-elev: #121720;
+  --bg-elev-2: #1b2330;
+  --border: #293241;
+
+  --text: #f3f7fb;
+  --text-dim: #a9b5c4;
+  --text-faint: #667385;
+
+  --accent: #38d8c4;
+  --accent-soft: rgba(56, 216, 196, 0.16);
+  --accent-strong: #71eadc;
+
+  --productive: #66d38f;
+  --productive-soft: rgba(102, 211, 143, 0.15);
+  --distraction: #ff6b7a;
+  --distraction-soft: rgba(255, 107, 122, 0.15);
+  --leisure: #f5b84b;
+  --leisure-soft: rgba(245, 184, 75, 0.15);
+  --rest: #7db7ff;
+  --rest-soft: rgba(125, 183, 255, 0.15);
+  --neutral: #a9b5c4;
+  --neutral-soft: rgba(169, 181, 196, 0.14);
+  --mobile: #b69cff;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: var(--leisure);
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  /* Brand ramp — same teal→blue as the web app + mobile wordmark. */
+  --grad-accent: linear-gradient(120deg, #38d8c4, #2ba8d8);
+  --grad-card: linear-gradient(135deg, rgba(56, 216, 196, 0.05), transparent 62%);
+  --grad-bg:
+    radial-gradient(1100px 600px at 85% -10%, rgba(56, 216, 196, 0.055), transparent 60%),
+    radial-gradient(900px 540px at -12% 108%, rgba(125, 183, 255, 0.045), transparent 60%);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.48);
+
+  color-scheme: dark;
+}
+
+/* ─── Library - warm coffee + honey amber reading room. ────────────────── */
+[data-theme="library"] {
+  --bg: #14110e;
+  --bg-elev: #1d1814;
+  --bg-elev-2: #28211a;
+  --border: #3a2f24;
+
+  --text: #f6ecdb;
+  --text-dim: #b6a48e;
+  --text-faint: #74634f;
+
+  --accent: #e8a23a;
+  --accent-soft: rgba(232, 162, 58, 0.16);
+  --accent-strong: #f5b94a;
+
+  --productive: #82caa9;
+  --productive-soft: rgba(130, 202, 169, 0.16);
+  --distraction: #e07a5f;
+  --distraction-soft: rgba(224, 122, 95, 0.16);
+  --leisure: #d68aa1;
+  --leisure-soft: rgba(214, 138, 161, 0.16);
+  --rest: #9cc3d8;
+  --rest-soft: rgba(156, 195, 216, 0.16);
+  --neutral: #b6a48e;
+  --neutral-soft: rgba(182, 164, 142, 0.16);
+  --mobile: #b8a9d6;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: var(--accent);
+  --bad: #c4493b;
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(120deg, #e8a23a, #d97742);
+  --grad-card: linear-gradient(135deg, rgba(232, 162, 58, 0.05), transparent 62%);
+  --grad-bg:
+    radial-gradient(1100px 600px at 85% -10%, rgba(232, 162, 58, 0.05), transparent 60%),
+    radial-gradient(900px 540px at -12% 108%, rgba(224, 122, 95, 0.04), transparent 60%);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.45);
+
+  color-scheme: dark;
+}
+
+/* ─── Tokyo Night - indigo midnight + pastel blues. ────────────────────── */
+[data-theme="tokyo-night"] {
+  --bg: #1a1b26;
+  --bg-elev: #1f2335;
+  --bg-elev-2: #292e42;
+  --border: #3b4261;
+
+  --text: #c0caf5;
+  --text-dim: #a9b1d6;
+  --text-faint: #565f89;
+
+  --accent: #7aa2f7;
+  --accent-soft: rgba(122, 162, 247, 0.16);
+  --accent-strong: #b4f9f8;
+
+  --productive: #9ece6a;
+  --productive-soft: rgba(158, 206, 106, 0.14);
+  --distraction: #f7768e;
+  --distraction-soft: rgba(247, 118, 142, 0.14);
+  --leisure: #bb9af7;
+  --leisure-soft: rgba(187, 154, 247, 0.14);
+  --rest: #7dcfff;
+  --rest-soft: rgba(125, 207, 255, 0.14);
+  --neutral: #a9b1d6;
+  --neutral-soft: rgba(169, 177, 214, 0.14);
+  --mobile: #bb9af7;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: #e0af68;
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(120deg, #7aa2f7, #bb9af7);
+  --grad-card: linear-gradient(135deg, rgba(122, 162, 247, 0.05), transparent 62%);
+  --grad-bg:
+    radial-gradient(1100px 600px at 85% -10%, rgba(122, 162, 247, 0.06), transparent 60%),
+    radial-gradient(900px 540px at -12% 108%, rgba(187, 154, 247, 0.05), transparent 60%);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.65);
+
+  color-scheme: dark;
+}
+
+/* ─── Obsidian - true OLED black, cyan glow. Lights off. ───────────────── */
+[data-theme="obsidian"] {
+  --bg: #000000;
+  --bg-elev: #060608;
+  --bg-elev-2: #0e0e12;
+  --border: #1c1c24;
+
+  --text: #ffffff;
+  --text-dim: #b8b8c8;
+  --text-faint: #6a6a7a;
+
+  --accent: #00e5ff;
+  --accent-soft: rgba(0, 229, 255, 0.16);
+  --accent-strong: #4df0ff;
+
+  --productive: #2fe6a0;
+  --productive-soft: rgba(47, 230, 160, 0.16);
+  --distraction: #ff4d72;
+  --distraction-soft: rgba(255, 77, 114, 0.16);
+  --leisure: #f0a85a;
+  --leisure-soft: rgba(240, 168, 90, 0.16);
+  --rest: #5fc8ff;
+  --rest-soft: rgba(95, 200, 255, 0.16);
+  --neutral: #8a8aa3;
+  --neutral-soft: rgba(138, 138, 163, 0.16);
+  --mobile: #c084fc;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: #ffd60a;
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(120deg, #00e5ff, #2fe6a0);
+  --grad-card: linear-gradient(135deg, rgba(0, 229, 255, 0.05), transparent 62%);
+  --grad-bg:
+    radial-gradient(1100px 600px at 85% -10%, rgba(0, 229, 255, 0.05), transparent 60%),
+    radial-gradient(900px 540px at -12% 108%, rgba(47, 230, 160, 0.035), transparent 60%);
+
+  --shadow-sm: 0 1px 2px rgba(0, 229, 255, 0.08);
+  --shadow-md: 0 0 30px rgba(0, 229, 255, 0.08), 0 8px 28px rgba(0, 0, 0, 0.95);
+
+  color-scheme: dark;
+}
+
+/* ─── Daylight - warm-tinted off-white, indigo accent. ─────────────────── */
+[data-theme="default-light"] {
+  --bg: #fafbfc;
+  --bg-elev: #ffffff;
+  --bg-elev-2: #eef1f6;
+  --border: #dbe1ea;
+
+  --text: #1d2330;
+  --text-dim: #4a5365;
+  --text-faint: #7b8493;
+
+  --accent: #4263eb;
+  --accent-soft: rgba(66, 99, 235, 0.10);
+  --accent-strong: #2f4fd8;
+
+  --productive: #16a34a;
+  --productive-soft: rgba(22, 163, 74, 0.10);
+  --distraction: #dc2626;
+  --distraction-soft: rgba(220, 38, 38, 0.10);
+  --leisure: #ea580c;
+  --leisure-soft: rgba(234, 88, 12, 0.10);
+  --rest: #0891b2;
+  --rest-soft: rgba(8, 145, 178, 0.10);
+  --neutral: #4a5365;
+  --neutral-soft: rgba(74, 83, 101, 0.10);
+  --mobile: #7c3aed;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: var(--leisure);
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(120deg, #4263eb, #7c3aed);
+  --grad-card: linear-gradient(135deg, rgba(66, 99, 235, 0.04), transparent 62%);
+  --grad-bg:
+    radial-gradient(1100px 600px at 85% -10%, rgba(66, 99, 235, 0.045), transparent 60%),
+    radial-gradient(900px 540px at -12% 108%, rgba(124, 58, 237, 0.035), transparent 60%);
+
+  --shadow-sm: 0 1px 2px rgba(20, 30, 60, 0.06);
+  --shadow-md: 0 6px 22px rgba(20, 30, 60, 0.08);
+
+  color-scheme: light;
+}

@@ -29,7 +29,7 @@ export default function App() {
   const [closeRequest, setCloseRequest] = useState(null);
   const [routineNudge, setRoutineNudge] = useState(null);
 
-  // Hydrate the theme on mount. Default = "library". Stored in settings as
+  // Hydrate the theme on mount. Default = "apex-focus". Stored in settings as
   // `ui.theme`; applied via a data attr on <html> so the CSS theme blocks
   // pick it up. Settings → Appearance writes to the same key. We also
   // re-apply any custom accent override (`ui.customAccent`), high-contrast
@@ -38,7 +38,16 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
-        const t = (await api.settings?.get?.("ui.theme")) || "apex-focus";
+        // The catalog was trimmed to five curated themes (2026-06-12). Map a
+        // stored legacy key onto the nearest survivor (and persist the fix so
+        // the migration runs once).
+        const KNOWN = ["apex-focus", "library", "tokyo-night", "obsidian", "default-light"];
+        const LIGHT_LEGACY = ["paper", "solarized-light", "latte", "default-light"];
+        let t = (await api.settings?.get?.("ui.theme")) || "apex-focus";
+        if (!KNOWN.includes(t)) {
+          t = LIGHT_LEGACY.includes(t) ? "default-light" : "apex-focus";
+          try { api.settings?.set?.("ui.theme", t); } catch { /* keep going */ }
+        }
         if (!cancelled) document.documentElement.dataset.theme = t;
 
         const accent = await api.settings?.get?.("ui.customAccent");

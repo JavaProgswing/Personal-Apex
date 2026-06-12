@@ -9,6 +9,7 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY apex_sync_api.py /app/apex_sync_api.py
+COPY web_app.html /app/web_app.html
 RUN mkdir -p /data
 
 EXPOSE 8787

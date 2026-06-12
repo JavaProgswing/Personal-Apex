@@ -6,7 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -22,6 +24,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -131,6 +134,8 @@ class MainActivity : ComponentActivity() {
     private val muted = Color.parseColor("#9AA8BA")
     private val faint = Color.parseColor("#667386")
     private val accent = Color.parseColor("#38D8C4")
+    private val accent2 = Color.parseColor("#2BC4D8")
+    private val accentSoft = Color.argb(38, 56, 216, 196)
     private val amber = Color.parseColor("#F5B84B")
     private val green = Color.parseColor("#3DD68C")
     private val red = Color.parseColor("#E5675C")
@@ -263,7 +268,12 @@ class MainActivity : ComponentActivity() {
         // Transient status chip — appears on activity, slides away after a few
         // seconds so "Synced — n open tasks" doesn't nag forever.
         statusText = label("", 12.5f, muted, false).apply {
-            setPadding(dp(16), dp(2), dp(16), dp(8))
+            setPadding(dp(14), dp(7), dp(14), dp(7))
+            background = rounded(panel2, dp(12), border2)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).also { it.setMargins(dp(16), dp(2), dp(16), dp(8)) }
             visibility = View.GONE
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -295,7 +305,17 @@ class MainActivity : ComponentActivity() {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             }
-            titleCol.addView(label("Apex", 24f, textColor, true))
+            // Gradient wordmark — same teal→blue ramp as the web app's logo.
+            titleCol.addView(label("Apex", 26f, textColor, true).apply {
+                post {
+                    paint.shader = LinearGradient(
+                        0f, 0f, paint.measureText(text.toString()), 0f,
+                        intArrayOf(Color.parseColor("#7CF5E6"), accent, Color.parseColor("#2BA8D8")),
+                        null, Shader.TileMode.CLAMP,
+                    )
+                    invalidate()
+                }
+            })
             addView(titleCol)
             statusDot = View(this@MainActivity).apply {
                 layoutParams = LinearLayout.LayoutParams(dp(11), dp(11)).also { it.marginEnd = dp(12) }
@@ -341,8 +361,15 @@ class MainActivity : ComponentActivity() {
         if (key == currentTab) return
         currentTab = key
         navButtons.forEach { (k, b) ->
-            b.setTextColor(if (k == key) accent else muted)
-            b.setTypeface(b.typeface, if (k == key) Typeface.BOLD else Typeface.NORMAL)
+            val active = k == key
+            b.setTextColor(if (active) accent else muted)
+            b.setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
+            // Soft accent pill behind the active tab, with a small scale pop.
+            b.background = rippleRounded(if (active) accentSoft else Color.TRANSPARENT, dp(12), Color.TRANSPARENT)
+            if (active) {
+                b.scaleX = 0.9f; b.scaleY = 0.9f
+                b.animate().scaleX(1f).scaleY(1f).setDuration(180).start()
+            }
         }
         contentFrame.removeAllViews()
         val view = tabViews.getOrPut(key) {
@@ -355,6 +382,11 @@ class MainActivity : ComponentActivity() {
             })
         }
         contentFrame.addView(view)
+        // Slide-up fade so tab switches feel intentional rather than abrupt.
+        view.alpha = 0f
+        view.translationY = dp(10).toFloat()
+        view.animate().alpha(1f).translationY(0f)
+            .setDuration(220).setInterpolator(DecelerateInterpolator()).start()
         when (key) {
             "tasks" -> renderTasks()
             "notes" -> renderNotesList()
@@ -840,7 +872,8 @@ class MainActivity : ComponentActivity() {
             addView(android.widget.Switch(this@MainActivity).apply {
                 setOnCheckedChangeListener(null)
                 isChecked = enabled
-                setOnCheckedChangeListener { buttonView, on -> 
+                tintSwitch(this)
+                setOnCheckedChangeListener { buttonView, on ->
                     if (buttonView.isPressed) {
                         buttonView.post { onToggle(on) }
                     }
@@ -974,10 +1007,10 @@ class MainActivity : ComponentActivity() {
             if (r.overdue) col.addView(label("overdue", 11f, red, true))
             addView(col)
             when {
-                r.kind == "wake" -> addView(baseButton("Wake", panel, amber) { markRoutine("wake") }.apply {
+                r.kind == "wake" -> addView(baseButton("Wake", panel, amber) { markRoutine("wake_done") }.apply {
                     minHeight = dp(34)
                 })
-                r.kind == "sleep" -> addView(baseButton("Sleep", panel, accent) { markRoutine("sleep") }.apply {
+                r.kind == "sleep" -> addView(baseButton("Sleep", panel, accent) { markRoutine("sleep_done") }.apply {
                     minHeight = dp(34)
                 })
                 r.kind == "focus_session" -> addView(baseButton("Ready", panel, green) { checkFocusState() }.apply {
@@ -1570,6 +1603,25 @@ class MainActivity : ComponentActivity() {
             addView(quietButton("Unpair this device") { forgetDevice() }.fullWidth())
         })
         addView(card {
+            addView(sectionTitle("Web app"))
+            addView(label(
+                "Apex in any browser — tasks, notes, phone screen time and live Zen status, " +
+                    "served straight from the sync API.",
+                12.5f, muted, false,
+            ))
+            addView(space(10))
+            addView(wideButton("Open web app  ↗") {
+                val base = store.apiBase.trim().trimEnd('/').ifBlank { ApexStore.DEFAULT_API_BASE }
+                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$base/web"))) }
+                    .onFailure { statusText.text = "No browser available to open the web app." }
+            })
+            addView(space(6))
+            addView(label(
+                "First time in that browser? Mint a code on desktop (Settings → Mobile → Pair a phone) and type it there.",
+                11f, faint, false,
+            ))
+        })
+        addView(card {
             addView(sectionTitle("Sync readiness"))
             readinessBox = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
             addView(readinessBox)
@@ -1686,6 +1738,18 @@ class MainActivity : ComponentActivity() {
         })
     }
 
+    // Palette tint shared by every Switch — the stock green clashes.
+    private fun tintSwitch(sw: android.widget.Switch) {
+        sw.thumbTintList = ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+            intArrayOf(accent, muted),
+        )
+        sw.trackTintList = ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+            intArrayOf(Color.argb(90, 56, 216, 196), border2),
+        )
+    }
+
     private fun toggleRow(title: String, sub: String, initial: Boolean, onChange: (Boolean) -> Unit): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1699,15 +1763,7 @@ class MainActivity : ComponentActivity() {
             addView(col)
             addView(android.widget.Switch(this@MainActivity).apply {
                 isChecked = initial
-                // Tint to the app palette — the stock green clashes.
-                thumbTintList = android.content.res.ColorStateList(
-                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                    intArrayOf(accent, muted),
-                )
-                trackTintList = android.content.res.ColorStateList(
-                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                    intArrayOf(Color.argb(90, 56, 216, 196), border2),
-                )
+                tintSwitch(this)
                 setOnCheckedChangeListener { _, on -> onChange(on) }
             })
         }
@@ -1747,7 +1803,7 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
             background = rounded(panel2, dp(10), border2)
-            addView(label(if (d.type == "desktop") "🖥" else "📱", 16f, textColor, false).apply {
+            addView(label(when (d.type) { "desktop" -> "🖥"; "web" -> "🌐"; else -> "📱" }, 16f, textColor, false).apply {
                 setPadding(0, 0, dp(12), 0)
             })
             val col = LinearLayout(this@MainActivity).apply {
@@ -2287,13 +2343,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun actionButton(textValue: String, onClick: () -> Unit): Button =
-        baseButton(textValue, accent, bg, onClick)
+        baseButton(textValue, accent, bg, onClick).apply { background = gradientRipple(dp(10)) }
 
     private fun quietButton(textValue: String, onClick: () -> Unit): Button =
         baseButton(textValue, panel2, textColor, onClick)
 
     private fun wideButton(textValue: String, onClick: () -> Unit): Button =
         baseButton(textValue, accent, bg, onClick).apply {
+            background = gradientRipple(dp(12))
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             minHeight = dp(48)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
@@ -2368,6 +2425,16 @@ class MainActivity : ComponentActivity() {
 
     private fun rippleRounded(fill: Int, radius: Int, stroke: Int): Drawable {
         val content = rounded(fill, radius, stroke)
+        val mask = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = radius.toFloat() }
+        return RippleDrawable(ColorStateList.valueOf(Color.parseColor("#33FFFFFF")), content, mask)
+    }
+
+    // Teal→blue ramp for primary actions, matching the web app's buttons.
+    private fun gradientRipple(radius: Int): Drawable {
+        val content = GradientDrawable(
+            GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(accent, accent2),
+        ).apply { cornerRadius = radius.toFloat() }
         val mask = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = radius.toFloat() }
         return RippleDrawable(ColorStateList.valueOf(Color.parseColor("#33FFFFFF")), content, mask)
     }

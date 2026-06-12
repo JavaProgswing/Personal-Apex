@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "apex-sync-local",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": [
+        "-Command",
+        "$env:APEX_SYNC_DB='scratch/apex_sync_test.sqlite'; $env:APEX_SYNC_ADMIN_TOKEN='localtest'; $env:APEX_SYNC_PUBLIC_BASE='http://localhost:8123'; python -m uvicorn apex_sync_api:app --port 8123 --app-dir sync_api"
+      ],
+      "port": 8123
+    }
+  ]
+}

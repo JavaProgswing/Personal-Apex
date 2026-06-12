@@ -743,7 +743,10 @@ function startRoutineMonitor() {
       const cloud = wellbeing.cloudConfigured?.();
       if (cloud?.paired && Date.now() - routineCloudPullAt > 120_000) {
         routineCloudPullAt = Date.now();
-        await wellbeing.pullFromCloud?.().catch(() => null);
+        const pulled = await wellbeing.pullFromCloud?.().catch(() => null);
+        if (pulled?.ok && pulled.daysWritten > 0) {
+          emit("activity:refresh", { source: "routine-pull", days: pulled.daysWritten });
+        }
       }
       const nudge = routine.nextNudge?.();
       if (!nudge) return;
@@ -2349,7 +2352,11 @@ ipcMain.handle("wellbeing:syncNow", () => wellbeing.syncNow());
 // writes it into activity_sessions(source='mobile'). Credentials are shared
 // with the routine guard's desktop pairing.
 ipcMain.handle("wellbeing:cloudStatus", () => wellbeing.cloudConfigured());
-ipcMain.handle("wellbeing:pullCloud", (_e, opts) => wellbeing.pullFromCloud(opts || {}));
+ipcMain.handle("wellbeing:pullCloud", async (_e, opts) => {
+  const res = await wellbeing.pullFromCloud(opts || {});
+  if (res?.ok) emit("activity:refresh", { source: "manual-pull", days: res.daysWritten || 0 });
+  return res;
+});
 ipcMain.handle("wellbeing:setCloudAuto", async (_e, on) => {
   db.setSetting("wellbeing.cloud.auto", on ? "1" : "0");
   startCloudWellbeingAutoSync();
@@ -2374,6 +2381,9 @@ function startCloudWellbeingAutoSync() {
           if (routine.getConfig?.().syncEnabled) await routine.syncNow();
         } catch { /* push is best-effort */ }
         const pulled = await wellbeing.pullFromCloud();
+        // Fresh phone rows landed — tell the dashboard to repaint the graph
+        // and phone filter instead of waiting for a manual refresh.
+        if (pulled?.ok) emit("activity:refresh", { source: "cloud-pull", days: pulled.daysWritten || 0 });
         // "I'm awake ✓" pressed on the phone's alarm → greet with the day's
         // shape: classes + the top open task, so the desktop picks up the
         // morning the moment the user does.
