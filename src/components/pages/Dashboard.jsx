@@ -2357,16 +2357,27 @@ function DaySummaryModal({ onClose, onAsk }) {
   const tracked = CATEGORY_KEYS.reduce((s, k) => s + (totals[k] || 0), 0);
   const closeReasons = (summary?.closeEvents || [])
     .filter((e) => e.kind === "close_reason")
-    .slice(0, 6);
+    .slice(0, 8);
   const routineDone = (summary?.routineEvents || [])
     .filter((e) => /done$/.test(e.kind))
     .slice(0, 8);
-  const taskEvents = (summary?.taskEvents || []).slice(0, 12);
-  const distractions = (summary?.distractions || []).slice(0, 8);
-  const focusBlocks = (summary?.focusBlocks || []).slice(0, 8);
+  const taskEvents = (summary?.taskEvents || []).slice(0, 14);
+  const completedTasks = summary?.completedTasks || [];
+  // Contiguous same-title timer blocks read as ONE session (a 47m block
+  // interrupted by a 2-min refill is still one sitting). Segments stay
+  // expandable underneath.
+  const focusSessions = mergeFocusBlocks(summary?.focusBlocks || []);
+  const distractionGroups = groupDistractions(summary?.distractions || []);
   const zenDrift = (summary?.zenSessions || [])
     .flatMap((z) => z.violation_events || [])
     .slice(0, 8);
+  // Idle lane comes from the tracker's "Idle (away)" sessions via the
+  // 10-min buckets (only days tracked after idle detection shipped).
+  const idleMin = buckets.reduce(
+    (s, b) => s + (b.apps || []).filter((a) => a.app === "Idle (away)").reduce((x, a) => x + (a.minutes || 0), 0),
+    0,
+  );
+  const isToday = date === today;
 
   return (
     <div className="modal-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -2375,7 +2386,7 @@ function DaySummaryModal({ onClose, onAsk }) {
           <div>
             <h3 style={{ margin: 0 }}>Day summary</h3>
             <small className="muted">
-              Stored app exits, task changes, objectives, focus blocks, and distraction logs.
+              Focus sittings, distractions, wins, and exit notes — the day as it actually went.
             </small>
           </div>
           <div className="row" style={{ gap: 8 }}>
@@ -2395,9 +2406,10 @@ function DaySummaryModal({ onClose, onAsk }) {
           <>
             <div className="day-summary-stats">
               <SummaryStat label="Tracked" value={fmtMinutes(tracked)} />
-              <SummaryStat label="Focus" value={fmtMinutes(sumMinutes(focusBlocks))} />
-              <SummaryStat label="Distract" value={fmtMinutes(sumMinutes(distractions))} />
-              <SummaryStat label="Done" value={`${summary.completedTasks?.length || 0}`} />
+              <SummaryStat label="Focus" value={fmtMinutes(sumMinutes(summary?.focusBlocks))} tone="ok" />
+              <SummaryStat label="Distraction" value={fmtMinutes(sumMinutes(summary?.distractions))} tone="bad" />
+              <SummaryStat label="Idle" value={idleMin ? fmtMinutes(idleMin) : "—"} />
+              <SummaryStat label="Tasks done" value={`${completedTasks.length}`} tone={completedTasks.length ? "ok" : undefined} />
             </div>
 
             {/* Minute-by-minute — every 10-min bucket, clickable. Click a bar
@@ -2454,65 +2466,107 @@ function DaySummaryModal({ onClose, onAsk }) {
             )}
 
             <div className="day-summary-grid">
-              <SummarySection title="Close reasons" empty="No close reasons stored.">
-                {closeReasons.map((e) => (
-                  <SummaryEvent
-                    key={e.id}
-                    at={e.at}
-                    title={e.payload?.reason || "Close approved"}
-                    meta={[
-                      e.payload?.classification?.category || e.payload?.category,
-                      e.payload?.foreground?.app && prettyAppName(e.payload.foreground.app),
-                    ].filter(Boolean).join(" - ")}
+              <SummarySection
+                title="Focus sessions"
+                sub={focusSessions.length ? `${focusSessions.length} sitting${focusSessions.length === 1 ? "" : "s"}` : null}
+                empty="No timer or Zen blocks yet — start one from the dashboard."
+              >
+                {focusSessions.map((s, i) => (
+                  <FocusSessionRow
+                    key={`fs-${s.started_at}-${i}`}
+                    session={s}
+                    canResume={isToday}
+                    onResume={async () => {
+                      await api.timer.start({
+                        kind: s.segments[0]?.kind || "task",
+                        category: "productive",
+                        title: s.title,
+                        planned_minutes: 25,
+                      });
+                      onClose(); // timer strip on the dashboard takes over
+                    }}
                   />
                 ))}
               </SummarySection>
 
-              <SummarySection title="Tasks and objectives" empty="No task/objective events yet.">
+              <SummarySection
+                title="Distractions"
+                sub={distractionGroups.length ? `${distractionGroups.length} apps · worst first` : null}
+                empty="Nothing logged as a distraction. Clean day."
+              >
+                {distractionGroups.map((g) => (
+                  <DistractionRow key={g.app} group={g} max={distractionGroups[0]?.minutes || 1} />
+                ))}
+                {zenDrift.length > 0 && (
+                  <div className="day-summary-subgroup">
+                    <small className="muted">Drifted during Zen · {zenDrift.length}</small>
+                    {zenDrift.map((d, i) => (
+                      <SummaryEvent
+                        key={`z-${d.at}-${i}`}
+                        at={d.at}
+                        icon="⚠"
+                        tone="bad"
+                        title={prettyAppName(d.app) || d.app || "Zen drift"}
+                        meta={d.reason || "left the focus block"}
+                      />
+                    ))}
+                  </div>
+                )}
+              </SummarySection>
+
+              <SummarySection
+                title="Wins and changes"
+                sub={completedTasks.length ? `${completedTasks.length} done` : null}
+                empty="No task or objective movement yet."
+              >
+                {completedTasks.slice(0, 8).map((t) => (
+                  <SummaryEvent
+                    key={`c-${t.id}`}
+                    at={t.completed_at}
+                    icon="✓"
+                    tone="ok"
+                    title={t.title}
+                    meta={[t.category, t.priority ? `P${t.priority}` : null].filter(Boolean).join(" · ")}
+                  />
+                ))}
                 {routineDone.map((e) => (
                   <SummaryEvent
                     key={`r-${e.id}`}
                     at={e.at}
+                    icon={e.kind === "wake_done" ? "☀" : e.kind === "sleep_done" ? "☽" : "◎"}
                     title={labelRoutineEvent(e)}
                     meta={e.payload?.objective || e.payload?.note || ""}
                   />
                 ))}
-                {taskEvents.map((e) => (
+                {taskEvents
+                  .filter((e) => e.action !== "completed") // already shown above as wins
+                  .slice(0, 8)
+                  .map((e) => (
+                    <SummaryEvent
+                      key={`t-${e.id}`}
+                      at={e.at}
+                      icon={taskEventIcon(e)}
+                      title={e.title || e.payload?.title || e.action}
+                      meta={labelTaskAction(e)}
+                    />
+                  ))}
+              </SummarySection>
+
+              <SummarySection
+                title="Exit notes"
+                sub="what you said when closing things"
+                empty="No exit notes — you didn't close anything that asked why."
+              >
+                {closeReasons.map((e) => (
                   <SummaryEvent
-                    key={`t-${e.id}`}
+                    key={e.id}
                     at={e.at}
-                    title={e.title || e.payload?.title || e.action}
-                    meta={labelTaskAction(e)}
-                  />
-                ))}
-              </SummarySection>
-
-              <SummarySection title="Focus blocks" empty="No task or Zen timers logged.">
-                {focusBlocks.map((b) => (
-                  <SummaryEvent
-                    key={`f-${b.id}`}
-                    at={b.started_at}
-                    title={b.title || "Focus"}
-                    meta={`${b.kind || "timer"} - ${fmtMinutes(b.minutes || 0)}`}
-                  />
-                ))}
-              </SummarySection>
-
-              <SummarySection title="Distractions" empty="No distraction sessions logged.">
-                {distractions.map((d) => (
-                  <SummaryEvent
-                    key={`d-${d.id}`}
-                    at={d.started_at}
-                    title={prettyAppName(d.app) || d.app || "App"}
-                    meta={`${fmtMinutes(d.minutes || 0)} - ${d.window_title || d.source || ""}`}
-                  />
-                ))}
-                {zenDrift.map((d, i) => (
-                  <SummaryEvent
-                    key={`z-${d.at}-${i}`}
-                    at={d.at}
-                    title={prettyAppName(d.app) || d.app || "Zen drift"}
-                    meta={`Zen ${d.reason || "drift"}`}
+                    icon="↩"
+                    title={e.payload?.reason || "Close approved"}
+                    meta={[
+                      e.payload?.foreground?.app && prettyAppName(e.payload.foreground.app),
+                      e.payload?.classification?.category || e.payload?.category,
+                    ].filter(Boolean).join(" · ")}
                   />
                 ))}
               </SummarySection>
@@ -2538,29 +2592,168 @@ function DaySummaryModal({ onClose, onAsk }) {
   );
 }
 
-function SummaryStat({ label, value }) {
+function SummaryStat({ label, value, tone }) {
   return (
-    <div className="day-summary-stat">
+    <div className={"day-summary-stat" + (tone ? ` tone-${tone}` : "")}>
       <small className="muted">{label}</small>
       <strong>{value}</strong>
     </div>
   );
 }
 
-function SummarySection({ title, empty, children }) {
+// ── day-summary derived views ────────────────────────────────────────────
+
+// Contiguous timer blocks with the same title merge into one "sitting":
+// a 47m block, a 2-min water refill, then 31m more on the same task is one
+// 78m session with 2 segments. Gap tolerance 7 min.
+function mergeFocusBlocks(rows, gapMin = 7) {
+  const asc = (rows || [])
+    .filter((r) => r?.started_at)
+    .sort((a, b) => (a.started_at < b.started_at ? -1 : 1));
+  const out = [];
+  for (const r of asc) {
+    const last = out[out.length - 1];
+    const title = r.title || "Focus";
+    const gapOk =
+      last &&
+      last.title === title &&
+      (new Date(r.started_at) - new Date(last.ended_at || last.started_at)) / 60000 <= gapMin;
+    if (gapOk) {
+      last.minutes += r.minutes || 0;
+      last.ended_at = r.ended_at || last.ended_at;
+      last.segments.push(r);
+    } else {
+      out.push({
+        title,
+        started_at: r.started_at,
+        ended_at: r.ended_at,
+        minutes: r.minutes || 0,
+        segments: [r],
+      });
+    }
+  }
+  return out.reverse(); // newest sitting first
+}
+
+// One row per app instead of one per session — "Instagram · 52m · 4 visits"
+// says more than four scattered lines.
+function groupDistractions(rows) {
+  const map = new Map();
+  for (const d of rows || []) {
+    const key = (d.app || "App").toLowerCase();
+    const g = map.get(key) || {
+      app: d.app || "App", minutes: 0, count: 0, first: null, last: null,
+    };
+    g.minutes += d.minutes || 0;
+    g.count += 1;
+    if (d.started_at && (!g.first || d.started_at < g.first)) g.first = d.started_at;
+    if (d.started_at && (!g.last || d.started_at > g.last)) g.last = d.started_at;
+    map.set(key, g);
+  }
+  return [...map.values()].sort((a, b) => b.minutes - a.minutes).slice(0, 8);
+}
+
+function taskEventIcon(e) {
+  if (e?.action === "created") return "＋";
+  if (e?.action === "deleted") return "✕";
+  if (String(e?.action || "").startsWith("goal_")) return "◎";
+  return "✎";
+}
+
+// Merged focus sitting. Expandable when it has >1 segment; resumable while
+// the day is still today (fresh 25m block on the same title — the "extend
+// after it ended" path).
+function FocusSessionRow({ session, canResume, onResume }) {
+  const [open, setOpen] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const multi = session.segments.length > 1;
+  const endReason = /\((\w+)\)\s*$/.exec(session.segments[session.segments.length - 1]?.note || "")?.[1];
+  return (
+    <div className="focus-session">
+      <div
+        className={"day-summary-event focus-session-head" + (multi ? " expandable" : "")}
+        onClick={() => multi && setOpen((v) => !v)}
+        role={multi ? "button" : undefined}
+        title={multi ? "Show the individual segments" : undefined}
+      >
+        <code>{session.started_at ? shortTime(session.started_at) : "--:--"}</code>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <strong>{session.title}</strong>
+          <small className="muted">
+            {fmtMinutes(session.minutes)}
+            {session.ended_at ? ` · until ${shortTime(session.ended_at)}` : ""}
+            {multi ? ` · ${session.segments.length} segments ${open ? "▾" : "▸"}` : ""}
+            {endReason && endReason !== "completed" ? ` · ${endReason}` : ""}
+          </small>
+        </div>
+        {canResume && (
+          <button
+            className="ghost xsmall"
+            disabled={starting}
+            onClick={async (ev) => {
+              ev.stopPropagation();
+              setStarting(true);
+              try { await onResume(); } finally { setStarting(false); }
+            }}
+            title="Start a fresh 25-min block on this"
+          >
+            {starting ? "…" : "↻ Resume"}
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="focus-session-segments">
+          {session.segments.map((seg, i) => (
+            <div key={`${seg.id}-${i}`} className="focus-session-segment">
+              <code>{shortTime(seg.started_at)}</code>
+              <span>{fmtMinutes(seg.minutes || 0)}</span>
+              <small className="muted">{seg.note || seg.kind || ""}</small>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Grouped distraction lane with a severity bar scaled against the day's
+// worst offender.
+function DistractionRow({ group, max }) {
+  const frac = Math.max(0.04, Math.min(1, (group.minutes || 0) / Math.max(1, max)));
+  return (
+    <div className="day-summary-event distraction-row">
+      <code>{group.first ? shortTime(group.first) : "--:--"}</code>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="row between" style={{ gap: 8 }}>
+          <strong>{prettyAppName(group.app)}</strong>
+          <small className="muted" style={{ flexShrink: 0 }}>
+            {fmtMinutes(group.minutes)}{group.count > 1 ? ` · ${group.count} visits` : ""}
+          </small>
+        </div>
+        <div className="distraction-bar"><span style={{ width: `${frac * 100}%` }} /></div>
+      </div>
+    </div>
+  );
+}
+
+function SummarySection({ title, sub, empty, children }) {
   const hasChildren = React.Children.toArray(children).filter(Boolean).length > 0;
   return (
     <section className="day-summary-section">
-      <div className="section-label" style={{ marginTop: 0 }}>{title}</div>
+      <div className="row between" style={{ alignItems: "baseline" }}>
+        <div className="section-label" style={{ margin: 0 }}>{title}</div>
+        {sub && <small className="muted" style={{ fontSize: 10.5 }}>{sub}</small>}
+      </div>
       {hasChildren ? children : <small className="muted">{empty}</small>}
     </section>
   );
 }
 
-function SummaryEvent({ at, title, meta }) {
+function SummaryEvent({ at, title, meta, icon, tone }) {
   return (
-    <div className="day-summary-event">
+    <div className={"day-summary-event" + (tone ? ` tone-${tone}` : "")}>
       <code>{at ? shortTime(at) : "--:--"}</code>
+      {icon && <span className={"day-summary-icon" + (tone ? ` tone-${tone}` : "")} aria-hidden>{icon}</span>}
       <div>
         <strong>{title}</strong>
         {meta && <small className="muted">{meta}</small>}
@@ -4523,13 +4716,13 @@ function DayNoteCard({ model, ollamaOk }) {
       >
         <div>
           <div className="card-title" style={{ margin: 0 }}>
-            Day note
+            Close the day
           </div>
-          {!lockState.locked && writeStreak > 0 && (
-            <small className="muted" style={{ display: "block", marginTop: 2 }}>
-              {writeStreak}-day writing streak
-            </small>
-          )}
+          <small className="muted" style={{ display: "block", marginTop: 2 }}>
+            {!lockState.locked && writeStreak > 0
+              ? `${writeStreak}-day writing streak — keep the chain alive`
+              : "Two honest minutes: what happened, what's tomorrow's first move?"}
+          </small>
         </div>
         <div className="row" style={{ gap: 6 }}>
           {lockState.hasPasscode &&

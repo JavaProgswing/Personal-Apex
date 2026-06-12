@@ -1,13 +1,21 @@
 # Apex Sync API
 
-FastAPI service for pairing the Apex desktop app with a mobile app, syncing daily routines, wake/sleep timers, objectives, tasks, close reasons, distraction events, and mobile wellbeing usage.
+FastAPI service for pairing the Apex desktop app with the Android app and the web app, syncing daily routines, wake/sleep timers, objectives, tasks, notes, focus state, close reasons, distraction events, and mobile wellbeing usage.
+
+## Web app
+
+`GET /web` serves `web_app.html` — a single self-contained browser version of Apex (Three.js background, GSAP motion, tasks/notes/activity/focus views). It pairs as its own device (`device_type: "web"`); the desktop's **Settings → Mobile → Open web app** button mints a one-shot code and opens `/web#pair=CODE` so the browser signs itself in. The token lives in `localStorage`. The page is served with `Cache-Control: no-store`, so redeploys are instant.
 
 ## Endpoints
 
 - `GET /health`
-- `POST /pairing-codes` with `Authorization: Bearer <APEX_SYNC_ADMIN_TOKEN>`
+- `GET /web` — the browser app (no auth; the page itself pairs)
+- `GET /me` — device info for the calling token
+- `GET /devices` / `DELETE /devices/{id}` — list / revoke pairings (admin or any device token)
+- `GET /focus` / `PUT /focus` — live focus-block state; desktop publishes (Zen + productive timers), the phone polls it to run its distraction blocker; auto-expires past `ends_at`
+- `POST /pairing-codes` with `Authorization: Bearer <APEX_SYNC_ADMIN_TOKEN>` (rate-limited)
 - `GET /pairing-codes/{code}/qr.png`
-- `POST /pair`
+- `POST /pair` (rate-limited)
 - `GET /bootstrap`
 - `GET /sync/pull?since=...`
 - `POST /sync/push`

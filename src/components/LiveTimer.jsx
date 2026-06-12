@@ -51,10 +51,11 @@ export default function LiveTimer({ tasks = [], onChanged }) {
   const [active, setActive] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [showStart, setShowStart] = useState(false);
-  // After a productive timer auto-stops we surface a small inline suggest:
-  // "Take a 5-min break?" - one click starts a break-kind timer with a
-  // sensible duration based on what just finished.
-  const [breakSuggestion, setBreakSuggestion] = useState(null);
+  // After a timer auto-stops we keep a "just finished" strip with the
+  // logged block + one-click ways to keep going (same task, fresh block)
+  // or take a sized break. Extending after the bell is the common case —
+  // it shouldn't require re-typing anything.
+  const [finished, setFinished] = useState(null);
   // Active leisure segment - runs independently of the live_timer state
   // so the user can be "off the clock" without having to start a fake
   // timer. Polled alongside the regular timer refresh.
@@ -114,8 +115,10 @@ export default function LiveTimer({ tasks = [], onChanged }) {
     return () => clearInterval(tickRef.current);
   }, [active, leisure]);
 
-  // Auto-finish when the timer has been at/under 0 for 10s. We keep showing
-  // the "0:00" briefly so the user sees the moment of completion.
+  // Auto-finish when the timer has been at/under 0 for 45s — long enough to
+  // hit "+10m keep going" without racing the auto-stop, short enough that an
+  // abandoned bell still logs itself.
+  const AUTO_STOP_GRACE_MS = 45_000;
   const overdueSince = useRef(null);
   useEffect(() => {
     if (!active) {
@@ -123,10 +126,9 @@ export default function LiveTimer({ tasks = [], onChanged }) {
       return;
     }
     const remaining = remainingSec(active, now);
-    if (remaining <= 0 && !overdueSince.current) overdueSince.current = Date.now();
-    if (overdueSince.current && Date.now() - overdueSince.current > 10_000) {
-      // Auto-stop and persist. If the just-finished timer was productive
-      // (task / study / habit) and ran for >= 25 min, suggest a break.
+    if (remaining > 0) { overdueSince.current = null; return; } // extended past 0 — re-arm
+    if (!overdueSince.current) overdueSince.current = Date.now();
+    if (Date.now() - overdueSince.current > AUTO_STOP_GRACE_MS) {
       const justFinished = active;
       (async () => {
         await api.timer.stop();
@@ -137,66 +139,85 @@ export default function LiveTimer({ tasks = [], onChanged }) {
         const wasProductive =
           justFinished.category === "productive" ||
           ["task", "study", "habit"].includes(justFinished.kind);
-        if (wasProductive && elapsed >= 25) {
-          // Longer focus → longer break (rough rule of thumb).
-          const minutes = elapsed >= 90 ? 15 : elapsed >= 50 ? 10 : 5;
-          setBreakSuggestion({
-            after: justFinished.title,
-            elapsed,
-            minutes,
-          });
-        }
+        // Longer focus → longer break (rough rule of thumb).
+        const breakMinutes = wasProductive && elapsed >= 25
+          ? (elapsed >= 90 ? 15 : elapsed >= 50 ? 10 : 5)
+          : null;
+        setFinished({ row: justFinished, elapsed, breakMinutes });
         refresh();
       })();
     }
   }, [active, now]);
 
+  // One click: fresh block on the same activity. Used from the finished
+  // strip; mirrors everything except duration.
+  async function goAgain(row, minutes = 25) {
+    await api.timer.start({
+      kind: row.kind,
+      category: row.category,
+      title: row.title,
+      description: row.description || null,
+      planned_minutes: minutes,
+      task_id: row.task_id || null,
+    });
+    setFinished(null);
+    refresh();
+  }
+
   if (!active) {
     return (
       <>
-        {breakSuggestion && (
+        {finished && (
           <div className="break-suggest">
             <div style={{ flex: 1, minWidth: 0 }}>
               <strong>
-                Done - {breakSuggestion.elapsed}m of "{breakSuggestion.after}"
+                ✓ {finished.elapsed}m of “{finished.row.title}” logged
               </strong>
               <small className="muted" style={{ display: "block", marginTop: 2 }}>
-                Take a {breakSuggestion.minutes}-min break before the next block?
+                {finished.breakMinutes
+                  ? `Keep the streak going, or take a ${finished.breakMinutes}-min break first.`
+                  : "Back at it, or done for now?"}
               </small>
             </div>
             <div className="row" style={{ gap: 6, flexShrink: 0 }}>
               <button
                 className="primary small"
-                onClick={async () => {
-                  await api.timer.start({
-                    kind: "break",
-                    category: "neutral",
-                    title: "Stretch / walk",
-                    description:
-                      "Stand up, move around. Auto-suggested after " +
-                      `${breakSuggestion.elapsed}m of focus.`,
-                    planned_minutes: breakSuggestion.minutes,
-                  });
-                  setBreakSuggestion(null);
-                  refresh();
-                }}
-                title="Quick break"
+                onClick={() => goAgain(finished.row, 25)}
+                title="New 25-min block on the same activity"
               >
-                ▶ Take {breakSuggestion.minutes}m
+                ▶ Go again · 25m
               </button>
               <button
                 className="ghost small"
-                onClick={() => {
-                  setShowStart(true);
-                  setBreakSuggestion(null);
-                }}
-                title="Pick a different break preset"
+                onClick={() => goAgain(finished.row, 10)}
+                title="Short 10-min wrap-up block"
               >
-                Pick…
+                +10m
               </button>
+              {finished.breakMinutes && (
+                <button
+                  className="ghost small"
+                  onClick={async () => {
+                    await api.timer.start({
+                      kind: "break",
+                      category: "neutral",
+                      title: "Stretch / walk",
+                      description:
+                        "Stand up, move around. Auto-suggested after " +
+                        `${finished.elapsed}m of focus.`,
+                      planned_minutes: finished.breakMinutes,
+                    });
+                    setFinished(null);
+                    refresh();
+                  }}
+                  title="Quick break"
+                >
+                  Break {finished.breakMinutes}m
+                </button>
+              )}
               <button
                 className="ghost xsmall"
-                onClick={() => setBreakSuggestion(null)}
+                onClick={() => setFinished(null)}
                 title="Dismiss"
                 aria-label="Dismiss"
               >
@@ -283,29 +304,50 @@ export default function LiveTimer({ tasks = [], onChanged }) {
       </div>
       <div className="live-timer-clock">
         <div className={"live-timer-time" + (isOver ? " over" : isLow ? " low" : "")}>
-          {fmt(Math.max(0, remaining))}
+          {isOver ? `+${fmt(-remaining)}` : fmt(remaining)}
         </div>
+        {isOver && (
+          <small className="muted live-timer-autostop">
+            auto-logs in {Math.max(0, Math.ceil((AUTO_STOP_GRACE_MS - (overdueSince.current ? now - overdueSince.current : 0)) / 1000))}s
+          </small>
+        )}
         <div className="live-timer-actions">
-          <button
-            className="ghost xsmall"
-            onClick={async () => {
-              await api.timer.extend(5);
-              refresh();
-            }}
-            title="Extend by 5 minutes"
-          >
-            +5
-          </button>
-          <button
-            className="ghost xsmall"
-            onClick={async () => {
-              await api.timer.extend(15);
-              refresh();
-            }}
-            title="Extend by 15 minutes"
-          >
-            +15
-          </button>
+          {isOver ? (
+            // Past zero the common move is "keep going" — make it the loud one.
+            <button
+              className="primary small"
+              onClick={async () => {
+                await api.timer.extend(10);
+                refresh();
+              }}
+              title="Add 10 minutes and keep this block running"
+            >
+              +10m keep going
+            </button>
+          ) : (
+            <>
+              <button
+                className="ghost xsmall"
+                onClick={async () => {
+                  await api.timer.extend(5);
+                  refresh();
+                }}
+                title="Extend by 5 minutes"
+              >
+                +5
+              </button>
+              <button
+                className="ghost xsmall"
+                onClick={async () => {
+                  await api.timer.extend(15);
+                  refresh();
+                }}
+                title="Extend by 15 minutes"
+              >
+                +15
+              </button>
+            </>
+          )}
           <button
             className="primary small"
             onClick={async () => {

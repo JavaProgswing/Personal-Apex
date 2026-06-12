@@ -258,7 +258,11 @@ class MainActivity : ComponentActivity() {
     private fun buildUi() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(bg)
+            // Deep vertical gradient instead of a flat fill — cards float on it.
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.parseColor("#0A0C11"), Color.parseColor("#0D1018"), Color.parseColor("#0A0D14")),
+            )
         }
 
         root.addView(buildHeader().apply {
@@ -293,6 +297,11 @@ class MainActivity : ComponentActivity() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
         }
         root.addView(contentFrame)
+        // Hairline above the nav so it reads as a docked bar, not a color block.
+        root.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
+            setBackgroundColor(Color.parseColor("#222B3A"))
+        })
         root.addView(buildBottomNav())
         setContentView(root)
     }
@@ -2059,7 +2068,7 @@ class MainActivity : ComponentActivity() {
     private fun pingHealth(verbose: Boolean = false) {
         scope.launch {
             val ok = try { client().health().optBoolean("ok", false) } catch (_: Throwable) { false }
-            statusDot.background = dot(if (ok) green else red)
+            setStatusDot(ok)
             if (verbose) statusText.text = if (ok) "Connected to the sync API ✓" else "Can't reach the sync API."
             if (ok && !store.token.isNullOrBlank()) {
                 try {
@@ -2270,12 +2279,21 @@ class MainActivity : ComponentActivity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(18), dp(18))
-            background = rounded(panel, dp(16), border)
+            // Soft vertical gradient + faint shadow so cards float instead of
+            // sitting flat on the background.
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.parseColor("#171D28"), Color.parseColor("#121722")),
+            ).apply {
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), Color.parseColor("#2A3342"))
+            }
+            elevation = dp(3).toFloat()
             val params = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
-            params.setMargins(0, 0, 0, dp(16))
+            params.setMargins(0, 0, 0, dp(14))
             layoutParams = params
             content()
         }
@@ -2346,7 +2364,9 @@ class MainActivity : ComponentActivity() {
         baseButton(textValue, accent, bg, onClick).apply { background = gradientRipple(dp(10)) }
 
     private fun quietButton(textValue: String, onClick: () -> Unit): Button =
-        baseButton(textValue, panel2, textColor, onClick)
+        baseButton(textValue, panel2, textColor, onClick).apply {
+            background = rippleRounded(panel2, dp(10), border2)
+        }
 
     private fun wideButton(textValue: String, onClick: () -> Unit): Button =
         baseButton(textValue, accent, bg, onClick).apply {
@@ -2393,18 +2413,35 @@ class MainActivity : ComponentActivity() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             background = rounded(panel2, dp(10), border2)
             setPadding(dp(12), dp(10), dp(12), dp(10))
+            // Teal border while focused so the active field is unmistakable.
+            setOnFocusChangeListener { v, has ->
+                v.background = rounded(panel2, dp(10), if (has) accent else border2)
+            }
         }
     }
 
-    private fun sectionTitle(title: String): TextView =
-        label(title, 17f, textColor, true).apply { setPadding(0, 0, 0, dp(10)) }
+    // Section heading with a small teal tick bar — gives every card an anchor
+    // point so the eye doesn't read each one as an undifferentiated blob.
+    private fun sectionTitle(title: String): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(10))
+            addView(View(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(3), dp(15)).also { it.marginEnd = dp(8) }
+                background = rounded(accent, dp(2), Color.TRANSPARENT)
+            })
+            addView(label(title, 16.5f, textColor, true))
+        }
+    }
 
     private fun label(value: String, sp: Float, color: Int, bold: Boolean): TextView {
         return TextView(this).apply {
             text = value
             setTextColor(color)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
-            if (bold) setTypeface(typeface, Typeface.BOLD)
+            // Real medium weight — faux-bold smears on dark backgrounds.
+            if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setLineSpacing(dp(3).toFloat(), 1.0f)
         }
     }
@@ -2414,6 +2451,22 @@ class MainActivity : ComponentActivity() {
 
     private fun dot(color: Int): GradientDrawable =
         GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color) }
+
+    // Connected = soft breathing pulse; offline = solid red, no motion.
+    private var dotAnimator: android.animation.ObjectAnimator? = null
+    private fun setStatusDot(ok: Boolean) {
+        statusDot.background = dot(if (ok) green else red)
+        dotAnimator?.cancel()
+        if (ok) {
+            dotAnimator = android.animation.ObjectAnimator.ofFloat(statusDot, "alpha", 1f, 0.4f, 1f).apply {
+                duration = 2400
+                repeatCount = android.animation.ValueAnimator.INFINITE
+                start()
+            }
+        } else {
+            statusDot.alpha = 1f
+        }
+    }
 
     private fun rounded(fill: Int, radius: Int, stroke: Int): GradientDrawable {
         return GradientDrawable().apply {

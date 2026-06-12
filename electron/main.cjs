@@ -1928,6 +1928,31 @@ ipcMain.handle("people:heatStrips", (_e, ids, days) =>
 function broadcastTimer(payload) {
   emit("timer:update", payload);
 }
+
+// Mirror productive timers to the phone's focus blocker, exactly like Zen
+// does. The phone polls GET /focus and nudges/bounces distraction apps —
+// so starting a plain task timer on desktop now also guards the phone
+// (e.g. Instagram reels mid focus block ⇒ mobile nudge). Zen owns the
+// focus channel while it's active; we never fight it from here.
+function timerEndsAtIso(row) {
+  const start = new Date(row.started_at).getTime();
+  const totalMin = (+row.planned_minutes || 0) + (+row.extended_minutes || 0);
+  if (!Number.isFinite(start) || !totalMin) return null;
+  return new Date(start + totalMin * 60000).toISOString();
+}
+function mirrorTimerFocus(row) {
+  if (db.activeZenSession?.()) return; // zen already published its block
+  if (row && row.category === "productive") {
+    routine.pushFocus?.({
+      active: true,
+      title: row.title || "Focus block",
+      mode: "timer",
+      endsAt: timerEndsAtIso(row),
+    }).catch?.(() => {});
+  } else {
+    routine.pushFocus?.({ active: false }).catch?.(() => {});
+  }
+}
 ipcMain.handle("timer:active", () => db.getActiveTimer());
 ipcMain.handle("timer:start", (_e, p) => {
   // If something is already running, finish it cleanly first.
@@ -1939,6 +1964,7 @@ ipcMain.handle("timer:start", (_e, p) => {
   if (existing) finishTimerToActivity(existing, "interrupted");
   const row = db.startTimer(p || {});
   broadcastTimer(row);
+  mirrorTimerFocus(row);
   if (activeZen) broadcastZen(activeZen, { timer: row });
   // Optional Spotify focus playlist auto-play. Defined later in the file
   // (after the spotify service is required); guarded with typeof so we
@@ -1955,6 +1981,7 @@ ipcMain.handle("timer:extend", (_e, mins) => {
     broadcastZen(session, { timer: row });
   }
   broadcastTimer(row);
+  mirrorTimerFocus(row); // refresh the phone's ends_at
   return row;
 });
 ipcMain.handle("timer:stop", () => {
@@ -1968,6 +1995,7 @@ ipcMain.handle("timer:stop", () => {
   const out = finishTimerToActivity(row, completed ? "completed" : "stopped");
   db.clearTimer();
   if (activeZen) finishZenSession(completed ? "completed" : "stopped", { stopTimer: false });
+  else mirrorTimerFocus(null); // stand the phone blocker down
   broadcastTimer(null);
   return { ok: true, logged: out };
 });
@@ -1985,6 +2013,7 @@ ipcMain.handle("timer:cancel", () => {
   if (minutes >= 1) logged = finishTimerToActivity(row, "cancelled");
   db.clearTimer();
   if (activeZen) finishZenSession("cancelled", { stopTimer: false });
+  else mirrorTimerFocus(null);
   broadcastTimer(null);
   return { ok: true, logged };
 });

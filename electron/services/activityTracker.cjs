@@ -7,13 +7,24 @@
 // Windows: uses PowerShell + Win32 GetForegroundWindow. We avoid bringing in
 // heavy native deps (ffi / active-win) to keep the build simple.
 
-const { BrowserWindow } = require('electron');
+const { BrowserWindow, powerMonitor } = require('electron');
 const { exec } = require('node:child_process');
 const db = require('./db.cjs');
 
 const POLL_MS = 30_000;
 const NUDGE_AFTER_MIN = 45;   // nudge when the same app has run 45+ minutes
 const DISTRACT_NUDGE_MIN = 15; // distraction sessions get called out sooner
+
+// Idle detection: after this many seconds without keyboard/mouse input the
+// desk is considered abandoned, and time stops accruing to whatever window
+// happens to be focused. Idle gets its own session row instead, so "4h of
+// VS Code" can't be 3h of an empty chair.
+const IDLE_AFTER_SEC = 240;
+const IDLE_APP = 'Idle (away)';
+
+function idleSeconds() {
+  try { return powerMonitor.getSystemIdleTime() || 0; } catch { return 0; }
+}
 
 let timer = null;
 let currentSession = null;    // { app, title, category, startedAt, lastTickAt }
@@ -323,17 +334,38 @@ async function tick() {
   // writes to source='desktop-open' so it doesn't collide with the
   // focused-only 'desktop' rows.
   tickPresence().catch(() => {});
-  const fg = await getForegroundWindow();
-  if (!fg || !fg.exe) return rollover(now); // no foreground window → rollover current session
 
-  // Skip Windows system processes — LockApp (lock screen), Shell
-  // experience hosts, search bars taking focus, etc. These were
-  // appearing as mysterious "lock app" rows in the activity log.
-  if (isSystemProcess(fg.exe)) return rollover(now);
+  // Away from the desk? Track it as its own "Idle (away)" lane instead of
+  // crediting the focused window. The first idle tick backdates the session
+  // start to when input actually stopped, and closes the previous app
+  // session at that same moment so wall-clock time isn't double-counted.
+  const idleFor = idleSeconds();
+  let app; let title; let category;
+  if (idleFor >= IDLE_AFTER_SEC) {
+    const idleStart = now - idleFor * 1000;
+    if (currentSession && currentSession.app !== IDLE_APP) {
+      currentSession.lastTickAt = Math.max(currentSession.startedAt, idleStart);
+      rollover(now);
+    }
+    app = IDLE_APP;
+    title = 'No keyboard / mouse input';
+    category = 'neutral';
+    if (!currentSession) {
+      currentSession = { app, title, category, startedAt: idleStart, lastTickAt: now };
+    }
+  } else {
+    const fg = await getForegroundWindow();
+    if (!fg || !fg.exe) return rollover(now); // no foreground window → rollover current session
 
-  const app = fg.exe;
-  const title = fg.title || '';
-  const category = inferCategory(app, title);
+    // Skip Windows system processes — LockApp (lock screen), Shell
+    // experience hosts, search bars taking focus, etc. These were
+    // appearing as mysterious "lock app" rows in the activity log.
+    if (isSystemProcess(fg.exe)) return rollover(now);
+
+    app = fg.exe;
+    title = fg.title || '';
+    category = inferCategory(app, title);
+  }
 
   if (currentSession && currentSession.app === app && currentSession.category === category) {
     // Extend current session
@@ -407,7 +439,8 @@ async function tick() {
     }
 
     // Soft nudge if we've been in the same session for >= NUDGE_AFTER_MIN min
-    if (mins >= NUDGE_AFTER_MIN && nudgedFor !== currentSession.startedAt) {
+    // (never for the idle lane — nobody's there to read it).
+    if (mins >= NUDGE_AFTER_MIN && nudgedFor !== currentSession.startedAt && currentSession.app !== IDLE_APP) {
       nudgedFor = currentSession.startedAt;
       sendRendererEvent('activity:nudge', {
         app, title, category, minutes: mins,

@@ -2,7 +2,7 @@
 
 > A local-first personal productivity OS for a CS undergraduate - timetable, tasks, focus tracking, mobile + desktop screentime, an offline Ollama planner, a private journal, and a classmate radar that surfaces what the people around you are building.
 
-Apex is an Electron + React + SQLite desktop app. Everything lives on your machine: the database is a single SQLite file under `Documents/Apex/apex.sqlite`, the AI runs locally through Ollama, and the passcode-gated journal never leaves the device.
+Apex is an Electron + React + SQLite desktop app, with two satellites that pair to it through a small self-hosted sync API: an **Android app** (`mobile_android/`) and a **web app** (`sync_api/web_app.html`, served at `/web` with a Three.js + GSAP front). Everything core lives on your machine: the database is a single SQLite file under `Documents/Apex/apex.sqlite`, the AI runs locally through Ollama, and the passcode-gated journal never leaves the device. Cross-device sync is opt-in and goes through your own server.
 
 ---
 
@@ -29,11 +29,17 @@ The goal is a page you can open at 8 AM and know exactly what the day looks like
 **Interests.** A lightweight exploration tracker with status (idea → exploring → building → shipped → paused), progress %, and links.
 
 **Activity tracking.** Three sources feed the same `activity_sessions` table:
-- **Desktop**: PowerShell-polled foreground window title on Windows (30-s ticks), with 45-min nudges. Distraction vs focus vs neutral is set per app with manual override support.
-- **Mobile**: ADB-backed digital-wellbeing pull - usage stats and top apps per day. Package names are rendered through a `prettyAppName()` helper that strips `com.example.` prefixes and splits concatenated lowercase runs ("bloonstdbattles2" → "Bloons TD Battles 2").
+- **Desktop**: PowerShell-polled foreground window title on Windows (30-s ticks), with 45-min nudges. Distraction vs focus vs neutral is set per app with manual override support. After ~4 min without keyboard/mouse input, time stops accruing to the focused window and lands in an **"Idle (away)"** lane instead — "4h of VS Code" can't be 3h of an empty chair.
+- **Mobile**: cloud sync from the Android app (no cable), with ADB `dumpsys usagestats` as the USB fallback. Package names are rendered through a `prettyAppName()` helper that strips `com.example.` prefixes and splits concatenated lowercase runs ("bloonstdbattles2" → "Bloons TD Battles 2").
 - **Battery report**: `powercfg /batteryreport` parsed with cheerio, giving you per-day active + standby minutes without needing any tracker running. One-click "Sync desktop" pushes the last 14 days into the activity stream.
 
-**Day note (private journal).** One entry per day, stored locally, optionally passcode-gated. The passcode uses `scryptSync` + `timingSafeEqual`; when you set one, both today's note AND the history modal require unlock (15-min in-memory TTL). Previous days are read-only once unlocked. An "Summarise" action hands the entry to Ollama for a gentle end-of-day reflection.
+**Live timer + focus blocks.** A universal "what am I doing now" timer with category presets, break suggestions sized to the block you just finished, and a one-click "Go again" resume after the bell. Productive timers are mirrored to the phone over the sync API — start a task block on desktop and the Android app's blocker nudges (or bounces) Instagram-class apps until the block ends. Zen mode is the stricter cousin: locked sessions, drift detection, the works.
+
+**Day summary.** A per-day debrief modal: tracked/focus/distraction/idle/done stats, a clickable minute-by-minute timeline, focus *sittings* (contiguous same-task timer blocks merged, expandable into segments, resumable), distractions grouped per app with severity bars, wins (completed tasks + routine milestones), and exit notes.
+
+**Cross-device.** Desktop, phone, and browser pair against the same FastAPI sync service (`sync_api/`) with one-shot six-digit codes / QR. Tasks, notes, routine times, focus state, and phone screen time flow both ways. The web app at `{api}/web` is a single self-contained file — Three.js particle background, GSAP motion, full task/note/activity views.
+
+**Close the day (private journal).** One entry per day, stored locally, optionally passcode-gated. The passcode uses `scryptSync` + `timingSafeEqual`; when you set one, both today's note AND the history modal require unlock (15-min in-memory TTL). Previous days are read-only once unlocked. A "Summarise" action hands the entry to Ollama for a gentle end-of-day reflection.
 
 **Burnout.** Compact check-in tied to a work-history rollup - sleep, clarity, dread, energy. Ollama produces a short read of your current state using the last week of check-ins + activity + task completion.
 
@@ -94,9 +100,20 @@ Apex/
 │   ├── lib/
 │   │   ├── appName.js      - prettyAppName(raw) for desktop + Android
 │   │   └── markdown.jsx    - MarkdownBlock renderer used by Ask Apex
-│   └── styles/
+│   └── styles/             - index.css: tokens + 5 curated themes
+├── sync_api/
+│   ├── apex_sync_api.py    - FastAPI sync service (pairing, tasks, notes,
+│   │                         routine, focus state, wellbeing) — see its README
+│   └── web_app.html        - the /web browser app (Three.js + GSAP, single file)
+├── mobile_android/         - Kotlin Android app (pairing, tasks, notes,
+│                             alarms, screen-time upload, Zen mirror)
+├── build/                  - app + tray icons (icon.svg is the source of truth)
 └── package.json
 ```
+
+### Theming
+
+Five curated themes in `src/styles/index.css` — Apex (graphite + teal, default), Library (warm amber), Tokyo Night (indigo), Obsidian (OLED black), Daylight (light). Each defines the full token contract (bg/text ramps, category colors, `--grad-accent`, an ambient `--grad-bg` wash). Fonts are unified app-wide: Inter for UI, Sora for the wordmark + page titles (same display face as the web app and Android header), JetBrains Mono for numbers. Legacy theme keys stored in settings are migrated to the nearest survivor on boot.
 
 ### Database
 
@@ -172,11 +189,12 @@ Open **Settings → Ollama** and fill in the Personal context card: name, colleg
 
 ## Privacy
 
-Everything is local. The SQLite file, the battery-report parse, the activity data, the day notes - none of it leaves your machine. The only outbound calls are:
+Everything core is local. The SQLite file, the battery-report parse, the activity data, the day notes - none of it leaves your machine. The only outbound calls are:
 - GitHub API (only when you trigger a sync),
 - LeetCode / Codeforces / CodeChef (only when you trigger a sync),
 - NextTechLab website (only when you trigger a scrape),
-- Ollama on `localhost:11434` (always local, even for `*-cloud` models - those tokens go Ollama → cloud, not Apex → cloud).
+- Ollama on `localhost:11434` (always local, even for `*-cloud` models - those tokens go Ollama → cloud, not Apex → cloud),
+- the **self-hosted sync API** (opt-in, only after pairing): tasks, notes, routine times, focus state, and phone screen time — your server, your data. Day notes and the journal are never synced.
 
 The day-note passcode uses `scryptSync` (N = 2^15, r = 8, p = 1) and `timingSafeEqual`. Unlocking is held in the main process only; it expires automatically after 15 minutes of inactivity.
 

@@ -11464,7 +11464,7 @@ optgroup {
 
 .day-summary-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   margin: 14px 0;
 }
@@ -11506,13 +11506,65 @@ optgroup {
 }
 
 .day-summary-event {
-  display: grid;
-  grid-template-columns: 54px minmax(0, 1fr);
+  /* flex (not grid) so rows can carry an optional icon and a trailing
+     action button without re-templating */
+  display: flex;
   gap: 9px;
-  align-items: start;
+  align-items: flex-start;
   padding: 7px 0;
   border-top: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
 }
+.day-summary-event > code { flex: 0 0 44px; }
+.day-summary-event > div { flex: 1; min-width: 0; }
+.day-summary-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.day-summary-icon.tone-ok { color: var(--ok); }
+.day-summary-icon.tone-bad { color: var(--bad); }
+.day-summary-stat.tone-ok strong { color: var(--ok); }
+.day-summary-stat.tone-bad strong { color: var(--bad); }
+
+/* merged focus sittings */
+.focus-session-head.expandable { cursor: pointer; }
+.focus-session-head.expandable:hover strong { color: var(--accent); }
+.focus-session-segments {
+  margin: 2px 0 6px 53px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  padding-left: 10px;
+}
+.focus-session-segment {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  padding: 3px 0;
+}
+.focus-session-segment code { color: var(--text-faint); font-size: 11px; }
+
+/* grouped distraction lanes */
+.distraction-bar {
+  height: 4px;
+  margin-top: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--border) 55%, transparent);
+  overflow: hidden;
+}
+.distraction-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--bad);
+  opacity: 0.85;
+}
+.day-summary-subgroup { margin-top: 8px; }
+.day-summary-subgroup > small { display: block; margin-bottom: 2px; }
+
+.live-timer-autostop { display: block; font-size: 10.5px; margin-top: -2px; }
 
 .day-summary-event:first-of-type {
   border-top: 0;
