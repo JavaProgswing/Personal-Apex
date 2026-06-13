@@ -28,5 +28,10 @@ class BootReceiver : BroadcastReceiver() {
         if (!store.token.isNullOrBlank() && store.autoSync) {
             WellbeingSyncWorker.enqueue(context)
         }
+        // Re-arm the persistent focus guard (BOOT_COMPLETED is allowed to start
+        // a foreground service); it polls /focus on its own from here.
+        if (!store.token.isNullOrBlank() && store.blockerEnabled) {
+            ZenWatchService.start(context)
+        }
     }
 }

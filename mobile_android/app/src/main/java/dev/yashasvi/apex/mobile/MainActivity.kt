@@ -356,6 +356,10 @@ class MainActivity : ComponentActivity() {
         if (::usageAccessText.isInitialized) { renderUsageAccess(); renderLocalUsage() }
         renderReadiness()
         maybeShowRingingOverlay()
+        // Most reliable guard (re)start: the app is foreground here, so the
+        // foreground-service start is always permitted. Keeps the blocker armed
+        // even if the OS killed the service or a background start was denied.
+        if (store.blockerEnabled && !store.token.isNullOrBlank()) ZenWatchService.start(this)
     }
 
     override fun onDestroy() {
@@ -1999,7 +2003,7 @@ class MainActivity : ComponentActivity() {
             ) { on ->
                 store.blockerEnabled = on
                 if (!on) ZenWatchService.stop(this@MainActivity)
-                else checkFocusState()
+                else { ZenWatchService.start(this@MainActivity); checkFocusState() }
                 renderReadiness()
                 statusText.text = if (on) "Focus blocker armed." else "Focus blocker off."
             })
@@ -2168,9 +2172,13 @@ class MainActivity : ComponentActivity() {
                     focusBanner.visibility = View.GONE
                 }
             }
-            if (focus.active && store.blockerEnabled) {
-                ZenWatchService.start(this@MainActivity, focus.title, focus.endsAt, focus.intensity)
-            } else if (!focus.active) {
+            // The guard is persistent: run it whenever the blocker is on (it
+            // polls /focus itself and enforces only while a block is live), so a
+            // desktop Zen that starts later is caught within seconds instead of
+            // waiting for the app to be reopened.
+            if (store.blockerEnabled) {
+                ZenWatchService.start(this@MainActivity)
+            } else {
                 ZenWatchService.stop(this@MainActivity)
             }
         }

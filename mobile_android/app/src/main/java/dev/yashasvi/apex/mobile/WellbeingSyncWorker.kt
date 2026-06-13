@@ -31,14 +31,10 @@ class WellbeingSyncWorker(
         if (token.isNullOrBlank()) return Result.success() // not paired - nothing to do
         val client = ApexApiClient(store.apiBase, tokenProvider = { store.token })
 
-        // Even when usage sharing is off, keep mirroring the desktop's focus
-        // state so the Zen blocker still works in the background.
-        try {
-            val focus = client.focus()
-            if (focus.active && store.blockerEnabled) {
-                ZenWatchService.start(applicationContext, focus.title, focus.endsAt, focus.intensity)
-            }
-        } catch (_: Throwable) { /* offline - fine */ }
+        // Keep the persistent focus guard alive even when usage sharing is off.
+        // It polls /focus itself, so we just need to (re)start it if the OS
+        // killed it; this periodic tick is the background safety net.
+        if (store.blockerEnabled) ZenWatchService.start(applicationContext)
 
         if (!store.shareUsage) return Result.success()
         if (!WellbeingReader.hasUsageAccess(applicationContext)) {
