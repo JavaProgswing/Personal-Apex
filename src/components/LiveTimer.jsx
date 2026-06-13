@@ -428,6 +428,20 @@ export default function LiveTimer({ tasks = [], onChanged }) {
             ✕
           </button>
         </div>
+        {/* Emergency stop — the escape hatch. Kills the timer AND any Zen,
+            even a locked one, and clears the phone/web block. Always available. */}
+        <button
+          className="live-timer-emergency"
+          onClick={async () => {
+            if (!confirm("Emergency stop? Ends this focus block now — including a locked Zen — and clears it on your phone and the web.")) return;
+            await api.focus?.emergencyStop?.();
+            setZen(null);
+            refresh();
+          }}
+          title="Force-end this focus block on every device"
+        >
+          ⏹ Emergency stop
+        </button>
       </div>
     </div>
   );

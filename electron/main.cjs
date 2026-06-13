@@ -2200,9 +2200,10 @@ async function zenTick() {
   }
 }
 
-function finishZenSession(reason = "stopped", { stopTimer = true } = {}) {
+function finishZenSession(reason = "stopped", { stopTimer = true, force = false } = {}) {
   const current = db.activeZenSession?.();
-  if (current?.mode === "locked" && !zenCanEnd(current, reason)) {
+  // `force` is the emergency-stop escape hatch: it ends even a locked Zen.
+  if (!force && current?.mode === "locked" && !zenCanEnd(current, reason)) {
     broadcastZen(current);
     return lockedZenStopError(current);
   }
@@ -2291,6 +2292,48 @@ ipcMain.handle("zen:extend", (_e, mins) => {
   return session;
 });
 ipcMain.handle("zen:stop", (_e, reason) => finishZenSession(reason || "stopped", { stopTimer: true }));
+
+// ── Emergency stop ─────────────────────────────────────────────────────────
+// Kill whatever focus is running — plain timer AND/OR Zen, bypassing even a
+// locked Zen. Reachable three ways: the desktop button (focus:emergencyStop),
+// or a remote request from phone/web that the watcher below picks up.
+function emergencyStopFocus(reason = "emergency") {
+  const zen = db.activeZenSession?.();
+  const timer = db.getActiveTimer?.();
+  const stopped = { zen: !!zen, timer: !!timer };
+  if (zen) {
+    // force:true → ends a locked Zen too; stopTimer:true also clears the timer.
+    finishZenSession(reason, { stopTimer: true, force: true });
+  } else if (timer) {
+    finishTimerToActivity(timer, reason);
+    db.clearTimer?.();
+    mirrorTimerFocus(null);
+    broadcastTimer(null);
+  } else {
+    // Nothing local, but still clear the cloud flag so phones/web reflect it.
+    routine.pushFocus?.({ active: false }).catch?.(() => {});
+  }
+  emit("focus:stopped", { reason, ...stopped });
+  return { ok: true, stopped };
+}
+ipcMain.handle("focus:emergencyStop", () => emergencyStopFocus("emergency-desktop"));
+
+// Watcher: while a local timer or Zen is running, poll the cloud focus row for
+// a stop_requested_at (set by POST /focus/stop from any device) and honour it.
+// PUT /focus clears the flag on every real publish, so a fresh block can never
+// be killed by a stale request, and we only act on a timestamp we haven't seen.
+let lastHandledStopAt = "";
+function focusStopTick() {
+  if (!db.getActiveTimer?.() && !db.activeZenSession?.()) return; // nothing to stop
+  routine.getFocusState?.().then((f) => {
+    const at = f?.stop_requested_at;
+    if (at && at !== lastHandledStopAt && at > lastHandledStopAt) {
+      lastHandledStopAt = at;
+      emergencyStopFocus("emergency-remote");
+    }
+  }).catch(() => {});
+}
+setInterval(focusStopTick, 6000);
 
 async function startZenPlaylist(uri) {
   let r = await spotify.play(uri);

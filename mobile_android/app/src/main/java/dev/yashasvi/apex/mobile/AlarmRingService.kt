@@ -156,10 +156,10 @@ class AlarmRingService : Service() {
         val hard = custom?.hard == true
         val title = custom?.label ?: if (isSleep) "Sleep alarm" else "Wake up"
         val text = when {
-            hard -> "Locked alarm — open Apex and enter your PIN to stop it."
+            hard -> "Locked alarm - open Apex and enter your PIN to stop it."
             custom != null -> "Rings 3 min, then snoozes itself."
             isSleep -> "Time to wind down.  Rings 3 min, then snoozes itself."
-            else -> "Good morning — rise and shine.  Rings 3 min, then snoozes itself."
+            else -> "Good morning - rise and shine.  Rings 3 min, then snoozes itself."
         }
         builder
             .setSmallIcon(R.drawable.ic_stat_alarm)
@@ -176,7 +176,7 @@ class AlarmRingService : Service() {
             builder
                 .addAction(action(ACTION_SNOOZE, "Snooze 10", 7502))
                 .addAction(action(ACTION_DISMISS, "Dismiss", 7503))
-                .addAction(action(ACTION_AWAKE, if (isSleep) "Going to bed ✓" else "I'm awake ✓", 7504))
+                .addAction(action(ACTION_AWAKE, if (isSleep) "Going to bed" else "I'm awake", 7504))
         }
         val notification = builder.build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -259,7 +259,7 @@ class AlarmRingService : Service() {
                 .setColor(0xFFF5B84B.toInt())
                 .setContentTitle(if (isSleep) "Sleep alarm unanswered" else "Wake alarm unanswered")
                 .setContentText(
-                    if (snoozed) "Rang for 3 minutes — ringing again in 10."
+                    if (snoozed) "Rang for 3 minutes - ringing again in 10."
                     else "Rang twice with no answer. Giving up until tomorrow.",
                 )
                 .setContentIntent(open)

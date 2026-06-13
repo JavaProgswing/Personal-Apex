@@ -161,7 +161,12 @@ npm run dist
 
 **AcademiaScraper** - point the timetable folder setting at your SRM AcademiaScraper clone (contains `data/timetable.json` and `calendar.html`). "Re-sync from Academia" will rebuild the classes table from `timetable.json`.
 
-**ADB (Android digital wellbeing)** - connect your phone with USB debugging; the Settings tab exposes a "Sync now" button that shells out to `adb shell dumpsys usagestats`.
+**ADB (Android digital wellbeing)** - connect your phone with USB debugging; the
+Settings tab exposes a "Sync now" button that shells out to
+`adb shell dumpsys usagestats`. For local APK installs, use
+`npm run mobile:install:build`; it auto-detects `adb.exe` from PATH,
+`ANDROID_HOME`, `ANDROID_SDK_ROOT`, the Android Studio SDK folder, or Minimal
+ADB.
 
 **GitHub** - set a GitHub token in Settings to raise the rate limit and allow private-repo lookups; otherwise unauthenticated public access works for most flows.
 

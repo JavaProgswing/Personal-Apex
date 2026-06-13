@@ -294,6 +294,12 @@ class ApexApiClient(
         request("POST", "$apiBase/events", body)
     }
 
+    // Emergency stop: kill the active focus block. The desktop's watcher honours
+    // this and force-ends even a locked Zen; the phone's banner clears too.
+    suspend fun stopFocus(): JSONObject = withContext(Dispatchers.IO) {
+        request("POST", "$apiBase/focus/stop", "".toRequestBody(jsonType))
+    }
+
     // `deviceId` makes the row id deterministic per (device, day, package) so a
     // re-sync UPSERTs the same row instead of piling up duplicates - the phone
     // reports each day's running total, not deltas.

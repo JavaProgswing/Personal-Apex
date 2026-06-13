@@ -13,6 +13,9 @@
     "build": "vite build",
     "start": "cross-env NODE_ENV=production electron .",
     "dist": "vite build && electron-builder",
+    "mobile:build": "cd mobile_android && gradlew.bat :app:assembleDebug",
+    "mobile:install": "powershell -ExecutionPolicy Bypass -File tools/install-mobile-debug.ps1",
+    "mobile:install:build": "powershell -ExecutionPolicy Bypass -File tools/install-mobile-debug.ps1 -Build",
     "postinstall": "electron-builder install-app-deps",
     "rebuild": "electron-builder install-app-deps"
   },

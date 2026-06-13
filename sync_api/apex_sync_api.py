@@ -171,7 +171,8 @@ def init_db() -> None:
                 intensity TEXT DEFAULT 'strict',
                 ends_at TEXT,
                 source_device TEXT,
-                updated_at TEXT
+                updated_at TEXT,
+                stop_requested_at TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
             CREATE INDEX IF NOT EXISTS idx_routines_date ON routines(date);
@@ -192,10 +193,13 @@ def init_db() -> None:
             conn.execute("UPDATE wellbeing_sessions SET updated_at = COALESCE(ended_at, date)")
         # Safe now that the column is guaranteed to exist.
         conn.execute("CREATE INDEX IF NOT EXISTS idx_wellbeing_updated ON wellbeing_sessions(updated_at)")
-        # focus_state.intensity added after the table shipped — backfill.
+        # focus_state.intensity / stop_requested_at added after the table
+        # shipped — backfill on existing DBs.
         fcols = {row[1] for row in conn.execute("PRAGMA table_info(focus_state)")}
         if "intensity" not in fcols:
             conn.execute("ALTER TABLE focus_state ADD COLUMN intensity TEXT DEFAULT 'strict'")
+        if "stop_requested_at" not in fcols:
+            conn.execute("ALTER TABLE focus_state ADD COLUMN stop_requested_at TEXT")
 
 
 app = FastAPI(title=APP_NAME, version="1.0.0")
@@ -669,19 +673,44 @@ def put_focus(payload: FocusIn, device: Device = Depends(current_device)) -> dic
     """Desktop publishes its focus state here when a timer / Zen mode starts or
     stops; the phone polls it to run the mobile distraction blocker at the
     matching intensity."""
+    # A real published state supersedes any pending emergency-stop request:
+    # starting a fresh block clears the kill flag so it can't be stopped by a
+    # stale request, and a clean stand-down clears it too.
     with db() as conn:
         conn.execute(
             """
-            INSERT INTO focus_state (id, active, title, mode, intensity, ends_at, source_device, updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO focus_state (id, active, title, mode, intensity, ends_at, source_device, updated_at, stop_requested_at)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, NULL)
             ON CONFLICT(id) DO UPDATE SET
                 active = excluded.active, title = excluded.title, mode = excluded.mode,
                 intensity = excluded.intensity, ends_at = excluded.ends_at,
-                source_device = excluded.source_device, updated_at = excluded.updated_at
+                source_device = excluded.source_device, updated_at = excluded.updated_at,
+                stop_requested_at = NULL
             """,
             (1 if payload.active else 0, payload.title, payload.mode, payload.intensity, payload.ends_at, device.id, now_iso()),
         )
     return {"ok": True, "active": payload.active}
+
+
+@app.post("/focus/stop")
+def stop_focus(device: Device = Depends(current_device)) -> dict[str, Any]:
+    """Emergency stop: any paired device (phone, web, desktop) can kill the
+    active focus block. Sets active=0 and stamps stop_requested_at; the desktop
+    polls this while it has a local timer/Zen running and force-ends it
+    (bypassing even a locked Zen). Single-user system, so any device may stop."""
+    stamped = now_iso()
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO focus_state (id, active, stop_requested_at, source_device, updated_at)
+            VALUES (1, 0, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                active = 0, stop_requested_at = excluded.stop_requested_at,
+                source_device = excluded.source_device, updated_at = excluded.updated_at
+            """,
+            (stamped, device.id, stamped),
+        )
+    return {"ok": True, "stopped_at": stamped}
 
 
 @app.get("/focus")
@@ -689,7 +718,7 @@ def get_focus(device: Device = Depends(current_device)) -> dict[str, Any]:
     with db() as conn:
         row = conn.execute("SELECT * FROM focus_state WHERE id = 1").fetchone()
     if not row:
-        return {"active": False, "title": None, "mode": None, "intensity": "strict", "ends_at": None}
+        return {"active": False, "title": None, "mode": None, "intensity": "strict", "ends_at": None, "stop_requested_at": None}
     data = dict(row)
     active = bool(data.get("active"))
     ends_at = data.get("ends_at")
@@ -707,6 +736,7 @@ def get_focus(device: Device = Depends(current_device)) -> dict[str, Any]:
         "mode": data.get("mode"),
         "intensity": data.get("intensity") or "strict",
         "ends_at": ends_at,
+        "stop_requested_at": data.get("stop_requested_at"),
         "updated_at": data.get("updated_at"),
     }
 

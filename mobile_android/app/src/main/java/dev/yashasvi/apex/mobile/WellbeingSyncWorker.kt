@@ -79,7 +79,7 @@ class WellbeingSyncWorker(
             )
         }
         val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
-        val rangeText = "${fmt.format(java.util.Date(latestEnd))}–${fmt.format(java.util.Date(now))}"
+        val rangeText = "${fmt.format(java.util.Date(latestEnd))}-${fmt.format(java.util.Date(now))}"
         val open = PendingIntent.getActivity(
             applicationContext, 7601,
             Intent(applicationContext, MainActivity::class.java)
@@ -96,7 +96,7 @@ class WellbeingSyncWorker(
         manager.notify(GAP_ID, builder
             .setSmallIcon(android.R.drawable.ic_menu_recent_history)
             .setContentTitle("What were you up to? ($rangeText)")
-            .setContentText("No screen time for a while — tap to log it so today's record is complete.")
+            .setContentText("No screen time for a while - tap to log it so today's record is complete.")
             .setContentIntent(open)
             .setAutoCancel(true)
             .build())

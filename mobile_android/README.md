@@ -11,16 +11,19 @@ desktop sees your mobile screen-time **without USB or ADB**.
 ## Features
 
 - **Bottom-nav tabs** - Today (plan + alarms + quick capture), Tasks, Notes,
-  Activity, Settings — slide-up tab transitions, badge counts on Tasks.
+  Activity, Settings. Tabs use restrained icons, slide-up transitions, haptic
+  feedback, and badge counts on Tasks.
 - **Real alarms** - wake/sleep times editable with clock pickers (synced both
   ways with the desktop routine); scheduled via `setAlarmClock()` so they are
   exact through Doze and OEM battery savers, survive reboots
   (`BOOT_COMPLETED` receiver), and actually **ring**: looping ringtone on the
-  alarm stream + vibration + full-screen Dismiss / Snooze-10 / **"I'm awake ✓"**
+  alarm stream + vibration + full-screen Dismiss / Snooze-10 / **"I'm awake"**
   (which logs `wake_done` and triggers the desktop's morning brief).
 - **Zen blocker** - mirrors desktop Zen mode: while a focus block runs, a
   foreground watcher bounces distraction apps back to home (with the overlay
-  permission) or nudges loudly. Bounce count shows in Activity.
+  permission) or nudges loudly. The foreground notification has a **Stop focus**
+  action, and the Today tab shows an explicit Stop card while a block is live.
+  Bounce count shows in Activity.
 - **Accurate screen time** - parity with Digital Wellbeing: event-stream
   accounting clamped at screen-off/keyguard, launch counts per app, system
   services filtered out, day-scoped (no stale yesterday data after midnight),
@@ -35,10 +38,10 @@ desktop sees your mobile screen-time **without USB or ADB**.
 - **Two-way tasks** - the Tasks tab lists your desktop's top open tasks
   (pushed every desktop sync cycle), tap a row to complete it (flows back to
   the desktop), and quick-add new tasks that appear in desktop Apex.
-- **Pairing card (Settings tab)** - explicit `● PAIRED - <name>` /
-  `○ NOT PAIRED` badge, device id, API base, last upload, server-side token
-  check via `/me`, plus **Unpair**. Admin can audit/revoke any device via
-  `GET/DELETE /devices` on the sync API.
+- **Pairing card (Settings tab)** - QR scan is the primary path; manual 6-digit
+  pairing is tucked behind a collapsible **Manual pairing code** control. The
+  status badge shows `PAIRED - <name>`, `NOT PAIRED`, or token errors, plus
+  server-side token checks via `/me`.
 
 - **QR pairing (one tap)** - **Scan pairing QR** opens the camera (ZXing) and
   reads the code shown on the desktop (`/pairing-codes/{code}/qr.png`). The QR
@@ -46,11 +49,11 @@ desktop sees your mobile screen-time **without USB or ADB**.
   and pairs automatically. Manual 6-digit entry still works.
 - **Connection indicator** - a header dot pings `/health` (green = reachable);
   once paired it verifies the token via `/me` and shows the device name + last
-  seen. An **overflow (⋮) menu** holds Refresh / Sync / Usage access /
+  seen. The overflow menu holds Refresh / Sync / Usage access /
   Background-sync / Check-connection / Forget.
-- **Today view** - pulls today's routine (wake/sleep, main objective), open
-  tasks, and due reminders. Buttons to log **Wake done / Sleep done / Goal done**
-  back to Apex.
+- **Today view** - a hero dashboard for the day, live focus/Zen stop card,
+  routine, alarms, quick Note/Todo capture, recent notes, open tasks, and due
+  reminders.
 - **On-device usage preview** - shows today's top apps + total minutes read
   locally from Usage Access, before you sync.
 - **Routine notifications** - morning/night local notifications via
@@ -90,7 +93,17 @@ Plugin's required Gradle version:
 ```powershell
 cd "C:\Users\yashasvi\Documents\College Prod\mobile_android"
 .\gradlew.bat assembleDebug
-& "C:\Program Files (x86)\Minimal ADB and Fastboot\adb.exe" install -r ".\app\build\outputs\apk\debug\app-debug.apk"
+cd ..
+npm run mobile:install
+```
+
+The install script auto-detects `adb.exe` from PATH, `ANDROID_HOME`,
+`ANDROID_SDK_ROOT`, `%LOCALAPPDATA%\Android\Sdk\platform-tools`, or Minimal ADB.
+To build and install in one shot:
+
+```powershell
+cd "C:\Users\yashasvi\Documents\College Prod"
+npm run mobile:install:build
 ```
 
 ## First-run setup
@@ -103,8 +116,9 @@ cd "C:\Users\yashasvi\Documents\College Prod\mobile_android"
    curl -X POST https://apex.yashasviallen.is-a.dev/pairing-codes \
      -H "Authorization: Bearer <APEX_SYNC_ADMIN_TOKEN>"
    ```
-2. In Apex Mobile, tap **Scan pairing QR** and point the camera at it (or type
-   the 6-digit code and tap **Pair**). Allow the camera prompt the first time.
+2. In Apex Mobile, tap **Scan desktop QR** and point the camera at it. If the
+   camera path is unavailable, open **Manual pairing code**, type the 6-digit
+   code, and tap **Pair with code**. Allow the camera prompt the first time.
 3. Tap **Usage access** → allow Apex Mobile → return and tap **Sync usage**.
 4. Tap **Background sync: Off** to flip it **On** for hands-free uploads.
 5. On Android 13+, allow notifications when prompted (for wake/sleep nudges).

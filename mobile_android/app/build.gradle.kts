@@ -11,8 +11,8 @@ android {
         applicationId = "dev.yashasvi.apex.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.6.1"
+        versionCode = 9
+        versionName = "0.6.3"
     }
 
     compileOptions {

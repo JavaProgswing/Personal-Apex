@@ -624,6 +624,27 @@ async function pushFocus({ active, title, mode, intensity, endsAt } = {}) {
   }
 }
 
+// Current cloud focus state (incl. stop_requested_at) — used by the desktop's
+// emergency-stop watcher to honour a remote kill from the phone / web.
+async function getFocusState() {
+  try {
+    return await apiFetch("/focus");
+  } catch {
+    return null;
+  }
+}
+
+// Ask the cloud to kill the active focus block (emergency stop from this
+// device). The desktop's watcher picks it up and force-ends the local block.
+async function requestFocusStop() {
+  try {
+    const body = await apiFetch("/focus/stop", { method: "POST" });
+    return { ok: true, ...body };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
 module.exports = {
   getConfig,
   saveConfig,
@@ -642,4 +663,6 @@ module.exports = {
   listDevices,
   revokeDevice,
   pushFocus,
+  getFocusState,
+  requestFocusStop,
 };

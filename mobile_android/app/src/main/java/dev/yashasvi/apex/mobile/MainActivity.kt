@@ -22,6 +22,7 @@ import android.speech.RecognizerIntent
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
@@ -68,7 +69,9 @@ class MainActivity : ComponentActivity() {
     private var currentTab = ""
 
     // ── Today tab ────────────────────────────────────────────────────────────
-    private lateinit var focusBanner: TextView
+    private lateinit var focusBanner: LinearLayout
+    private lateinit var focusBannerTitle: TextView
+    private lateinit var focusBannerDetail: TextView
     private lateinit var routineText: TextView
     private lateinit var planBox: LinearLayout
     private lateinit var scheduleBox: LinearLayout
@@ -243,12 +246,12 @@ class MainActivity : ComponentActivity() {
         }
         overlay.addView(label(
             when {
-                hard -> "🔒"
-                custom != null -> "⏰"
-                isSleep -> "☽"
-                else -> "☀"
+                hard -> "LOCKED"
+                custom != null -> "ALARM"
+                isSleep -> "SLEEP"
+                else -> "WAKE"
             },
-            64f, if (hard) red else if (isSleep) accent else amber, false,
+            22f, if (hard) red else if (isSleep) accent else amber, true,
         ))
         overlay.addView(space(8))
         overlay.addView(label(
@@ -256,7 +259,7 @@ class MainActivity : ComponentActivity() {
             56f, textColor, true,
         ))
         overlay.addView(label(
-            custom?.label ?: if (isSleep) "Time to wind down" else "Good morning — rise and shine",
+            custom?.label ?: if (isSleep) "Time to wind down" else "Good morning - rise and shine",
             15f, muted, false,
         ))
         overlay.addView(space(34))
@@ -279,11 +282,11 @@ class MainActivity : ComponentActivity() {
             overlay.addView(space(12))
             overlay.addView(wideButton("Unlock & stop") {
                 if (store.checkAlarmPin(pinInput.text.toString().trim())) {
-                    act(AlarmRingService.ACTION_DISMISS, "Hard alarm unlocked ✓", pinOk = true)
+                    act(AlarmRingService.ACTION_DISMISS, "Hard alarm unlocked.", pinOk = true)
                 } else {
                     pinInput.setText("")
-                    pinInput.hint = "Wrong PIN — alarm keeps ringing"
-                    pinInput.performHapticFeedback(android.view.HapticFeedbackConstants.REJECT)
+                    pinInput.hint = "Wrong PIN - alarm keeps ringing"
+                    hapticPress(pinInput)
                 }
             }.apply { minHeight = dp(58) })
             overlay.addView(space(10))
@@ -294,17 +297,17 @@ class MainActivity : ComponentActivity() {
         } else {
             overlay.addView(wideButton(
                 when {
-                    custom != null -> "Done ✓"
-                    isSleep -> "Going to bed ✓"
-                    else -> "I'm awake ✓"
+                    custom != null -> "Done"
+                    isSleep -> "Going to bed"
+                    else -> "I'm awake"
                 },
             ) {
-                if (custom != null) act(AlarmRingService.ACTION_DISMISS, "“${custom.label}” done ✓")
-                else act(AlarmRingService.ACTION_AWAKE, "Routine logged ✓")
+                if (custom != null) act(AlarmRingService.ACTION_DISMISS, "${custom.label} done.")
+                else act(AlarmRingService.ACTION_AWAKE, "Routine logged.")
             }.apply { minHeight = dp(58) })
             overlay.addView(space(12))
             overlay.addView(buttonRow(
-                quietButton("Snooze 10 min") { act(AlarmRingService.ACTION_SNOOZE, "Snoozed — rings again in 10 min.") },
+                quietButton("Snooze 10 min") { act(AlarmRingService.ACTION_SNOOZE, "Snoozed - rings again in 10 min.") },
                 quietButton("Dismiss") { act(AlarmRingService.ACTION_DISMISS, "Alarm dismissed.") },
             ))
         }
@@ -325,11 +328,11 @@ class MainActivity : ComponentActivity() {
     // pushed as a manual wellbeing session, lands in desktop screen time.
     private fun showGapLogDialog(startMs: Long, endMs: Long) {
         val fmt = java.text.SimpleDateFormat("HH:mm", Locale.US)
-        val range = "${fmt.format(java.util.Date(startMs))}–${fmt.format(java.util.Date(endMs))}"
+        val range = "${fmt.format(java.util.Date(startMs))}-${fmt.format(java.util.Date(endMs))}"
         val categories = arrayOf("productive", "leisure", "rest", "distraction")
         var picked = 1 // default: leisure
         val inputBox = EditText(this).apply {
-            hint = "What were you doing? e.g. gym, class, nap…"
+            hint = "What were you doing? e.g. gym, class, nap..."
             setTextColor(textColor)
             setHintTextColor(faint)
             setPadding(dp(20), dp(12), dp(20), dp(12))
@@ -341,7 +344,7 @@ class MainActivity : ComponentActivity() {
             .setPositiveButton("Log it") { _, _ ->
                 val what = inputBox.text.toString().trim().ifBlank { "Away from screens" }
                 if (store.token.isNullOrBlank()) { statusText.text = "Pair first (Settings tab)."; return@setPositiveButton }
-                runTask("Logging $range…") {
+                runTask("Logging $range...") {
                     client().pushWellbeing(listOf(WellbeingSession(
                         date = java.time.LocalDate.now().toString(),
                         packageName = "manual.log.${startMs / 60000}",
@@ -351,7 +354,7 @@ class MainActivity : ComponentActivity() {
                         endedAt = java.time.Instant.ofEpochMilli(endMs).toString(),
                         minutes = (endMs - startMs) / 60_000.0,
                     )), store.deviceId)
-                    statusText.text = "Logged “$what” for $range ✓"
+                    statusText.text = "Logged $what for $range."
                 }
             }
             .setNegativeButton("Skip", null)
@@ -507,7 +510,10 @@ class MainActivity : ComponentActivity() {
                 background = rippleRounded(Color.TRANSPARENT, dp(10), Color.TRANSPARENT)
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 setPadding(0, dp(6), 0, dp(6))
-                setOnClickListener { selectTab(key) }
+                setOnClickListener {
+                    hapticTap(this)
+                    selectTab(key)
+                }
             }
             navButtons[key] = btn
             navBg.addView(btn)
@@ -602,20 +608,15 @@ class MainActivity : ComponentActivity() {
             hour < 17 -> "Good afternoon"
             else -> "Good evening ☽"
         }
-        addView(label(greeting, 24f, textColor, true))
-        addView(label(
+        addView(todayHero(
+            greeting,
             java.time.LocalDate.now().format(
                 java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM"),
             ),
-            13f, muted, false,
         ))
         addView(space(14))
 
-        focusBanner = label("", 13.5f, bg, true).apply {
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = rounded(accent, dp(12), Color.TRANSPARENT)
-            visibility = View.GONE
-        }
+        focusBanner = focusBannerCard()
         addView(focusBanner)
         addView(space(4))
         addView(card {
@@ -631,9 +632,9 @@ class MainActivity : ComponentActivity() {
             scheduleBox = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
             addView(scheduleBox)
             addView(space(10))
-            addView(quietButton("▶ Test alarm — rings until you dismiss it") {
+            addView(quietButton("Test alarm ring") {
                 AlarmRingService.ring(this@MainActivity, "wake_alarm")
-                statusText.text = "Test alarm ringing — dismiss it from the notification."
+                statusText.text = "Test alarm ringing. Dismiss it from the alarm screen or notification."
             }.fullWidth())
         })
         addView(card {
@@ -642,7 +643,7 @@ class MainActivity : ComponentActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
-            quickCaptureInput = input("Type it — pick where it goes below…").apply {
+            quickCaptureInput = input("Type it here, then choose Note or Todo").apply {
                 setSingleLine(false)
                 minLines = 2
                 gravity = Gravity.TOP
@@ -659,8 +660,8 @@ class MainActivity : ComponentActivity() {
             addView(space(12))
             // Two clearly-labelled destinations so note vs todo is never a guess.
             addView(buttonRow(
-                captureChoice("✎  Note", "→ Notes · journal entry", accent) { addQuickNote() },
-                captureChoice("✓  Todo", "→ Tasks · syncs to desktop", amber) { addQuickTodo() },
+                captureChoice("✎  Note", "Save to Notes", accent) { addQuickNote() },
+                captureChoice("✓  Todo", "Sync to Tasks", amber) { addQuickTodo() },
             ))
             addView(space(12))
             addView(label("Recent notes", 11f, faint, true).apply {
@@ -679,6 +680,75 @@ class MainActivity : ComponentActivity() {
         renderReminders()
         renderTodayNotes()
         renderScheduleControls()
+    }
+
+    private fun todayHero(greeting: String, date: String): LinearLayout {
+        val paired = !store.token.isNullOrBlank()
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.parseColor("#142032"), Color.parseColor("#101722")),
+            ).apply {
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), Color.parseColor("#2B3A4D"))
+            }
+            elevation = dp(3).toFloat()
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).also { it.setMargins(0, 0, 0, dp(14)) }
+
+            val top = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            top.addView(label("TODAY", 10.5f, accent, true).apply {
+                letterSpacing = 0.14f
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            top.addView(statusPill(if (paired) "Synced" else "Pair setup", if (paired) green else amber))
+            addView(top)
+            addView(space(6))
+            addView(label(greeting, 24f, textColor, true))
+            addView(space(2))
+            addView(label(
+                date + if (paired) "  ·  tasks, notes, alarms linked" else "  ·  pair to sync",
+                12.5f, if (paired) muted else amber, false,
+            ))
+        }
+    }
+
+    private fun focusBannerCard(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(12), dp(12), dp(12))
+            background = rippleRounded(panel2, dp(16), accent)
+            visibility = View.GONE
+            isClickable = true
+            setOnClickListener {
+                hapticPress(this)
+                confirmEmergencyStop()
+            }
+
+            val col = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            focusBannerTitle = label("", 14.5f, textColor, true)
+            focusBannerDetail = label("", 11.8f, muted, false)
+            col.addView(focusBannerTitle)
+            col.addView(space(3))
+            col.addView(focusBannerDetail)
+            addView(col)
+            addView(View(this@MainActivity).apply { layoutParams = LinearLayout.LayoutParams(dp(10), 1) })
+            addView(baseButton("Stop", red, Color.WHITE) { confirmEmergencyStop() }.apply {
+                minHeight = dp(42)
+                setTypeface(typeface, Typeface.BOLD)
+            })
+        }
     }
 
     private fun renderTodayNotes() {
@@ -713,7 +783,7 @@ class MainActivity : ComponentActivity() {
             }
             col.addView(label(note.title?.takeIf { it.isNotBlank() } ?: preview.take(48).ifBlank { "Phone note" }, 13.5f, textColor, false))
             col.addView(space(3))
-            col.addView(label("${date.substring(5)} · ${preview.take(if (compact) 72 else 180)}", 11.5f, faint, false))
+            col.addView(label("${date.substring(5)} - ${preview.take(if (compact) 72 else 180)}", 11.5f, faint, false))
             addView(col)
             note.id?.let { id ->
                 if (compact) {
@@ -724,7 +794,7 @@ class MainActivity : ComponentActivity() {
                         if (::noteTitleInput.isInitialized) noteTitleInput.setText(note.title.orEmpty())
                         if (::noteBodyInput.isInitialized) noteBodyInput.setText(note.body)
                         if (::noteEditBadge.isInitialized) noteEditBadge.visibility = View.VISIBLE
-                        statusText.text = "Editing note — Save updates it, Discard cancels."
+                        statusText.text = "Editing note. Save updates it, Discard cancels."
                     }
                     addView(space(10))
                     addView(buttonRow(
@@ -748,12 +818,12 @@ class MainActivity : ComponentActivity() {
             head.addView(sectionTitle("Write").apply {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             })
-            noteEditBadge = label("✎ editing", 11.5f, amber, true).apply { visibility = View.GONE }
+            noteEditBadge = label("Editing", 11.5f, amber, true).apply { visibility = View.GONE }
             head.addView(noteEditBadge)
             addView(head)
             noteTitleInput = input("Title (optional)")
             addView(field("Title", noteTitleInput))
-            noteBodyInput = input("What happened, what changed, what to remember…").apply {
+            noteBodyInput = input("What happened, what changed, what to remember...").apply {
                 setSingleLine(false)
                 minLines = 4
                 gravity = Gravity.TOP
@@ -776,10 +846,10 @@ class MainActivity : ComponentActivity() {
             head.addView(sectionTitle("All notes").apply {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             })
-            head.addView(iconButton("⟳") { refreshFromServer() })
+            head.addView(baseButton("Sync", panel2, textColor) { refreshFromServer() }.apply { minHeight = dp(38) })
             addView(head)
             addView(space(6))
-            noteSearchInput = input("Search notes…").apply {
+            noteSearchInput = input("Search notes...").apply {
                 addTextChangedListener(object : android.text.TextWatcher {
                     override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                     override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -811,8 +881,8 @@ class MainActivity : ComponentActivity() {
         }
         if (visible.isEmpty()) {
             notesListBox.addView(label(
-                if (q.isBlank()) "No notes yet — write one above or capture from Today."
-                else "No notes match “$q”.",
+                if (q.isBlank()) "No notes yet. Write one above or capture from Today."
+                else "No notes match \"$q\".",
                 12.5f, muted, false,
             ))
             return
@@ -854,7 +924,7 @@ class MainActivity : ComponentActivity() {
             .ifBlank { body.lineSequence().firstOrNull().orEmpty().take(80) }
             .ifBlank { "Phone note" }
         val noteId = editingNoteId
-        runTask(if (noteId == null) "Saving note…" else "Updating note…") {
+        runTask(if (noteId == null) "Saving note..." else "Updating note...") {
             val saved = client().saveNote(ApexNote(
                 id = noteId,
                 date = java.time.LocalDate.now().toString(),
@@ -867,13 +937,13 @@ class MainActivity : ComponentActivity() {
             notes = listOf(saved) + notes.filter { it.id != saved.id }
             renderTodayNotes()
             renderNotesList()
-            statusText.text = "Note synced ✓"
+            statusText.text = "Note synced."
         }
     }
 
     private fun deleteNote(id: String) {
         if (store.token.isNullOrBlank()) { statusText.text = "Pair first (Settings tab)."; return }
-        runTask("Deleting note…") {
+        runTask("Deleting note...") {
             client().deleteNote(id)
             if (editingNoteId == id) {
                 editingNoteId = null
@@ -893,7 +963,7 @@ class MainActivity : ComponentActivity() {
         val routine = currentRoutine
         val wakeLoud = store.wakeStyle == "alarm"
         scheduleBox.addView(scheduleRow(
-            title = "Wake · ${routine?.wakeTime ?: "--:--"}",
+            title = "☀ Wake · ${routine?.wakeTime ?: "--:--"}",
             detail = (if (wakeLoud) "♪ ${store.wakeRingtoneName}" else "Quiet notification") + " · tap to change time",
             enabled = store.wakeAlarmEnabled,
             color = amber,
@@ -905,7 +975,7 @@ class MainActivity : ComponentActivity() {
             },
             actionText = if (wakeLoud) "♪ Sound" else null,
             onAction = if (wakeLoud) ({ pickWakeRingtone() }) else null,
-            styleText = if (wakeLoud) "⏰ Alarm" else "🔕 Quiet",
+            styleText = if (wakeLoud) "⏰ Alarm" else "Quiet",
             onStyleTap = {
                 store.wakeStyle = if (wakeLoud) "quiet" else "alarm"
                 renderScheduleControls()
@@ -915,7 +985,7 @@ class MainActivity : ComponentActivity() {
         scheduleBox.addView(space(8))
         val sleepLoud = store.sleepStyle == "alarm"
         scheduleBox.addView(scheduleRow(
-            title = "Sleep · ${routine?.sleepTime ?: "--:--"}",
+            title = "☽ Sleep · ${routine?.sleepTime ?: "--:--"}",
             detail = (if (sleepLoud) "♪ ${store.wakeRingtoneName}" else "Quiet notification") + " · tap to change time",
             enabled = store.sleepReminderEnabled,
             color = accent,
@@ -927,22 +997,21 @@ class MainActivity : ComponentActivity() {
             },
             actionText = null,
             onAction = null,
-            styleText = if (sleepLoud) "⏰ Alarm" else "🔕 Quiet",
+            styleText = if (sleepLoud) "⏰ Alarm" else "Quiet",
             onStyleTap = {
                 store.sleepStyle = if (sleepLoud) "quiet" else "alarm"
                 renderScheduleControls()
                 statusText.text = "Sleep is now a ${if (store.sleepStyle == "alarm") "loud alarm" else "quiet reminder"}."
             },
         ))
-        // Custom alarms — anything beyond wake/sleep. Tap edits, long-press
-        // deletes, switch arms/disarms. 🔒 = hard mode (PIN to stop).
+        // Custom alarms: tap edits, long-press deletes, switch arms/disarms.
         val customs = store.customAlarms.sortedBy { it.hhmm }
         customs.forEach { a ->
             scheduleBox.addView(space(8))
             scheduleBox.addView(customAlarmRow(a))
         }
         scheduleBox.addView(space(10))
-        scheduleBox.addView(quietButton("＋  Add alarm") { showAlarmEditor(null) }.fullWidth())
+        scheduleBox.addView(quietButton("＋ Add alarm") { showAlarmEditor(null) }.fullWidth())
     }
 
     private fun customAlarmRow(a: CustomAlarm): LinearLayout {
@@ -960,9 +1029,9 @@ class MainActivity : ComponentActivity() {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             }
-            col.addView(label("${a.hhmm} · ${a.label}" + if (a.hard) "  🔒" else "", 13.5f, textColor, true))
+            col.addView(label("${a.hhmm} - ${a.label}" + if (a.hard) "  HARD" else "", 13.5f, textColor, true))
             col.addView(label(
-                RoutineAlarmScheduler.describeDays(a) + if (a.hard) " · PIN to stop" else "",
+                RoutineAlarmScheduler.describeDays(a) + if (a.hard) " - PIN to stop" else "",
                 11.5f, if (a.enabled) muted else faint, false,
             ))
             addView(col)
@@ -971,17 +1040,21 @@ class MainActivity : ComponentActivity() {
                 tintSwitch(this)
                 setOnCheckedChangeListener { buttonView, on ->
                     if (!buttonView.isPressed) return@setOnCheckedChangeListener
+                    hapticTap(buttonView)
                     store.upsertAlarm(a.copy(enabled = on))
                     if (on) RoutineAlarmScheduler.scheduleCustom(this@MainActivity, a.copy(enabled = true))
                     else RoutineAlarmScheduler.cancelCustom(this@MainActivity, a.id)
                     renderScheduleControls()
-                    statusText.text = "“${a.label}” ${if (on) "armed for ${a.hhmm}" else "off"}."
+                    statusText.text = "${a.label} ${if (on) "armed for ${a.hhmm}" else "off"}."
                 }
             })
-            setOnClickListener { showAlarmEditor(a) }
+            setOnClickListener {
+                hapticTap(this)
+                showAlarmEditor(a)
+            }
             setOnLongClickListener {
                 android.app.AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Delete “${a.label}”?")
+                    .setTitle("Delete ${a.label}?")
                     .setPositiveButton("Delete") { _, _ ->
                         RoutineAlarmScheduler.cancelCustom(this@MainActivity, a.id)
                         store.removeAlarm(a.id)
@@ -1007,24 +1080,24 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, dp(12), pad, dp(4))
         }
-        val labelInput = input("e.g. Gym, DSA hour, meds…").apply {
+        val labelInput = input("e.g. Gym, DSA hour, meds...").apply {
             setText(existing?.label ?: "")
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         }
         root.addView(field("Label", labelInput))
 
-        val timeBtn = quietButton("⏰  $hhmm") {}
+        val timeBtn = quietButton("Time $hhmm") {}
         timeBtn.setOnClickListener {
             val parts = hhmm.split(":")
             android.app.TimePickerDialog(this, { _, h, m ->
                 hhmm = String.format("%02d:%02d", h, m)
-                timeBtn.text = "⏰  $hhmm"
+                timeBtn.text = "Time $hhmm"
             }, parts[0].toIntOrNull() ?: 8, parts.getOrNull(1)?.toIntOrNull() ?: 0, true).show()
         }
         root.addView(timeBtn.fullWidth())
         root.addView(space(12))
 
-        root.addView(label("REPEAT — leave all off for every day", 10.5f, faint, true))
+        root.addView(label("REPEAT - leave all off for every day", 10.5f, faint, true))
         root.addView(space(6))
         val daysBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val dayNames = listOf("M", "T", "W", "T", "F", "S", "S")
@@ -1057,8 +1130,8 @@ class MainActivity : ComponentActivity() {
         root.addView(space(6))
         lateinit var hardToggleRefresh: () -> Unit
         val hardRow = toggleRow(
-            "Hard mode 🔒",
-            "No snooze, no dismiss — rings in 3-min cycles until your PIN stops it (or the phone is powered off).",
+            "Hard mode",
+            "No snooze, no dismiss - rings in 3-min cycles until your PIN stops it (or the phone is powered off).",
             hard,
         ) { on ->
             if (on && store.alarmPinHash == null) {
@@ -1089,15 +1162,15 @@ class MainActivity : ComponentActivity() {
                 store.upsertAlarm(alarm)
                 RoutineAlarmScheduler.scheduleCustom(this, alarm)
                 renderScheduleControls()
-                statusText.text = "“${alarm.label}” armed for ${alarm.hhmm}" +
-                    (if (alarm.hard) " · hard mode 🔒" else "") + "."
+                statusText.text = "${alarm.label} armed for ${alarm.hhmm}" +
+                    (if (alarm.hard) " - hard mode" else "") + "."
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    // PIN setup — two matching 4-8 digit entries. Used the first time hard
-    // mode is enabled, and from Settings → System to change it.
+        // PIN setup: two matching 4-8 digit entries. Used the first time hard
+        // mode is enabled, and from Settings > System to change it.
     private fun showSetPinDialog(onSet: (() -> Unit)? = null, onCancel: (() -> Unit)? = null) {
         val pad = dp(20)
         val root = LinearLayout(this).apply {
@@ -1107,7 +1180,7 @@ class MainActivity : ComponentActivity() {
         fun pinField(hintText: String) = input(hintText).apply {
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
         }
-        val p1 = pinField("4–8 digits")
+        val p1 = pinField("4-8 digits")
         val p2 = pinField("Repeat it")
         root.addView(field("New alarm PIN", p1))
         root.addView(field("Confirm", p2))
@@ -1122,9 +1195,9 @@ class MainActivity : ComponentActivity() {
                 val a = p1.text.toString().trim()
                 val b = p2.text.toString().trim()
                 when {
-                    !a.matches(Regex("\\d{4,8}")) -> { statusText.text = "PIN must be 4–8 digits."; onCancel?.invoke() }
-                    a != b -> { statusText.text = "PINs didn't match — try again."; onCancel?.invoke() }
-                    else -> { store.setAlarmPin(a); statusText.text = "Alarm PIN saved ✓"; onSet?.invoke() }
+                    !a.matches(Regex("\\d{4,8}")) -> { statusText.text = "PIN must be 4-8 digits."; onCancel?.invoke() }
+                    a != b -> { statusText.text = "PINs didn't match - try again."; onCancel?.invoke() }
+                    else -> { store.setAlarmPin(a); statusText.text = "Alarm PIN saved."; onSet?.invoke() }
                 }
             }
             .setNegativeButton("Cancel") { _, _ -> onCancel?.invoke() }
@@ -1154,16 +1227,16 @@ class MainActivity : ComponentActivity() {
                 statusText.text = "${if (kind == "wake") "Wake" else "Sleep"} time set to $hhmm (local only)."
                 return@TimePickerDialog
             }
-            runTask("Saving ${if (kind == "wake") "wake" else "sleep"} time…") {
+            runTask("Saving ${if (kind == "wake") "wake" else "sleep"} time...") {
                 val saved = client().saveRoutineTimes(next)
                 currentRoutine = saved
                 RoutineAlarmScheduler.scheduleConfigured(this, saved)
                 renderScheduleControls()
                 if (::routineText.isInitialized) {
-                    routineText.text = "Morning ${saved.wakeTime ?: "--"}   ·   Night ${saved.sleepTime ?: "--"}" +
+                    routineText.text = "Morning ${saved.wakeTime ?: "--"}   -   Night ${saved.sleepTime ?: "--"}" +
                         (saved.objective?.takeIf { it.isNotBlank() }?.let { "\nMain goal: $it" } ?: "")
                 }
-                statusText.text = "${if (kind == "wake") "Wake" else "Sleep"} time → $hhmm. Desktop picks it up next sync."
+            statusText.text = "${if (kind == "wake") "Wake" else "Sleep"} time set to $hhmm. Desktop picks it up next sync."
             }
         }, h, m, true).show()
     }
@@ -1194,7 +1267,10 @@ class MainActivity : ComponentActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 if (onTimeTap != null) {
                     isClickable = true
-                    setOnClickListener { onTimeTap() }
+                    setOnClickListener {
+                        hapticTap(this)
+                        onTimeTap()
+                    }
                 }
             }
             col.addView(label(title, 13.5f, textColor, true))
@@ -1229,6 +1305,7 @@ class MainActivity : ComponentActivity() {
                 tintSwitch(this)
                 setOnCheckedChangeListener { buttonView, on ->
                     if (buttonView.isPressed) {
+                        hapticTap(buttonView)
                         buttonView.post { onToggle(on) }
                     }
                 }
@@ -1295,7 +1372,7 @@ class MainActivity : ComponentActivity() {
         ).distinctBy { it.id }.take(4)
         if (planned.isEmpty()) {
             planBox.addView(label(
-                if (open.isEmpty()) "No open tasks — quick-add below or pull from desktop."
+                if (open.isEmpty()) "No open tasks. Quick-add below or pull from desktop."
                 else "Nothing due today. ${open.size} open task${if (open.size == 1) "" else "s"} in the backlog.",
                 12.5f, muted, false,
             ))
@@ -1325,10 +1402,10 @@ class MainActivity : ComponentActivity() {
         val digest = buildString {
             append("All clear right now.")
             if (open > 0) append("  $open open task${if (open == 1) "" else "s"}")
-            nextDue?.let { append(" · next due ${it.dueAt!!.take(10).substring(5)}${hhmmOf(it.dueAt)}") }
+            nextDue?.let { append(" - next due ${it.dueAt!!.take(10).substring(5)}${hhmmOf(it.dueAt)}") }
             currentRoutine?.let {
-                append("\nWake ${it.wakeTime ?: "--"} · sleep ${it.sleepTime ?: "--"}")
-                if (store.wakeAlarmEnabled || store.sleepReminderEnabled) append(" · alarms armed")
+                append("\nWake ${it.wakeTime ?: "--"} - sleep ${it.sleepTime ?: "--"}")
+                if (store.wakeAlarmEnabled || store.sleepReminderEnabled) append(" - alarms armed")
             }
         }
         remindersBox.addView(label(digest, 12.5f, muted, false))
@@ -1341,18 +1418,15 @@ class MainActivity : ComponentActivity() {
             r.kind == "sleep" -> accent
             else -> muted
         }
-        val glyph = when {
-            r.overdue -> "⚠"
-            r.kind == "wake" -> "☀"
-            r.kind == "sleep" -> "☽"
-            else -> "•"
-        }
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
             background = rounded(panel2, dp(10), if (r.overdue) red else border2)
-            addView(label(glyph, 16f, tint, true).apply { setPadding(0, 0, dp(12), 0) })
+            addView(View(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(9), dp(9)).also { it.marginEnd = dp(12) }
+                background = dot(tint)
+            })
             val col = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -1411,8 +1485,8 @@ class MainActivity : ComponentActivity() {
             addView(label("Enter = quick add. Details opens priority + deadline + category.", 11.5f, faint, false))
             addView(space(8))
             addView(buttonRow(
-                quietButton("⊞  Details…") { showTaskComposer() },
-                quietButton("🎙  Speak") { launchVoiceTodo() },
+                quietButton("Details") { showTaskComposer() },
+                quietButton("Speak") { launchVoiceTodo() },
             ))
         })
         addView(card {
@@ -1423,7 +1497,7 @@ class MainActivity : ComponentActivity() {
             head.addView(sectionTitle("Task list").apply {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             })
-            head.addView(iconButton("⟳") { refreshFromServer() })
+            head.addView(baseButton("Sync", panel2, textColor) { refreshFromServer() }.apply { minHeight = dp(38) })
             addView(head)
             addView(space(8))
             taskListBox = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
@@ -1437,8 +1511,8 @@ class MainActivity : ComponentActivity() {
         return d
     }
 
-    // Full task composer — mirrors the desktop's task editor: title,
-    // priority (P1 urgent … P5 someday), category, and a deadline.
+    // Full task composer: mirrors the desktop's task editor with priority,
+    // category, and deadline.
     private fun showTaskComposer() {
         if (store.token.isNullOrBlank()) { statusText.text = "Pair first (Settings tab)."; return }
         var priority = 3
@@ -1488,7 +1562,7 @@ class MainActivity : ComponentActivity() {
         root.addView(space(6))
         root.addView(chipBar(listOf("P1", "P2", "P3", "P4", "P5"), "P3") { priority = it.removePrefix("P").toInt() })
         root.addView(space(4))
-        root.addView(label("P1 = urgent · P5 = someday", 10.5f, faint, false))
+        root.addView(label("P1 = urgent - P5 = someday", 10.5f, faint, false))
         root.addView(space(12))
         root.addView(label("CATEGORY", 10.5f, faint, true))
         root.addView(space(6))
@@ -1497,14 +1571,14 @@ class MainActivity : ComponentActivity() {
         root.addView(label("DEADLINE", 10.5f, faint, true))
         root.addView(space(6))
         val dueLabel = label("No deadline", 12.5f, muted, false)
-        root.addView(chipBar(listOf("None", "Tonight", "Tmw", "Sat", "Pick…"), "None") { opt ->
+        root.addView(chipBar(listOf("None", "Tonight", "Tmw", "Sat", "Pick..."), "None") { opt ->
             val today = java.time.LocalDate.now()
             when (opt) {
                 "None" -> { dueAt = null; dueLabel.text = "No deadline" }
                 "Tonight" -> { dueAt = "${today}T18:00:00"; dueLabel.text = "Today 18:00" }
                 "Tmw" -> { dueAt = "${today.plusDays(1)}T09:00:00"; dueLabel.text = "Tomorrow 09:00" }
                 "Sat" -> { dueAt = "${nextWeekendDate()}T10:00:00"; dueLabel.text = "${nextWeekendDate()} 10:00" }
-                "Pick…" -> android.app.DatePickerDialog(this, { _, y, mo, d ->
+                "Pick..." -> android.app.DatePickerDialog(this, { _, y, mo, d ->
                     android.app.TimePickerDialog(this, { _, h, min ->
                         dueAt = String.format("%04d-%02d-%02dT%02d:%02d:00", y, mo + 1, d, h, min)
                         dueLabel.text = dueAt!!.replace('T', ' ').dropLast(3)
@@ -1521,7 +1595,7 @@ class MainActivity : ComponentActivity() {
             .setPositiveButton("Add") { _, _ ->
                 val title = titleInput.text.toString().trim()
                 if (title.isBlank()) { statusText.text = "Task needs a title."; return@setPositiveButton }
-                runTask("Adding task…") {
+                runTask("Adding task...") {
                     val created = client().saveTask(ApexTask(
                         id = null, title = title.take(220), status = "open",
                         dueAt = dueAt, source = "mobile",
@@ -1530,7 +1604,7 @@ class MainActivity : ComponentActivity() {
                     taskAddInput.setText("")
                     tasks = listOf(created) + tasks
                     renderTasks()
-                    statusText.text = "P$priority $category task added ✓"
+                    statusText.text = "P$priority $category task added."
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -1549,9 +1623,9 @@ class MainActivity : ComponentActivity() {
         val visibleTasks = tasks.filter { it.status != "archived" }
         if (visibleTasks.isEmpty()) {
             val why = if (store.token.isNullOrBlank()) {
-                "Not paired yet — pair in Settings, then tasks flow in."
+                "Not paired yet. Pair in Settings, then tasks flow in."
             } else {
-                "Empty list = the desktop hasn't pushed yet (it syncs every ~15 min while open and paired). Add one above or tap ⟳."
+                "Empty list = the desktop hasn't pushed yet (it syncs every ~15 min while open and paired). Add one above or tap Sync."
             }
             taskListBox.addView(label(why, 12.5f, muted, false))
             return
@@ -1569,7 +1643,7 @@ class MainActivity : ComponentActivity() {
             if (items.isEmpty()) return
             if (!first) taskListBox.addView(space(14))
             first = false
-            taskListBox.addView(label("$title · ${items.size}", 10.5f, color, true).apply {
+            taskListBox.addView(label("$title - ${items.size}", 10.5f, color, true).apply {
                 letterSpacing = 0.08f
                 text = text.toString().uppercase()
             })
@@ -1587,7 +1661,7 @@ class MainActivity : ComponentActivity() {
         if (done.isNotEmpty()) {
             taskListBox.addView(space(6))
             taskListBox.addView(quietButton("Clear done") {
-                runTask("Clearing…") {
+                runTask("Clearing...") {
                     val toClear = tasks.filter { it.status == "done" }
                     toClear.forEach { client().saveTask(it.copy(status = "archived")) }
                     refreshFromServer()
@@ -1596,7 +1670,7 @@ class MainActivity : ComponentActivity() {
         }
         if (open.isEmpty()) {
             taskListBox.addView(space(10))
-            taskListBox.addView(label("All caught up ✓", 13f, green, true))
+            taskListBox.addView(label("All caught up.", 13f, green, true))
         }
         updateNavBadges()
         renderTodayPlan()
@@ -1610,15 +1684,15 @@ class MainActivity : ComponentActivity() {
         val openCount = tasks.count { it.status != "done" && it.status != "archived" }
         btn.text = when {
             openCount <= 0 -> base
-            openCount > 9 -> "$base ·9+"
-            else -> "$base ·$openCount"
+            openCount > 9 -> "$base 9+"
+            else -> "$base $openCount"
         }
     }
 
     private fun prettyRecurrence(rule: String): String = when {
         rule == "daily" -> "repeats daily"
-        rule.startsWith("day:") -> "repeats · day order ${rule.substringAfter(':')}"
-        rule.startsWith("weekly:") -> "repeats weekly · ${rule.substringAfter(':').replaceFirstChar { it.uppercase() }}"
+        rule.startsWith("day:") -> "repeats - day order ${rule.substringAfter(':')}"
+        rule.startsWith("weekly:") -> "repeats weekly - ${rule.substringAfter(':').replaceFirstChar { it.uppercase() }}"
         else -> "repeats"
     }
 
@@ -1641,8 +1715,8 @@ class MainActivity : ComponentActivity() {
             addView(tick)
 
             if (isDone) {
-                addView(quietButton("✕") {
-                    runTask("Archiving…") {
+                addView(quietButton("Archive") {
+                    runTask("Archiving...") {
                         client().saveTask(t.copy(status = "archived"))
                         refreshFromServer()
                     }
@@ -1660,7 +1734,7 @@ class MainActivity : ComponentActivity() {
                 if (isDone) paintFlags = paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
             })
             val meta = listOfNotNull(
-                t.recurrence?.let { "↻ ${prettyRecurrence(it)}" },
+                t.recurrence?.let { prettyRecurrence(it) },
                 t.dueAt?.let { due ->
                     val day = due.take(10)
                     when {
@@ -1672,7 +1746,7 @@ class MainActivity : ComponentActivity() {
                 t.priority?.takeIf { it <= 2 }?.let { "P$it" },
                 t.courseCode,
                 t.source?.takeIf { it == "mobile" }?.let { "added on phone" },
-            ).joinToString("  ·  ")
+            ).joinToString("  -  ")
             if (meta.isNotBlank()) col.addView(label(meta, 11.5f, if (isOverdue) red else faint, false))
             addView(col)
 
@@ -1697,7 +1771,7 @@ class MainActivity : ComponentActivity() {
             setOnMenuItemClickListener { item ->
                 val today = java.time.LocalDate.now()
                 when (item.itemId) {
-                    1 -> rescheduleTask(t.copy(status = "done"), "Done ✓")
+                    1 -> rescheduleTask(t.copy(status = "done"), "Done")
                     2 -> rescheduleTask(t.copy(dueAt = "${today}T18:00:00"), "Due today 18:00")
                     3 -> rescheduleTask(t.copy(dueAt = "${today.plusDays(1)}T09:00:00"), "Due tomorrow 09:00")
                     4 -> rescheduleTask(t.copy(dueAt = null), "Due date cleared")
@@ -1711,7 +1785,7 @@ class MainActivity : ComponentActivity() {
 
     private fun deleteTask(t: ApexTask) {
         if (store.token.isNullOrBlank() || t.id == null) return
-        runTask("Deleting todo…") {
+        runTask("Deleting todo...") {
             client().deleteTask(t.id)
             tasks = tasks.filter { it.id != t.id }
             renderTasks()
@@ -1721,7 +1795,7 @@ class MainActivity : ComponentActivity() {
 
     private fun rescheduleTask(updated: ApexTask, doneMsg: String) {
         if (store.token.isNullOrBlank() || updated.id == null) return
-        runTask("Updating…") {
+        runTask("Updating...") {
             client().saveTask(updated)
             tasks = tasks.map { if (it.id == updated.id) updated else it }
             renderTasks()
@@ -1731,13 +1805,13 @@ class MainActivity : ComponentActivity() {
 
     private fun completeTask(t: ApexTask, tick: TextView) {
         if (store.token.isNullOrBlank() || t.id == null) return
-        tick.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+        hapticConfirm(tick)
         tick.text = "✓"; tick.setTextColor(green)
-        runTask("Completing…") {
+        runTask("Completing...") {
             client().saveTask(t.copy(status = "done"))
             tasks = tasks.map { if (it.id == t.id) it.copy(status = "done") else it }
             renderTasks()
-            statusText.text = "“${t.title.take(40)}” marked done ✓"
+            statusText.text = "${t.title.take(40)} marked done."
         }
     }
 
@@ -1760,11 +1834,11 @@ class MainActivity : ComponentActivity() {
         val title = rawTitle.trim()
         if (title.isBlank()) return false
         if (store.token.isNullOrBlank()) { statusText.text = "Pair first (Settings tab)."; return false }
-        runTask("Adding todo…") {
+        runTask("Adding todo...") {
             val created = client().saveTask(ApexTask(id = null, title = title.take(220), status = "open", dueAt = dueAt, source = "mobile"))
             tasks = listOf(created) + tasks
             renderTasks()
-            statusText.text = "$doneMsg ✓"
+            statusText.text = "$doneMsg."
         }
         return true
     }
@@ -1776,7 +1850,7 @@ class MainActivity : ComponentActivity() {
         if (store.token.isNullOrBlank()) { statusText.text = "Pair first (Settings tab)."; return }
         val firstLine = body.lineSequence().firstOrNull()?.trim().orEmpty()
         val title = firstLine.take(80).ifBlank { "Phone note" }
-        runTask("Saving note…") {
+        runTask("Saving note...") {
             val created = client().saveNote(ApexNote(
                 id = null,
                 date = java.time.LocalDate.now().toString(),
@@ -1789,20 +1863,20 @@ class MainActivity : ComponentActivity() {
             notes = listOf(created) + notes.filter { it.id != created.id }
             renderTodayNotes()
             renderNotesList()
-            statusText.text = "Note saved - desktop Day Notes will import it ✓"
+            statusText.text = "Note saved - desktop Day Notes will import it."
         }
     }
 
     private fun completeReminderTask(task: ApexTask) {
         if (store.token.isNullOrBlank() || task.id == null) return
-        runTask("Completing reminder…") {
+        runTask("Completing reminder...") {
             val done = task.copy(status = "done")
             client().saveTask(done)
             tasks = tasks.map { if (it.id == task.id) done else it }
             reminders = client().dueReminders()
             renderTasks()
             renderReminders()
-            statusText.text = "Reminder task done ✓"
+            statusText.text = "Reminder task done."
         }
     }
 
@@ -1812,7 +1886,7 @@ class MainActivity : ComponentActivity() {
     private fun buildActivityTab(): LinearLayout = tabColumn {
         addView(card {
             addView(sectionTitle("Screen time"))
-            usageTotalText = label("Loading phone activity…", 28f, textColor, true)
+            usageTotalText = label("Loading phone activity...", 28f, textColor, true)
             addView(usageTotalText)
             usageInsightText = label("", 12.5f, muted, false)
             addView(usageInsightText)
@@ -1877,7 +1951,7 @@ class MainActivity : ComponentActivity() {
                 setOnLongClickListener {
                     android.app.AlertDialog.Builder(this@MainActivity)
                         .setTitle("Hide $name?")
-                        .setMessage("Removes it from screen time on this phone and from desktop sync. Undo anytime with “Unhide all”.")
+                        .setMessage("Removes it from screen time on this phone and from desktop sync. Undo anytime with Unhide all.")
                         .setPositiveButton("Hide") { _, _ ->
                             store.ignoredPkgs = store.ignoredPkgs + pkg
                             renderLocalUsage()
@@ -1896,7 +1970,7 @@ class MainActivity : ComponentActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 maxLines = 1
             })
-            head.addView(label(fmtMins(minutes) + if (launches > 0) "  ·  ${launches}×" else "", 12f, muted, false))
+            head.addView(label(fmtMins(minutes) + if (launches > 0) " - ${launches}x" else "", 12f, muted, false))
             addView(head)
             addView(space(4))
             // Proportional bar: filled segment weighted by share of the top app.
@@ -1934,23 +2008,42 @@ class MainActivity : ComponentActivity() {
             addView(space(12))
             usageAccessText = label("", 12.5f, muted, false)
             addView(wideButton("Scan desktop QR") { launchScan() })
-            addView(space(12))
-            addView(label("Use a six-digit code", 11f, faint, true).apply {
-                letterSpacing = 0.08f
-                text = text.toString().uppercase()
-            })
+            addView(space(10))
+
+            val manualBody = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+            }
+            var manualOpen = false
+            lateinit var manualToggle: Button
+            fun setManualOpen(open: Boolean) {
+                manualOpen = open
+                manualBody.visibility = if (open) View.VISIBLE else View.GONE
+                manualToggle.text = if (open) "Hide manual pairing" else "Manual pairing code"
+            }
+            manualToggle = quietButton("Manual pairing code") {
+                setManualOpen(!manualOpen)
+            }.fullWidth()
+            addView(manualToggle)
             addView(space(8))
+
+            manualBody.addView(label(
+                "Use this only if QR scan is unavailable. Generate a fresh 6 digit code on desktop.",
+                11.5f, faint, false,
+            ))
+            manualBody.addView(space(8))
             apiBaseInput = input("https://apex.yashasviallen.is-a.dev").apply {
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
                 setText(store.apiBase)
             }
-            addView(field("Server", apiBaseInput))
+            manualBody.addView(field("Server", apiBaseInput))
             deviceInput = input("Android phone").apply { setText(store.deviceName) }
-            addView(field("Device name", deviceInput))
+            manualBody.addView(field("Device name", deviceInput))
             codeInput = input("000000").apply { inputType = InputType.TYPE_CLASS_NUMBER }
-            addView(field("Code", codeInput))
-            pairButton = actionButton("Pair") { pairDevice() }.fullWidth()
-            addView(pairButton)
+            manualBody.addView(field("6 digit code", codeInput))
+            pairButton = actionButton("Pair with code") { pairDevice() }.fullWidth()
+            manualBody.addView(pairButton)
+            addView(manualBody)
             addView(space(8))
             addView(quietButton("Check connection") { pingHealth(verbose = true) }.fullWidth())
             addView(space(8))
@@ -1959,19 +2052,19 @@ class MainActivity : ComponentActivity() {
         addView(card {
             addView(sectionTitle("Web app"))
             addView(label(
-                "Apex in any browser — tasks, notes, phone screen time and live Zen status, " +
+                "Apex in any browser - tasks, notes, phone screen time and live Zen status, " +
                     "served straight from the sync API.",
                 12.5f, muted, false,
             ))
             addView(space(10))
-            addView(wideButton("Open web app  ↗") {
+            addView(wideButton("Open web app") {
                 val base = store.apiBase.trim().trimEnd('/').ifBlank { ApexStore.DEFAULT_API_BASE }
                 runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$base/web"))) }
                     .onFailure { statusText.text = "No browser available to open the web app." }
             })
             addView(space(6))
             addView(label(
-                "First time in that browser? Mint a code on desktop (Settings → Mobile → Pair a phone) and type it there.",
+                "First time in that browser? Mint a code on desktop (Settings > Mobile > Pair a phone) and type it there.",
                 11f, faint, false,
             ))
         })
@@ -1988,12 +2081,12 @@ class MainActivity : ComponentActivity() {
         })
         addView(card {
             addView(sectionTitle("Paired devices"))
-            deviceCountText = label("Loading linked devices…", 12.5f, muted, false)
+            deviceCountText = label("Loading linked devices...", 12.5f, muted, false)
             addView(deviceCountText)
             addView(label(
-                "Everything paired with the sync API — phones and desktops, no device limit. " +
+                "Everything paired with the sync API - phones and desktops, no device limit. " +
                 "If the desktop is missing here, it was unlinked: re-pair it from desktop " +
-                "Settings → Mobile, or syncing to it stays off.",
+                "Settings > Mobile, or syncing to it stays off.",
                 11.5f, faint, false,
             ))
             addView(space(10))
@@ -2059,8 +2152,8 @@ class MainActivity : ComponentActivity() {
             val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
             val exempt = pm.isIgnoringBatteryOptimizations(packageName)
             addView(label(
-                if (exempt) "✓ Battery optimization exempt — background sync and alarms are reliable."
-                else "✗ Not exempt — the OS may delay background sync and kill the blocker. Fix below.",
+                if (exempt) "Battery optimization exempt. Background sync and alarms are reliable."
+                else "Not exempt. The OS may delay background sync and kill the blocker. Fix below.",
                 12.5f, if (exempt) green else amber, false,
             ))
             addView(space(10))
@@ -2068,7 +2161,7 @@ class MainActivity : ComponentActivity() {
                 try {
                     val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
                     if (pm.isIgnoringBatteryOptimizations(packageName)) {
-                        statusText.text = "Already exempt from battery optimization ✓"
+                        statusText.text = "Already exempt from battery optimization."
                     } else {
                         @Suppress("BatteryLife")
                         startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
@@ -2129,7 +2222,10 @@ class MainActivity : ComponentActivity() {
             addView(android.widget.Switch(this@MainActivity).apply {
                 isChecked = initial
                 tintSwitch(this)
-                setOnCheckedChangeListener { _, on -> onChange(on) }
+                setOnCheckedChangeListener { buttonView, on ->
+                    if (buttonView.isPressed) hapticTap(buttonView)
+                    onChange(on)
+                }
             })
         }
     }
@@ -2153,7 +2249,7 @@ class MainActivity : ComponentActivity() {
             if (::deviceCountText.isInitialized) {
                 val phones = list.count { it.type != "desktop" }
                 val desktops = list.count { it.type == "desktop" }
-                deviceCountText.text = "${list.size} linked · ${phones} phone${if (phones == 1) "" else "s"} · ${desktops} desktop${if (desktops == 1) "" else "s"}"
+                deviceCountText.text = "${list.size} linked - ${phones} phone${if (phones == 1) "" else "s"} - ${desktops} desktop${if (desktops == 1) "" else "s"}"
             }
             list.forEachIndexed { i, d ->
                 if (i > 0) devicesBox.addView(space(8))
@@ -2168,8 +2264,9 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
             background = rounded(panel2, dp(10), border2)
-            addView(label(when (d.type) { "desktop" -> "🖥"; "web" -> "🌐"; else -> "📱" }, 16f, textColor, false).apply {
+            addView(label(when (d.type) { "desktop" -> "PC"; "web" -> "WEB"; else -> "PHONE" }, 10.5f, textColor, true).apply {
                 setPadding(0, 0, dp(12), 0)
+                letterSpacing = 0.08f
             })
             val col = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
@@ -2178,7 +2275,7 @@ class MainActivity : ComponentActivity() {
             col.addView(label(d.name + if (isSelf) "  (this phone)" else "", 13.5f, if (isSelf) accent else textColor, isSelf))
             val since = d.createdAt?.take(10) ?: "?"
             val seen = d.lastSeenAt?.let { "seen ${shortTime(it)}" } ?: ""
-            col.addView(label("paired since $since${if (seen.isNotBlank()) " · $seen" else ""}", 11f, faint, false))
+            col.addView(label("paired since $since${if (seen.isNotBlank()) " - $seen" else ""}", 11f, faint, false))
             addView(col)
             addView(baseButton("Unlink", panel, red) { unlinkDevice(d, isSelf) }.apply {
                 minHeight = dp(36)
@@ -2187,7 +2284,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun unlinkDevice(d: DeviceInfo, isSelf: Boolean) {
-        runTask(if (isSelf) "Unpairing this phone…" else "Unlinking ${d.name}…") {
+        runTask(if (isSelf) "Unpairing this phone..." else "Unlinking ${d.name}...") {
             client().revokeDevice(d.id)
             if (isSelf) {
                 forgetDevice()
@@ -2199,21 +2296,41 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Emergency stop from the phone — POST /focus/stop; the desktop watcher
+    // force-ends the block (even a locked Zen) and the banner clears.
+    private fun confirmEmergencyStop() {
+        if (store.token.isNullOrBlank()) { statusText.text = "Pair first to stop a desktop block."; return }
+        hapticPress()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Stop focus everywhere?")
+            .setMessage("This ends the active timer or Zen block on desktop and clears the phone blocker.")
+            .setPositiveButton("Stop now") { _, _ ->
+                hapticConfirm()
+                runTask("Stopping focus...") {
+                    client().stopFocus()
+                    if (::focusBanner.isInitialized) focusBanner.visibility = View.GONE
+                    statusText.text = "Focus block stopped."
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun checkFocusState() {
         if (store.token.isNullOrBlank()) return
         scope.launch {
             val focus = try { client().focus() } catch (_: Throwable) { return@launch }
             if (::focusBanner.isInitialized) {
                 if (focus.active) {
-                    val until = focus.endsAt?.let { "  ·  until ${shortTime(it)}" } ?: ""
+                    val until = focus.endsAt?.let { "Until ${shortTime(it)}" } ?: "No end time set"
                     // mode-derived so a plain timer reads "FOCUS TIMER" and a
                     // Zen block reads "ZEN - STRICT" etc. (was always strict).
                     val eff = focus.effectiveIntensity
-                    val heading = if (eff == "notify") "FOCUS TIMER" else "ZEN · ${eff.uppercase()}"
-                    val glyph = if (eff == "notify") "⏱" else "◉"
-                    focusBanner.text = "$glyph  $heading — ${focus.title ?: "Focus"}$until"
-                    // Tint: teal for a soft timer, amber for an enforcing Zen.
-                    focusBanner.background = rounded(if (eff == "notify") accent else amber, dp(12), Color.TRANSPARENT)
+                    val heading = if (eff == "notify") "⏱ Focus timer active" else "🛡 Zen ${eff.uppercase()} active"
+                    focusBannerTitle.text = heading
+                    focusBannerTitle.setTextColor(if (eff == "notify") accent else amber)
+                    focusBannerDetail.text = "${focus.title ?: "Focus"} - $until. Stop ends it on desktop and phone."
+                    focusBanner.background = rippleRounded(panel2, dp(16), if (eff == "notify") accent else amber)
                     focusBanner.visibility = View.VISIBLE
                 } else {
                     focusBanner.visibility = View.GONE
@@ -2280,7 +2397,7 @@ class MainActivity : ComponentActivity() {
         if (apiBase != null) { apiBaseInput.setText(apiBase); store.apiBase = apiBase }
         if (code != null) {
             codeInput.setText(code)
-            statusText.text = "Scanned code $code - pairing…"
+            statusText.text = "Scanned code $code - pairing..."
             pairDevice()
         } else {
             statusText.text = "That QR didn't contain an Apex pairing code."
@@ -2289,13 +2406,14 @@ class MainActivity : ComponentActivity() {
 
     private fun pairDevice() {
         val code = codeInput.text.toString().trim()
-        if (code.length != 6) { statusText.text = "Enter the six digit pairing code."; return }
-        if (::pairButton.isInitialized) { pairButton.isEnabled = false; pairButton.text = "Pairing…" }
+        if (code.length != 6) { statusText.text = "Enter the 6 digit pairing code."; return }
+        if (::pairButton.isInitialized) { pairButton.isEnabled = false; pairButton.text = "Pairing..." }
         if (::pairBadge.isInitialized) {
-            pairBadge.text = "◌  PAIRING…"
+            pairBadge.text = "PAIRING"
             pairBadge.setTextColor(amber)
+            pairBadge.background = rounded(panel2, dp(10), amber)
         }
-        runTask("Contacting server…") {
+        runTask("Contacting server...") {
             try {
                 val result = client().pair(code, deviceInput.text.toString().trim().ifBlank { store.deviceName })
                 store.apiBase = result.apiBase
@@ -2305,13 +2423,13 @@ class MainActivity : ComponentActivity() {
                 codeInput.setText("")
                 renderStoredState()
                 renderReadiness()
-                pairBadge.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
-                statusText.text = "Paired ✓ — this phone is now linked."
+                hapticConfirm(pairBadge)
+                statusText.text = "Paired. This phone is now linked."
                 pingHealth()
                 loadDevices()      // device list updates live, right where you are
                 refreshFromServer()
             } finally {
-                if (::pairButton.isInitialized) { pairButton.isEnabled = true; pairButton.text = "Pair" }
+                if (::pairButton.isInitialized) { pairButton.isEnabled = true; pairButton.text = "Pair with code" }
                 renderStoredState() // resets the badge to PAIRED / NOT PAIRED even on failure
             }
         }
@@ -2335,12 +2453,13 @@ class MainActivity : ComponentActivity() {
         apiBaseInput.setText(store.apiBase)
         deviceInput.setText(store.deviceName)
         val paired = !store.token.isNullOrBlank()
-        pairBadge.text = if (paired) "●  PAIRED - ${store.deviceName}" else "○  NOT PAIRED"
+        pairBadge.text = if (paired) "PAIRED - ${store.deviceName}" else "NOT PAIRED"
         pairBadge.setTextColor(if (paired) green else amber)
+        pairBadge.background = rounded(panel2, dp(10), if (paired) green else amber)
         pairDetailText.text = if (paired) {
             buildString {
                 append("API: ${store.apiBase}")
-                store.deviceId?.let { append("\nDevice id: ${it.take(18)}…") }
+                store.deviceId?.let { append("\nDevice id: ${it.take(18)}...") }
                 store.lastSyncAt?.let { append("\nLast usage upload: ${shortTime(it)}") }
             }
         } else {
@@ -2355,7 +2474,7 @@ class MainActivity : ComponentActivity() {
             usageAccessText.visibility = View.GONE
         } else {
             usageAccessText.visibility = View.VISIBLE
-            usageAccessText.text = "Usage Access off · tap here to enable"
+            usageAccessText.text = "Usage Access off - tap here to enable"
             usageAccessText.setTextColor(amber)
             usageAccessText.setOnClickListener {
                 startActivity(android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS))
@@ -2396,11 +2515,11 @@ class MainActivity : ComponentActivity() {
                 usageInsightText.text = buildString {
                     topProductive?.let { append("Focus: ${it.appName ?: it.packageName.substringAfterLast('.')}") }
                     topDistraction?.let {
-                        if (isNotBlank()) append(" · ")
+                        if (isNotBlank()) append(" - ")
                         append("Watch: ${it.appName ?: it.packageName.substringAfterLast('.')}")
                     }
-                    if (unlocks > 0) { if (isNotBlank()) append(" · "); append("$unlocks app opens") }
-                    if (blocked > 0) { if (isNotBlank()) append(" · "); append("⛔ $blocked blocked by Zen") }
+                    if (unlocks > 0) { if (isNotBlank()) append(" - "); append("$unlocks app opens") }
+                    if (blocked > 0) { if (isNotBlank()) append(" - "); append("$blocked blocked by Zen") }
                     if (isBlank()) append("Ready to sync to desktop Apex.")
                 }
             }
@@ -2423,7 +2542,7 @@ class MainActivity : ComponentActivity() {
             val hidden = store.ignoredPkgs.size
             if (hidden > 0) {
                 usageBarsBox.addView(space(6))
-                usageBarsBox.addView(quietButton("$hidden hidden app${if (hidden == 1) "" else "s"} · Unhide all") {
+                usageBarsBox.addView(quietButton("$hidden hidden app${if (hidden == 1) "" else "s"} - Unhide all") {
                     store.ignoredPkgs = emptySet()
                     renderLocalUsage()
                     statusText.text = "All hidden apps restored."
@@ -2436,23 +2555,25 @@ class MainActivity : ComponentActivity() {
         scope.launch {
             val ok = try { client().health().optBoolean("ok", false) } catch (_: Throwable) { false }
             setStatusDot(ok)
-            if (verbose) statusText.text = if (ok) "Connected to the sync API ✓" else "Can't reach the sync API."
+            if (verbose) statusText.text = if (ok) "Connected to the sync API." else "Can't reach the sync API."
             if (ok && !store.token.isNullOrBlank()) {
                 try {
                     val me = client().me()
                     val name = me.optString("name").ifBlank { store.deviceName }
                     val seen = me.optString("last_seen_at")
                     if (::pairBadge.isInitialized) {
-                        pairBadge.text = "●  PAIRED - $name"
+                        pairBadge.text = "PAIRED - $name"
                         pairBadge.setTextColor(green)
+                        pairBadge.background = rounded(panel2, dp(10), green)
                         if (seen.isNotBlank()) {
-                            pairDetailText.text = pairDetailText.text.toString() + "\nServer confirms token · seen ${shortTime(seen)}"
+                            pairDetailText.text = pairDetailText.text.toString() + "\nServer confirms token - seen ${shortTime(seen)}"
                         }
                     }
                 } catch (_: Throwable) {
                     if (::pairBadge.isInitialized) {
-                        pairBadge.text = "○  TOKEN INVALID - re-pair"
+                        pairBadge.text = "TOKEN INVALID - re-pair"
                         pairBadge.setTextColor(red)
+                        pairBadge.background = rounded(panel2, dp(10), red)
                     }
                     if (verbose) statusText.text = "Pairing token rejected - scan a fresh QR."
                 }
@@ -2470,7 +2591,7 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshFromServer() {
         if (store.token.isNullOrBlank()) { return }
-        runTask("Refreshing…") {
+        runTask("Refreshing...") {
             val api = client()
             val routine = api.todayRoutine()
             currentRoutine = routine
@@ -2479,7 +2600,7 @@ class MainActivity : ComponentActivity() {
             reminders = api.dueReminders()
 
             val routineLine = buildString {
-                append("Morning ${routine.wakeTime ?: "--"}   ·   Night ${routine.sleepTime ?: "--"}")
+                append("Morning ${routine.wakeTime ?: "--"}   -   Night ${routine.sleepTime ?: "--"}")
                 routine.objective?.takeIf { it.isNotBlank() }?.let { append("\nMain goal: $it") }
             }
             store.lastRoutineSummary = routineLine
@@ -2498,19 +2619,19 @@ class MainActivity : ComponentActivity() {
 
     private fun markRoutine(kind: String) {
         if (store.token.isNullOrBlank()) { statusText.text = "Pair first (Settings tab)."; return }
-        runTask("Logging…") {
+        runTask("Logging...") {
             client().markEvent(kind)
             reminders = client().dueReminders()
             renderReminders()
-            statusText.text = "Logged ✓"
+            statusText.text = "Logged."
         }
     }
 
     private fun markObjectiveDone() {
         if (store.token.isNullOrBlank()) { statusText.text = "Pair first (Settings tab)."; return }
-        runTask("Marking goal…") {
+        runTask("Marking goal...") {
             client().markEvent("objective_done")
-            statusText.text = "Goal marked done ✓"
+            statusText.text = "Goal marked done."
             refreshFromServer()
         }
     }
@@ -2523,18 +2644,18 @@ class MainActivity : ComponentActivity() {
             return
         }
         if (!store.shareUsage) {
-            statusText.text = "Usage sharing is off (Settings → Sharing)."
+            statusText.text = "Usage sharing is off (Settings > Sharing)."
             return
         }
-        runTask("Reading phone usage…") {
+        runTask("Reading phone usage...") {
             var sessions = WellbeingReader.readToday(this)
             if (!store.shareAppNames) sessions = sessions.map { it.copy(appName = null) }
             if (sessions.isEmpty()) { statusText.text = "No usage data found for today."; return@runTask }
             client().pushWellbeing(sessions, store.deviceId)
             val total = sessions.sumOf { it.minutes }.roundToInt()
             store.lastSyncAt = Instant.now().toString()
-            if (::syncText.isInitialized) syncText.text = "Last upload: just now · ${sessions.size} apps, ${total}m"
-            statusText.text = "Sync done ✓"
+            if (::syncText.isInitialized) syncText.text = "Last upload: just now - ${sessions.size} apps, ${total}m"
+            statusText.text = "Sync done."
             renderLocalUsage()
             renderReadiness()
         }
@@ -2603,8 +2724,8 @@ class MainActivity : ComponentActivity() {
         readinessBox.addView(readinessRow(
             "Alarm display",
             when {
-                !notifOk -> "Notifications blocked — the alarm would ring with no Dismiss button. Tap to fix."
-                !fsiOk -> "Full-screen alarms not allowed — lock-screen wake-ups may hide. Tap to fix."
+                !notifOk -> "Notifications blocked - the alarm would ring with no Dismiss button. Tap to fix."
+                !fsiOk -> "Full-screen alarms not allowed - lock-screen wake-ups may hide. Tap to fix."
                 else -> "Notification + full-screen wake screen allowed"
             },
             if (notifOk && fsiOk) green else red,
@@ -2640,7 +2761,10 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(9), dp(10), dp(9))
             background = if (onTap != null) rippleRounded(panel2, dp(10), border2) else rounded(panel2, dp(10), border2)
-            if (onTap != null) setOnClickListener { onTap() }
+            if (onTap != null) setOnClickListener {
+                hapticTap(this)
+                onTap()
+            }
             addView(View(this@MainActivity).apply {
                 layoutParams = LinearLayout.LayoutParams(dp(9), dp(9)).also { it.marginEnd = dp(10) }
                 background = dot(tone)
@@ -2655,6 +2779,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun statusPill(textValue: String, tone: Int): TextView {
+        return label(textValue, 11f, tone, true).apply {
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            background = rounded(Color.argb(34, Color.red(tone), Color.green(tone), Color.blue(tone)), dp(999), tone)
+            letterSpacing = 0.05f
+        }
+    }
+
     private fun runTask(label: String, block: suspend () -> Unit) {
         statusText.text = label
         scope.launch {
@@ -2662,6 +2794,21 @@ class MainActivity : ComponentActivity() {
             catch (error: Throwable) { statusText.text = error.message ?: "Something failed." }
             finally { stopSpinners() }
         }
+    }
+
+    private fun hapticTap(view: View? = null) {
+        val target = view ?: if (::contentFrame.isInitialized) contentFrame else null
+        target?.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+    }
+
+    private fun hapticPress(view: View? = null) {
+        val target = view ?: if (::contentFrame.isInitialized) contentFrame else null
+        target?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+    }
+
+    private fun hapticConfirm(view: View? = null) {
+        val target = view ?: if (::contentFrame.isInitialized) contentFrame else null
+        target?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -2748,7 +2895,10 @@ class MainActivity : ComponentActivity() {
             stateListAnimator = null
             minHeight = dp(62)
             setPadding(dp(12), dp(8), dp(12), dp(8))
-            setOnClickListener { onClick() }
+            setOnClickListener {
+                hapticTap(this)
+                onClick()
+            }
         }
     }
 
@@ -2779,7 +2929,10 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(14), 0, dp(14), 0)
             minHeight = dp(42)
             stateListAnimator = null
-            setOnClickListener { onClick() }
+            setOnClickListener {
+                hapticTap(this)
+                onClick()
+            }
         }
     }
 
@@ -2792,7 +2945,10 @@ class MainActivity : ComponentActivity() {
             background = rippleRounded(panel2, dp(10), border2)
             val size = dp(40)
             layoutParams = LinearLayout.LayoutParams(size, size)
-            setOnClickListener { onClick(this) }
+            setOnClickListener {
+                hapticTap(this)
+                onClick(this)
+            }
         }
     }
 

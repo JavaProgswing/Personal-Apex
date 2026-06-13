@@ -85,6 +85,11 @@ class ZenWatchService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP_FOCUS) {
+            startInForeground()
+            stopFocusFromNotification()
+            return START_STICKY
+        }
         // Guard is off when the user disabled the blocker or unpaired.
         if (!store.blockerEnabled || store.token.isNullOrBlank()) {
             stopSelf()
@@ -134,11 +139,12 @@ class ZenWatchService : Service() {
         return if (focusActive) {
             val enf = enforcementFor(intensity)
             val until = if (endsAt > 0) " until ${hhmm(endsAt)}" else ""
-            val what = if (enf.bounce) "Distraction apps get sent home." else "You'll get a nudge on distraction apps."
+            val what = if (enf.bounce) "Distraction apps are blocked." else "Distraction apps send nudges."
             baseBuilder(CHANNEL_ID)
                 .setContentTitle("${enf.label} - $title")
                 .setContentText("Desktop focus active$until. $what")
                 .setOngoing(true)
+                .addAction(stopAction())
                 .build()
         } else {
             baseBuilder(CHANNEL_ID)
@@ -208,7 +214,8 @@ class ZenWatchService : Service() {
         val heading = if (enf.bounce) "Off track: $appLabel" else "Heads up: $appLabel"
         manager.notify(NUDGE_ID, baseBuilder(channel)
             .setContentTitle(heading)
-            .setContentText("Focus block running - stay with “$title”.")
+            .setContentText("Focus block running - stay with \"$title\".")
+            .addAction(stopAction(7407))
             .setAutoCancel(true)
             .build())
     }
@@ -233,8 +240,10 @@ class ZenWatchService : Service() {
             isClickable = true // swallow taps so the app behind stays unusable
         }
         root.addView(TextView(this).apply {
-            text = "🔒"
-            textSize = 54f
+            text = "APEX GUARD"
+            setTextColor(Color.parseColor("#38D8C4"))
+            textSize = 14f
+            letterSpacing = 0.22f
             gravity = Gravity.CENTER
         })
         root.addView(TextView(this).apply {
@@ -246,20 +255,20 @@ class ZenWatchService : Service() {
             setPadding(0, dp(14), 0, dp(6))
         })
         root.addView(TextView(this).apply {
-            text = "$appLabel is off-limits"
+            text = "$appLabel is blocked"
             setTextColor(Color.parseColor("#F4F7FB"))
             textSize = 23f
             gravity = Gravity.CENTER
         })
         root.addView(TextView(this).apply {
-            text = if (locked) "Locked focus — stay with “$title”." else "Focus block running — back to “$title”."
+            text = if (locked) "Locked focus - stay with \"$title\"." else "Focus block running - back to \"$title\"."
             setTextColor(Color.parseColor("#9AA8BA"))
             textSize = 14f
             gravity = Gravity.CENTER
             setPadding(dp(16), dp(8), dp(16), dp(24))
         })
         root.addView(Button(this).apply {
-            text = "← Leave & refocus"
+            text = "Leave and refocus"
             setOnClickListener {
                 hideBlockOverlay()
                 try {
@@ -272,7 +281,7 @@ class ZenWatchService : Service() {
         })
         if (!locked) {
             root.addView(TextView(this).apply {
-                text = "Need it for a sec? Just press home — I'll nudge if you linger."
+                text = "Need it for a minute? Press Home. Apex will nudge if you linger."
                 setTextColor(Color.parseColor("#667385"))
                 textSize = 11.5f
                 gravity = Gravity.CENTER
@@ -348,7 +357,7 @@ class ZenWatchService : Service() {
         val (msg, intent) = when {
             noUsage -> "Grant usage access so Apex can see which app is on screen." to
                 Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-            else -> "Allow “display over other apps” so Apex can send distractions home." to
+            else -> "Allow display over other apps so Apex can send distractions home." to
                 Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -365,6 +374,24 @@ class ZenWatchService : Service() {
             .build())
     }
 
+    private fun stopFocusFromNotification() {
+        scope.launch {
+            runCatching { ApexApiClient(store.apiBase, tokenProvider = { store.token }).stopFocus() }
+            focusActive = false
+            hideBlockOverlay()
+            updateNotification()
+        }
+    }
+
+    private fun stopAction(requestCode: Int = 7405): Notification.Action {
+        val pi = PendingIntent.getService(
+            this, requestCode,
+            Intent(this, ZenWatchService::class.java).setAction(ACTION_STOP_FOCUS),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return Notification.Action.Builder(null, "Stop focus", pi).build()
+    }
+
     private fun baseBuilder(channel: String): Notification.Builder {
         val open = PendingIntent.getActivity(
             this, 7401, Intent(this, MainActivity::class.java),
@@ -375,7 +402,11 @@ class ZenWatchService : Service() {
         } else {
             @Suppress("DEPRECATION") Notification.Builder(this)
         }
-        return b.setSmallIcon(android.R.drawable.ic_lock_idle_lock).setContentIntent(open)
+        return b
+            .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+            .setColor(Color.parseColor("#38D8C4"))
+            .setOnlyAlertOnce(true)
+            .setContentIntent(open)
     }
 
     private fun hhmm(ms: Long): String {
@@ -393,6 +424,7 @@ class ZenWatchService : Service() {
         private const val POLL_ACTIVE_MS = 10_000L   // /focus poll while a block is live
         private const val POLL_IDLE_MS = 25_000L     // /focus poll while waiting for one
         private const val FG_WINDOW_MS = 10 * 60_000L // detect already-open apps
+        private const val ACTION_STOP_FOCUS = "dev.yashasvi.apex.mobile.STOP_FOCUS"
 
         // Start (or keep alive) the persistent guard. No-op-ish if already
         // running — onStartCommand just re-validates. Call whenever the blocker

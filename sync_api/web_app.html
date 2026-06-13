@@ -231,6 +231,13 @@
     width: 11px; height: 11px; border-radius: 50%;
     background: var(--accent); flex: none;
   }
+  #focusBanner #focusText { flex: 1; }
+  .focus-stop {
+    flex: none;
+    border-color: rgba(229,103,92,0.5) !important;
+    color: var(--red) !important;
+  }
+  .focus-stop:hover { border-color: var(--red) !important; box-shadow: none !important; }
 
   .row-item {
     display: flex; align-items: center; gap: 12px;
@@ -404,6 +411,7 @@
 
     <div id="focusBanner" class="g-rise">
       <span class="pulse"></span><span id="focusText"></span>
+      <button class="btn tiny ghost focus-stop" id="focusStopBtn" title="Force-end this focus block on every device">⏹ Stop</button>
     </div>
 
     <div class="stats">
@@ -713,6 +721,19 @@ async function enterDash(device) {
   initRoutineEditor();
   initAlerts();
   initTabs();
+  $("focusStopBtn").onclick = emergencyStopFocus;
+}
+
+// Emergency stop — kills the active focus block on every device (the desktop
+// watcher honours it and force-ends even a locked Zen).
+async function emergencyStopFocus() {
+  if (!confirm("Emergency stop the focus block? Ends it on desktop and phone too.")) return;
+  try {
+    await api("/focus/stop", { method: "POST" });
+    focus = { active: false };
+    renderFocus();
+    toast("Focus block stopped ✓");
+  } catch (e) { toast(e.message, true); }
 }
 
 // ── routine editor (wake/sleep) ─────────────────────────────────────────

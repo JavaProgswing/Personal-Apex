@@ -100,6 +100,11 @@ contextBridge.exposeInMainWorld("apex", {
     onUpdate: (h) => on("zen:update", h),
     onViolation: (h) => on("zen:violation", h),
   },
+  focus: {
+    // Emergency stop: kills any timer/Zen (even locked) on this desktop.
+    emergencyStop: () => invoke("focus:emergencyStop"),
+    onStopped: (h) => on("focus:stopped", h),
+  },
   routine: {
     state: () => invoke("routine:state"),
     saveConfig: (patch) => invoke("routine:saveConfig", patch),

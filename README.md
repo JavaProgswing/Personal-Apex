@@ -39,6 +39,9 @@ Zen mode, locked to a running timer:
   Quitting the app asks for a reason that lands in your day log.
 - **Real alarms** - the phone rings (looping, full-screen, snooze); marking
   yourself awake triggers a morning brief on the desktop.
+- **Android companion** - a modern Today dashboard, synced notes/tasks, local
+  Activity view, haptic controls, QR-first pairing with collapsible manual
+  codes, and interactive focus notifications with a Stop action.
 - **Local AI** - Ask Apex streams from Ollama with your schedule, tasks, and
   screen time in context. Plans evenings, triages backlogs, extracts tasks
   from PDFs. Offline.
