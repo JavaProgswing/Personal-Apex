@@ -56,6 +56,9 @@ APEX_SYNC_DB=/data/apex_sync.sqlite
 APEX_SYNC_PORT=8787
 APEX_SYNC_PAIRING_TTL_MINUTES=15
 APEX_SYNC_CORS_ORIGINS=
+# User's wall-clock timezone — the server runs UTC, but reminder windows
+# ("wake at 07:00") are local times. Defaults to Asia/Kolkata.
+APEX_SYNC_TZ=Asia/Kolkata
 ```
 
 ## Local Run
@@ -77,6 +80,26 @@ curl -X POST http://localhost:8787/pairing-codes -H "Authorization: Bearer chang
 ```
 
 The response includes a six digit code, a JSON QR payload, and a QR PNG URL. The mobile app scans the QR payload or submits the code to `POST /pair`.
+
+## Production deploy (current setup)
+
+The live instance runs on an Oracle Cloud Ubuntu box as a Docker Compose
+project at `/opt/apex` (`apex-sync-api` service built from this folder, behind
+`jc21/nginx-proxy-manager` for TLS; sqlite persisted via `./apex-data:/data`).
+Redeploy after editing `apex_sync_api.py` or `web_app.html`:
+
+```bash
+scp -i <key> apex_sync_api.py web_app.html ubuntu@<host>:/tmp/
+ssh -i <key> ubuntu@<host> 'cd /opt/apex \
+  && cp sync_api/apex_sync_api.py sync_api/apex_sync_api.py.bak-$(date +%F-%H%M%S) \
+  && mv /tmp/apex_sync_api.py /tmp/web_app.html sync_api/ \
+  && docker compose up -d --build apex-sync-api'
+curl https://apex.yashasviallen.is-a.dev/health
+```
+
+Gotcha: `init_db()` runs an `executescript` on every boot — any index on a
+migrated-in column must be created *after* its guarded `ALTER TABLE`, or
+existing databases crash on startup.
 
 ## Pterodactyl Docker
 

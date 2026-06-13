@@ -4,9 +4,34 @@ Installable Android companion for the Apex desktop app. It pairs with the Apex
 Sync API and pushes your phone's Digital Wellbeing usage to the cloud, so the
 desktop sees your mobile screen-time **without USB or ADB**.
 
+| Today | Activity |
+|---|---|
+| <img src="../docs/screenshots/android-today.png" width="280"> | <img src="../docs/screenshots/android-activity.png" width="280"> |
+
 ## Features
 
-- **Bottom-nav tabs** - Today (routine + reminders), Tasks, Activity, Settings.
+- **Bottom-nav tabs** - Today (plan + alarms + quick capture), Tasks, Notes,
+  Activity, Settings — slide-up tab transitions, badge counts on Tasks.
+- **Real alarms** - wake/sleep times editable with clock pickers (synced both
+  ways with the desktop routine); scheduled via `setAlarmClock()` so they are
+  exact through Doze and OEM battery savers, survive reboots
+  (`BOOT_COMPLETED` receiver), and actually **ring**: looping ringtone on the
+  alarm stream + vibration + full-screen Dismiss / Snooze-10 / **"I'm awake ✓"**
+  (which logs `wake_done` and triggers the desktop's morning brief).
+- **Zen blocker** - mirrors desktop Zen mode: while a focus block runs, a
+  foreground watcher bounces distraction apps back to home (with the overlay
+  permission) or nudges loudly. Bounce count shows in Activity.
+- **Accurate screen time** - parity with Digital Wellbeing: event-stream
+  accounting clamped at screen-off/keyguard, launch counts per app, system
+  services filtered out, day-scoped (no stale yesterday data after midnight),
+  long-press to hide an app.
+- **Gap logging** - 3+ hours with no screen use during waking hours → a
+  notification asks "what were you up to?"; one line + a category lands the
+  block in desktop screen time as a manual entry.
+- **Synced notes** - write/edit day notes from the phone; they flow through
+  the sync API alongside tasks.
+- **Sharing controls** - toggle usage sharing entirely, or strip readable app
+  names (package ids only).
 - **Two-way tasks** - the Tasks tab lists your desktop's top open tasks
   (pushed every desktop sync cycle), tap a row to complete it (flows back to
   the desktop), and quick-add new tasks that appear in desktop Apex.
