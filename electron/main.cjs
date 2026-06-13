@@ -2234,7 +2234,9 @@ ipcMain.handle("zen:start", async (_e, p) => {
   if (existing) {
     const remainingMinutes = Math.max(1, Math.ceil(Math.max(0, timerRemainingSeconds(existing)) / 60));
     payload.title = payload.title || existing.title || "Focus timer";
-    payload.planned_minutes = remainingMinutes;
+    // Cover the LONGER of the picked Zen duration and the timer's remaining —
+    // protecting a near-done timer must not collapse a strict block into ~1 min.
+    payload.planned_minutes = Math.max(remainingMinutes, +payload.planned_minutes || 0);
     payload.note = payload.note || `Wrapped live timer: ${existing.title || existing.kind || "timer"}`;
   }
 

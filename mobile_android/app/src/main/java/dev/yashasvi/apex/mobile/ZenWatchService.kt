@@ -8,11 +8,19 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Color
+import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -92,6 +100,7 @@ class ZenWatchService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        hideBlockOverlay()
         scope.cancel()
         super.onDestroy()
     }
@@ -150,6 +159,7 @@ class ZenWatchService : Service() {
             // Block elapsed locally; stay running (idle) and let the next poll
             // confirm — but stop enforcing now.
             focusActive = false
+            hideBlockOverlay()
             updateNotification()
             return
         }
@@ -157,17 +167,31 @@ class ZenWatchService : Service() {
         // Wide window so an app the user is ALREADY sitting on (its last
         // foreground event may be many minutes old) is still detected, not
         // just freshly-opened apps.
-        val pkg = WellbeingReader.currentForegroundPackage(this, FG_WINDOW_MS) ?: return
-        if (pkg == packageName) return
-        if (WellbeingReader.categoryFor(pkg) != "distraction") return
+        val pkg = WellbeingReader.currentForegroundPackage(this, FG_WINDOW_MS)
+        // Not on a distraction app (or back in Apex) → tear the overlay down.
+        if (pkg == null || pkg == packageName || WellbeingReader.categoryFor(pkg) != "distraction") {
+            hideBlockOverlay()
+            return
+        }
 
         val enf = enforcementFor(intensity)
         val now = System.currentTimeMillis()
-        val onCooldown = pkg == lastNudgePkg && now - lastNudgeAt < enf.cooldownMs
+        val appLabel = try {
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+        } catch (_: Exception) { pkg.substringAfterLast('.') }
 
-        val canOverlay = Settings.canDrawOverlays(this)
-        if (enf.bounce && canOverlay && (enf.bounceEveryCheck || !onCooldown)) {
-            store.bumpBlockedToday(java.time.LocalDate.now().toString())
+        if (enf.bounce) {
+            // The reliable enforcement: a full-screen overlay covering the
+            // distraction app. startActivity(HOME) is silently denied from a
+            // background service on aggressive OEMs (ColorOS/MIUI etc.) — the
+            // overlay always renders because SYSTEM_ALERT_WINDOW is granted.
+            if (Settings.canDrawOverlays(this)) {
+                store.bumpBlockedToday(java.time.LocalDate.now().toString())
+                showBlockOverlay(appLabel, enf.label, locked = enf.bounceEveryCheck)
+                return // overlay IS the nudge; no need for a notification too
+            }
+            // Best-effort legacy bounce when overlay isn't granted (works on
+            // lenient OEMs); falls through to the notification below.
             try {
                 startActivity(Intent(Intent.ACTION_MAIN).apply {
                     addCategory(Intent.CATEGORY_HOME)
@@ -176,24 +200,108 @@ class ZenWatchService : Service() {
             } catch (_: Throwable) { /* fall through to nudge */ }
         }
 
+        val onCooldown = pkg == lastNudgePkg && now - lastNudgeAt < enf.cooldownMs
         if (onCooldown) return
         lastNudgePkg = pkg; lastNudgeAt = now
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val appLabel = try {
-            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
-        } catch (_: Exception) { pkg.substringAfterLast('.') }
         val channel = if (enf.loud) NUDGE_CHANNEL_ID else REMIND_CHANNEL_ID
-        val heading = when {
-            enf.bounce && canOverlay -> "Blocked: $appLabel"
-            enf.bounce -> "Off track: $appLabel"
-            else -> "Heads up: $appLabel"
-        }
+        val heading = if (enf.bounce) "Off track: $appLabel" else "Heads up: $appLabel"
         manager.notify(NUDGE_ID, baseBuilder(channel)
             .setContentTitle(heading)
             .setContentText("Focus block running - stay with “$title”.")
             .setAutoCancel(true)
             .build())
     }
+
+    // ── full-screen block overlay ────────────────────────────────────────────
+    // Drawn over the distraction app via TYPE_APPLICATION_OVERLAY. Unlike a
+    // background activity start, this is permitted from the background once
+    // SYSTEM_ALERT_WINDOW is granted — so it actually works on locked-down
+    // OEMs. Rebuilt only when the blocked app changes (avoids flicker).
+    private var blockOverlay: View? = null
+    private var overlayForApp: String = ""
+
+    private fun showBlockOverlay(appLabel: String, modeLabel: String, locked: Boolean) {
+        if (blockOverlay != null && overlayForApp == appLabel) return // already up for this app
+        hideBlockOverlay()
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.parseColor("#F20B0D12"))
+            setPadding(dp(32), dp(32), dp(32), dp(32))
+            isClickable = true // swallow taps so the app behind stays unusable
+        }
+        root.addView(TextView(this).apply {
+            text = "🔒"
+            textSize = 54f
+            gravity = Gravity.CENTER
+        })
+        root.addView(TextView(this).apply {
+            text = modeLabel.uppercase()
+            setTextColor(Color.parseColor("#38D8C4"))
+            textSize = 13f
+            letterSpacing = 0.18f
+            gravity = Gravity.CENTER
+            setPadding(0, dp(14), 0, dp(6))
+        })
+        root.addView(TextView(this).apply {
+            text = "$appLabel is off-limits"
+            setTextColor(Color.parseColor("#F4F7FB"))
+            textSize = 23f
+            gravity = Gravity.CENTER
+        })
+        root.addView(TextView(this).apply {
+            text = if (locked) "Locked focus — stay with “$title”." else "Focus block running — back to “$title”."
+            setTextColor(Color.parseColor("#9AA8BA"))
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(8), dp(16), dp(24))
+        })
+        root.addView(Button(this).apply {
+            text = "← Leave & refocus"
+            setOnClickListener {
+                hideBlockOverlay()
+                try {
+                    startActivity(Intent(Intent.ACTION_MAIN).apply {
+                        addCategory(Intent.CATEGORY_HOME)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    })
+                } catch (_: Throwable) {}
+            }
+        })
+        if (!locked) {
+            root.addView(TextView(this).apply {
+                text = "Need it for a sec? Just press home — I'll nudge if you linger."
+                setTextColor(Color.parseColor("#667385"))
+                textSize = 11.5f
+                gravity = Gravity.CENTER
+                setPadding(dp(16), dp(14), dp(16), 0)
+            })
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT,
+        )
+        runCatching {
+            wm.addView(root, params)
+            blockOverlay = root
+            overlayForApp = appLabel
+        }
+    }
+
+    private fun hideBlockOverlay() {
+        val v = blockOverlay ?: return
+        blockOverlay = null
+        overlayForApp = ""
+        runCatching { (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(v) }
+    }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private fun refreshFocus() {
         scope.launch {
@@ -222,6 +330,7 @@ class ZenWatchService : Service() {
                 else updateNotification()
             } else if (wasActive) {
                 focusActive = false
+                hideBlockOverlay()
                 updateNotification()
             }
         }

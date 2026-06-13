@@ -2886,8 +2886,16 @@ class MainActivity : ComponentActivity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
 
-    private fun shortTime(iso: String): String =
-        try { iso.substringAfter('T').substring(0, 5) } catch (_: Exception) { iso }
+    // ends_at / timestamps from the API are UTC ISO. Render them in the
+    // phone's LOCAL zone — the old string-slice showed raw UTC (a 10:08 IST
+    // block read as "04:08"), which looked like a broken/expired timer.
+    private fun shortTime(iso: String): String = try {
+        val instant = runCatching { java.time.Instant.parse(iso) }
+            .getOrElse { java.time.OffsetDateTime.parse(iso).toInstant() }
+        java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+            .withZone(java.time.ZoneId.systemDefault())
+            .format(instant)
+    } catch (_: Exception) { iso.substringAfter('T').take(5) }
 
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

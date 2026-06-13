@@ -248,7 +248,10 @@ export default function ZenMode({ onChanged, onActiveChange }) {
         profile,
         allowed_apps: allowed,
         blocked_apps: blocked,
-        planned_minutes: remainingFromTimer || minutes,
+        // Protecting a running timer should never SHRINK the Zen below the
+        // duration you picked — a near-expired timer used to collapse a
+        // 50-min strict block into ~1 min. Cover the longer of the two.
+        planned_minutes: Math.max(minutes || 0, remainingFromTimer || 0) || minutes,
         bind_existing_timer: !!activeTimer,
         playlist_id: playlist?.playlistId || null,
         playlist_uri: playlist?.playlistUri || null,
