@@ -10,20 +10,28 @@ desktop sees your mobile screen-time **without USB or ADB**.
 
 ## Features
 
-- **Bottom-nav tabs** - Today (plan + alarms + quick capture), Tasks, Notes,
-  Activity, Settings. Tabs use restrained icons, slide-up transitions, haptic
-  feedback, and badge counts on Tasks.
+- **Bottom-nav tabs** - Today (plan + alarms + quick capture + Now), Tasks,
+  Notes, Activity, Settings. Tabs use restrained icons, slide-up transitions,
+  haptic feedback, and badge counts on Tasks.
+- **Today dashboard** - compact hero, live focus/Zen stop card, routine plan,
+  an alarm status row, quick Note/Todo capture, recent notes, and a Now section
+  that shows active nudges, next due item, or an actual all-clear instead of a
+  wall of text.
 - **Real alarms** - wake/sleep times editable with clock pickers (synced both
   ways with the desktop routine); scheduled via `setAlarmClock()` so they are
   exact through Doze and OEM battery savers, survive reboots
   (`BOOT_COMPLETED` receiver), and actually **ring**: looping ringtone on the
   alarm stream + vibration + full-screen Dismiss / Snooze-10 / **"I'm awake"**
-  (which logs `wake_done` and triggers the desktop's morning brief).
+  (which logs `wake_done` and triggers the desktop's morning brief). The alarm
+  card now shows what is armed locally, exposes ringtone/PIN controls, supports
+  custom alarms, and keeps hard alarms tied to the on-device PIN.
 - **Zen blocker** - mirrors desktop Zen mode: while a focus block runs, a
   foreground watcher bounces distraction apps back to home (with the overlay
-  permission) or nudges loudly. The foreground notification has a **Stop focus**
-  action, and the Today tab shows an explicit Stop card while a block is live.
-  Bounce count shows in Activity.
+  permission) or nudges loudly. The overlay is a calmer guard panel with
+  **Leave and refocus**, plus **Stop focus on all devices** when the session is
+  not locked. The foreground notification has a **Stop focus** action, and the
+  Today tab shows an explicit Stop card while a block is live. Bounce count
+  shows in Activity.
 - **Accurate screen time** - parity with Digital Wellbeing: event-stream
   accounting clamped at screen-off/keyguard, launch counts per app, system
   services filtered out, day-scoped (no stale yesterday data after midnight),
@@ -35,9 +43,10 @@ desktop sees your mobile screen-time **without USB or ADB**.
   the sync API alongside tasks.
 - **Sharing controls** - toggle usage sharing entirely, or strip readable app
   names (package ids only).
-- **Two-way tasks** - the Tasks tab lists your desktop's top open tasks
-  (pushed every desktop sync cycle), tap a row to complete it (flows back to
-  the desktop), and quick-add new tasks that appear in desktop Apex.
+- **Two-way tasks** - the Tasks tab lists your desktop's open tasks (pushed
+  every desktop sync cycle), groups them into Overdue / Today / Upcoming /
+  Someday / Done, shows open/completed/archived counts, lets you tap a row to
+  complete it, and archives completed tasks without deleting their sync history.
 - **Pairing card (Settings tab)** - QR scan is the primary path; manual 6-digit
   pairing is tucked behind a collapsible **Manual pairing code** control. The
   status badge shows `PAIRED - <name>`, `NOT PAIRED`, or token errors, plus
@@ -51,9 +60,9 @@ desktop sees your mobile screen-time **without USB or ADB**.
   once paired it verifies the token via `/me` and shows the device name + last
   seen. The overflow menu holds Refresh / Sync / Usage access /
   Background-sync / Check-connection / Forget.
-- **Today view** - a hero dashboard for the day, live focus/Zen stop card,
-  routine, alarms, quick Note/Todo capture, recent notes, open tasks, and due
-  reminders.
+- **Quick capture** - one text box with explicit destinations: save the whole
+  thought as a day note, turn the first line into a synced todo, or jump into
+  the full Notes/Tasks tabs when the capture needs more structure.
 - **On-device usage preview** - shows today's top apps + total minutes read
   locally from Usage Access, before you sync.
 - **Routine notifications** - morning/night local notifications via

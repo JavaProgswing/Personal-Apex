@@ -35,13 +35,16 @@ Zen mode, locked to a running timer:
 - **Focus defense, graduated** - Zen mode in relaxed / strict / locked flavors;
   locked cannot be stopped until the timer ends. The phone mirrors the block at
   matching intensity: a plain timer only nudges, relaxed nudges louder, strict
-  bounces distraction apps to the home screen, locked re-bounces relentlessly.
-  Quitting the app asks for a reason that lands in your day log.
-- **Real alarms** - the phone rings (looping, full-screen, snooze); marking
-  yourself awake triggers a morning brief on the desktop.
+  covers distraction apps with a clear refocus overlay, locked keeps them out
+  until the timer finishes. Quitting the app asks for a reason that lands in
+  your day log; emergency stop is now a clearly labelled all-device escape hatch.
+- **Real alarms** - the phone rings (looping, full-screen, snooze); the Today
+  screen shows exactly what is armed on this phone, exposes alarm sound/PIN
+  controls, and marking yourself awake triggers a morning brief on the desktop.
 - **Android companion** - a modern Today dashboard, synced notes/tasks, local
   Activity view, haptic controls, QR-first pairing with collapsible manual
-  codes, and interactive focus notifications with a Stop action.
+  codes, interactive focus notifications with a Stop action, plus a clearer
+  Tasks workflow with counts and archive-completed actions.
 - **Local AI** - Ask Apex streams from Ollama with your schedule, tasks, and
   screen time in context. Plans evenings, triages backlogs, extracts tasks
   from PDFs. Offline.

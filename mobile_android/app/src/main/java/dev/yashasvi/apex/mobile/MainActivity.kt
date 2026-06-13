@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
 
     // ── Tasks tab ────────────────────────────────────────────────────────────
     private lateinit var taskAddInput: EditText
+    private lateinit var taskSummaryText: TextView
     private lateinit var taskListBox: LinearLayout
     private var pendingVoiceTodo = false
     private var tasks: List<ApexTask> = emptyList()
@@ -629,21 +630,36 @@ class MainActivity : ComponentActivity() {
         })
         addView(card {
             addView(sectionTitle("Alarms"))
+            addView(label(
+                "Routine times sync with desktop. Alarm sound, hard mode, and snooze controls stay on this phone.",
+                12.2f, muted, false,
+            ))
+            addView(space(10))
             scheduleBox = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
             addView(scheduleBox)
             addView(space(10))
-            addView(quietButton("Test alarm ring") {
-                AlarmRingService.ring(this@MainActivity, "wake_alarm")
-                statusText.text = "Test alarm ringing. Dismiss it from the alarm screen or notification."
-            }.fullWidth())
+            addView(buttonRow(
+                quietButton("Test wake alarm") {
+                    AlarmRingService.ring(this@MainActivity, "wake_alarm")
+                    statusText.text = "Test alarm ringing. Dismiss it from the alarm screen or notification."
+                },
+                quietButton(if (store.alarmPinHash == null) "Set alarm PIN" else "Alarm PIN") {
+                    showSetPinDialog()
+                },
+            ))
         })
         addView(card {
             addView(sectionTitle("Quick capture"))
+            addView(label(
+                "One inbox, two destinations. Save a thought as a day note or turn the first line into a synced todo.",
+                12.2f, muted, false,
+            ))
+            addView(space(10))
             val inputRow = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
-            quickCaptureInput = input("Type it here, then choose Note or Todo").apply {
+            quickCaptureInput = input("Write it here, then choose Note or Todo").apply {
                 setSingleLine(false)
                 minLines = 2
                 gravity = Gravity.TOP
@@ -663,6 +679,11 @@ class MainActivity : ComponentActivity() {
                 captureChoice("✎  Note", "Save to Notes", accent) { addQuickNote() },
                 captureChoice("✓  Todo", "Sync to Tasks", amber) { addQuickTodo() },
             ))
+            addView(space(10))
+            addView(buttonRow(
+                quietButton("Open Notes") { selectTab("notes") },
+                quietButton("Open Tasks") { selectTab("tasks") },
+            ))
             addView(space(12))
             addView(label("Recent notes", 11f, faint, true).apply {
                 letterSpacing = 0.08f
@@ -674,6 +695,11 @@ class MainActivity : ComponentActivity() {
         })
         addView(card {
             addView(sectionTitle("Now"))
+            addView(label(
+                "Live routine nudges, due tasks, and focus state. If it is quiet here, the day is actually clear.",
+                12.2f, muted, false,
+            ))
+            addView(space(10))
             remindersBox = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
             addView(remindersBox)
         })
@@ -961,6 +987,9 @@ class MainActivity : ComponentActivity() {
         if (!::scheduleBox.isInitialized) return
         scheduleBox.removeAllViews()
         val routine = currentRoutine
+        val customs = store.customAlarms.sortedBy { it.hhmm }
+        scheduleBox.addView(alarmOverviewRow(routine, customs))
+        scheduleBox.addView(space(10))
         val wakeLoud = store.wakeStyle == "alarm"
         scheduleBox.addView(scheduleRow(
             title = "☀ Wake · ${routine?.wakeTime ?: "--:--"}",
@@ -1005,13 +1034,26 @@ class MainActivity : ComponentActivity() {
             },
         ))
         // Custom alarms: tap edits, long-press deletes, switch arms/disarms.
-        val customs = store.customAlarms.sortedBy { it.hhmm }
         customs.forEach { a ->
             scheduleBox.addView(space(8))
             scheduleBox.addView(customAlarmRow(a))
         }
         scheduleBox.addView(space(10))
         scheduleBox.addView(quietButton("＋ Add alarm") { showAlarmEditor(null) }.fullWidth())
+    }
+
+    private fun alarmOverviewRow(routine: ApexRoutine?, customs: List<CustomAlarm>): LinearLayout {
+        val armedCustoms = customs.count { it.enabled }
+        val armed = store.wakeAlarmEnabled || store.sleepReminderEnabled || armedCustoms > 0
+        val parts = mutableListOf<String>()
+        parts += "Wake ${routine?.wakeTime ?: "--"} ${if (store.wakeAlarmEnabled) store.wakeStyle else "off"}"
+        parts += "Sleep ${routine?.sleepTime ?: "--"} ${if (store.sleepReminderEnabled) store.sleepStyle else "off"}"
+        if (armedCustoms > 0) parts += "$armedCustoms custom"
+        return readinessRow(
+            if (armed) "Armed on this phone" else "No alarms armed",
+            parts.joinToString(" - "),
+            if (armed) green else faint,
+        )
     }
 
     private fun customAlarmRow(a: CustomAlarm): LinearLayout {
@@ -1197,7 +1239,12 @@ class MainActivity : ComponentActivity() {
                 when {
                     !a.matches(Regex("\\d{4,8}")) -> { statusText.text = "PIN must be 4-8 digits."; onCancel?.invoke() }
                     a != b -> { statusText.text = "PINs didn't match - try again."; onCancel?.invoke() }
-                    else -> { store.setAlarmPin(a); statusText.text = "Alarm PIN saved."; onSet?.invoke() }
+                    else -> {
+                        store.setAlarmPin(a)
+                        if (::scheduleBox.isInitialized) renderScheduleControls()
+                        statusText.text = "Alarm PIN saved."
+                        onSet?.invoke()
+                    }
                 }
             }
             .setNegativeButton("Cancel") { _, _ -> onCancel?.invoke() }
@@ -1388,6 +1435,8 @@ class MainActivity : ComponentActivity() {
         if (!::remindersBox.isInitialized) return
         remindersBox.removeAllViews()
         if (reminders.isNotEmpty()) {
+            remindersBox.addView(statusPill("${reminders.size} active", amber))
+            remindersBox.addView(space(10))
             reminders.forEachIndexed { i, r ->
                 if (i > 0) remindersBox.addView(space(8))
                 remindersBox.addView(reminderRow(r))
@@ -1399,16 +1448,31 @@ class MainActivity : ComponentActivity() {
         val nextDue = tasks
             .filter { it.status != "done" && it.status != "archived" && it.dueAt != null }
             .minByOrNull { it.dueAt!! }
-        val digest = buildString {
-            append("All clear right now.")
-            if (open > 0) append("  $open open task${if (open == 1) "" else "s"}")
-            nextDue?.let { append(" - next due ${it.dueAt!!.take(10).substring(5)}${hhmmOf(it.dueAt)}") }
-            currentRoutine?.let {
-                append("\nWake ${it.wakeTime ?: "--"} - sleep ${it.sleepTime ?: "--"}")
-                if (store.wakeAlarmEnabled || store.sleepReminderEnabled) append(" - alarms armed")
-            }
+        remindersBox.addView(readinessRow(
+            "All clear",
+            if (open > 0) "$open open task${if (open == 1) "" else "s"} waiting in Tasks" else "No routine or task needs action right now",
+            green,
+            onTap = { selectTab("tasks") },
+        ))
+        nextDue?.let {
+            remindersBox.addView(space(8))
+            remindersBox.addView(readinessRow(
+                "Next due",
+                "${it.title.take(44)} - ${it.dueAt!!.take(10).substring(5)}${hhmmOf(it.dueAt)}",
+                amber,
+                onTap = { selectTab("tasks") },
+            ))
         }
-        remindersBox.addView(label(digest, 12.5f, muted, false))
+        currentRoutine?.let {
+            remindersBox.addView(space(8))
+            remindersBox.addView(readinessRow(
+                "Routine",
+                "Wake ${it.wakeTime ?: "--"} - sleep ${it.sleepTime ?: "--"}" +
+                    if (store.wakeAlarmEnabled || store.sleepReminderEnabled) " - alarms armed" else " - alarms off",
+                if (store.wakeAlarmEnabled || store.sleepReminderEnabled) accent else faint,
+                onTap = { selectTab("today") },
+            ))
+        }
     }
 
     private fun reminderRow(r: ApexReminder): LinearLayout {
@@ -1435,16 +1499,16 @@ class MainActivity : ComponentActivity() {
             if (r.overdue) col.addView(label("overdue", 11f, red, true))
             addView(col)
             when {
-                r.kind == "wake" -> addView(baseButton("Wake", panel, amber) { markRoutine("wake_done") }.apply {
+                r.kind == "wake" -> addView(baseButton("Log wake", panel, amber) { markRoutine("wake_done") }.apply {
                     minHeight = dp(34)
                 })
-                r.kind == "sleep" -> addView(baseButton("Sleep", panel, accent) { markRoutine("sleep_done") }.apply {
+                r.kind == "sleep" -> addView(baseButton("Wind down", panel, accent) { markRoutine("sleep_done") }.apply {
                     minHeight = dp(34)
                 })
                 r.kind == "focus_session" -> addView(baseButton("Ready", panel, green) { checkFocusState() }.apply {
                     minHeight = dp(34)
                 })
-                r.kind == "objective" -> addView(baseButton("Mark goal done", panel, accent) { markObjectiveDone() }.apply {
+                r.kind == "objective" -> addView(baseButton("Goal done", panel, accent) { markObjectiveDone() }.apply {
                     minHeight = dp(34)
                 })
                 r.task != null -> addView(baseButton("Done", panel, green) { completeReminderTask(r.task) }.apply {
@@ -1460,6 +1524,11 @@ class MainActivity : ComponentActivity() {
     private fun buildTasksTab(): LinearLayout = tabColumn {
         addView(card {
             addView(sectionTitle("Todo capture"))
+            addView(label(
+                "Quick add is for low-friction capture. Details opens the desktop-style fields: priority, category, and deadline.",
+                12.2f, muted, false,
+            ))
+            addView(space(10))
             addView(label("Written todo", 11f, faint, true).apply {
                 letterSpacing = 0.08f
                 text = text.toString().uppercase()
@@ -1486,7 +1555,7 @@ class MainActivity : ComponentActivity() {
             addView(space(8))
             addView(buttonRow(
                 quietButton("Details") { showTaskComposer() },
-                quietButton("Speak") { launchVoiceTodo() },
+                quietButton("Speak todo") { launchVoiceTodo() },
             ))
         })
         addView(card {
@@ -1499,6 +1568,8 @@ class MainActivity : ComponentActivity() {
             })
             head.addView(baseButton("Sync", panel2, textColor) { refreshFromServer() }.apply { minHeight = dp(38) })
             addView(head)
+            taskSummaryText = label("", 12.2f, muted, false)
+            addView(taskSummaryText)
             addView(space(8))
             taskListBox = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
             addView(taskListBox)
@@ -1621,6 +1692,12 @@ class MainActivity : ComponentActivity() {
         }
         taskListBox.removeAllViews()
         val visibleTasks = tasks.filter { it.status != "archived" }
+        val doneAll = visibleTasks.filter { it.status == "done" }
+        if (::taskSummaryText.isInitialized) {
+            val openCount = visibleTasks.count { it.status != "done" }
+            val archivedCount = tasks.count { it.status == "archived" }
+            taskSummaryText.text = "$openCount open - ${doneAll.size} completed - $archivedCount archived"
+        }
         if (visibleTasks.isEmpty()) {
             val why = if (store.token.isNullOrBlank()) {
                 "Not paired yet. Pair in Settings, then tasks flow in."
@@ -1632,7 +1709,7 @@ class MainActivity : ComponentActivity() {
         }
         val today = java.time.LocalDate.now().toString()
         val open = visibleTasks.filter { it.status != "done" }
-        val done = visibleTasks.filter { it.status == "done" }.take(8)
+        val done = doneAll.take(8)
         val overdue = open.filter { (it.dueAt?.take(10) ?: "9999") < today }
         val dueToday = open.filter { it.dueAt?.take(10) == today }
         val upcoming = open.filter { (it.dueAt?.take(10) ?: "") > today }.sortedBy { it.dueAt }
@@ -1643,10 +1720,16 @@ class MainActivity : ComponentActivity() {
             if (items.isEmpty()) return
             if (!first) taskListBox.addView(space(14))
             first = false
-            taskListBox.addView(label("$title - ${items.size}", 10.5f, color, true).apply {
-                letterSpacing = 0.08f
-                text = text.toString().uppercase()
-            })
+            val sectionHead = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(label(title.uppercase(), 10.8f, color, true).apply {
+                    letterSpacing = 0.08f
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                addView(statusPill(items.size.toString(), color))
+            }
+            taskListBox.addView(sectionHead)
             taskListBox.addView(space(6))
             items.forEachIndexed { i, t ->
                 if (i > 0) taskListBox.addView(space(8))
@@ -1658,15 +1741,21 @@ class MainActivity : ComponentActivity() {
         section("Upcoming", accent, upcoming)
         section("Someday", muted, someday)
         section("Done", faint, done)
-        if (done.isNotEmpty()) {
+        if (doneAll.isNotEmpty()) {
+            if (doneAll.size > done.size) {
+                taskListBox.addView(space(6))
+                taskListBox.addView(label("Showing latest ${done.size} completed tasks.", 11.2f, faint, false))
+            }
             taskListBox.addView(space(6))
-            taskListBox.addView(quietButton("Clear done") {
-                runTask("Clearing...") {
-                    val toClear = tasks.filter { it.status == "done" }
-                    toClear.forEach { client().saveTask(it.copy(status = "archived")) }
+            taskListBox.addView(quietButton("Archive completed (${doneAll.size})") {
+                runTask("Archiving completed tasks...") {
+                    doneAll.forEach { client().saveTask(it.copy(status = "archived")) }
                     refreshFromServer()
+                    statusText.text = "Completed tasks archived."
                 }
-            })
+            }.fullWidth())
+            taskListBox.addView(space(4))
+            taskListBox.addView(label("Archived tasks stay in sync; they are just hidden from the active mobile list.", 11.2f, faint, false))
         }
         if (open.isEmpty()) {
             taskListBox.addView(space(10))
@@ -1714,18 +1803,6 @@ class MainActivity : ComponentActivity() {
             }
             addView(tick)
 
-            if (isDone) {
-                addView(quietButton("Archive") {
-                    runTask("Archiving...") {
-                        client().saveTask(t.copy(status = "archived"))
-                        refreshFromServer()
-                    }
-                }.apply {
-                    setPadding(0, 0, dp(12), 0)
-                    minHeight = 0
-                })
-            }
-
             val col = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -1753,6 +1830,18 @@ class MainActivity : ComponentActivity() {
             if (!isDone) {
                 setOnClickListener { completeTask(t, tick) }
                 setOnLongClickListener { showTaskMenu(t, it); true }
+            } else {
+                addView(View(this@MainActivity).apply { layoutParams = LinearLayout.LayoutParams(dp(8), 1) })
+                addView(baseButton("Archive", panel, red) {
+                    runTask("Archiving...") {
+                        client().saveTask(t.copy(status = "archived"))
+                        refreshFromServer()
+                        statusText.text = "Task archived."
+                    }
+                }.apply {
+                    minHeight = dp(34)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                })
             }
         }
     }

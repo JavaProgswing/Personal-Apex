@@ -804,6 +804,8 @@ function ZenComposer({
 
 function ZenStrictOverlay({ violation, mode, onDismiss }) {
   const [wait, setWait] = useState(3);
+  const appName = prettyAppName(violation.foreground?.app) || "Blocked app";
+  const locked = mode === "locked";
   useEffect(() => {
     setWait(3);
     const id = setInterval(() => setWait((v) => Math.max(0, v - 1)), 1000);
@@ -813,12 +815,19 @@ function ZenStrictOverlay({ violation, mode, onDismiss }) {
     <div className="zen-lock-scrim">
       <div className="zen-lock-panel intrusive">
         <div className="zen-lock-eyebrow">
-          {mode === "locked" ? "Locked focus" : "Outside Zen"}
+          {locked ? "Locked focus" : "Outside Zen"}
         </div>
-        <h3>{prettyAppName(violation.foreground?.app) || "Blocked app"}</h3>
-        <p className="muted">{violation.foreground?.title || violation.reason}</p>
+        <h3>{appName}</h3>
+        <p className="zen-lock-copy">
+          {locked
+            ? "Locked mode keeps blocked apps out until the timer finishes."
+            : "This app is outside the focus lane. Step back to an allowed app or dismiss after the short pause."}
+        </p>
+        <div className="zen-lock-context">
+          <span>{violation.foreground?.title || violation.reason || "Focus guard triggered"}</span>
+        </div>
         <button className="primary" onClick={onDismiss} disabled={wait > 0}>
-          {wait > 0 ? `Back in ${wait}` : "Back to work"}
+          {wait > 0 ? `Ready in ${wait}` : "Back to focus"}
         </button>
       </div>
     </div>

@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -232,62 +234,109 @@ class ZenWatchService : Service() {
         if (blockOverlay != null && overlayForApp == appLabel) return // already up for this app
         hideBlockOverlay()
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        fun text(value: String, sp: Float, color: Int, bold: Boolean = false): TextView =
+            TextView(this).apply {
+                this.text = value
+                setTextColor(color)
+                textSize = sp
+                gravity = Gravity.CENTER
+                if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setLineSpacing(dp(3).toFloat(), 1f)
+            }
+        fun rounded(fill: String, stroke: String, radius: Int): GradientDrawable =
+            GradientDrawable().apply {
+                setColor(Color.parseColor(fill))
+                cornerRadius = dp(radius).toFloat()
+                setStroke(dp(1), Color.parseColor(stroke))
+            }
+        fun overlayButton(label: String, fill: String, fg: String, onClick: () -> Unit): Button =
+            Button(this).apply {
+                text = label
+                isAllCaps = false
+                setTextColor(Color.parseColor(fg))
+                textSize = 14f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                background = rounded(fill, fill, 14)
+                minHeight = dp(48)
+                setOnClickListener { onClick() }
+            }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#F20B0D12"))
-            setPadding(dp(32), dp(32), dp(32), dp(32))
+            setBackgroundColor(Color.parseColor("#E60B0D12"))
+            setPadding(dp(22), dp(32), dp(22), dp(32))
             isClickable = true // swallow taps so the app behind stays unusable
         }
-        root.addView(TextView(this).apply {
-            text = "APEX GUARD"
-            setTextColor(Color.parseColor("#38D8C4"))
-            textSize = 14f
-            letterSpacing = 0.22f
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-        })
-        root.addView(TextView(this).apply {
-            text = modeLabel.uppercase()
-            setTextColor(Color.parseColor("#38D8C4"))
-            textSize = 13f
+            setPadding(dp(22), dp(24), dp(22), dp(22))
+            background = rounded("#151B27", "#324156", 24)
+        }
+        panel.addView(text("APEX GUARD", 12.5f, Color.parseColor("#38D8C4"), true).apply {
             letterSpacing = 0.18f
-            gravity = Gravity.CENTER
-            setPadding(0, dp(14), 0, dp(6))
         })
-        root.addView(TextView(this).apply {
-            text = "$appLabel is blocked"
-            setTextColor(Color.parseColor("#F4F7FB"))
-            textSize = 23f
-            gravity = Gravity.CENTER
+        panel.addView(text(modeLabel.uppercase(), 11.5f, Color.parseColor("#9AA8BA"), true).apply {
+            letterSpacing = 0.14f
+            setPadding(0, dp(12), 0, dp(4))
         })
-        root.addView(TextView(this).apply {
-            text = if (locked) "Locked focus - stay with \"$title\"." else "Focus block running - back to \"$title\"."
-            setTextColor(Color.parseColor("#9AA8BA"))
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setPadding(dp(16), dp(8), dp(16), dp(24))
+        panel.addView(text(appLabel, 26f, Color.parseColor("#F4F7FB"), true))
+        panel.addView(text(
+            if (locked) "Locked focus is active. This app stays blocked until the timer finishes."
+            else "Focus is running on desktop. Step away from this app or stop the block intentionally.",
+            14f,
+            Color.parseColor("#B7C3D2"),
+        ).apply {
+            setPadding(dp(6), dp(10), dp(6), dp(22))
         })
-        root.addView(Button(this).apply {
-            text = "Leave and refocus"
-            setOnClickListener {
-                hideBlockOverlay()
-                try {
-                    startActivity(Intent(Intent.ACTION_MAIN).apply {
-                        addCategory(Intent.CATEGORY_HOME)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
-                } catch (_: Throwable) {}
-            }
+        panel.addView(overlayButton("Leave and refocus", "#38D8C4", "#081014") {
+            hideBlockOverlay()
+            try {
+                startActivity(Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            } catch (_: Throwable) {}
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+            )
         })
         if (!locked) {
-            root.addView(TextView(this).apply {
-                text = "Need it for a minute? Press Home. Apex will nudge if you linger."
-                setTextColor(Color.parseColor("#667385"))
-                textSize = 11.5f
-                gravity = Gravity.CENTER
-                setPadding(dp(16), dp(14), dp(16), 0)
+            panel.addView(View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(1, dp(10))
+            })
+            panel.addView(overlayButton("Stop focus on all devices", "#241B20", "#E5675C") {
+                hideBlockOverlay()
+                stopFocusFromNotification()
+            }.apply {
+                background = rounded("#241B20", "#E5675C", 14)
+                layoutParams = LinearLayout.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT,
+                )
+            })
+            panel.addView(text(
+                "Use stop only for a real interruption. Home is faster if you just drifted.",
+                11.5f,
+                Color.parseColor("#667385"),
+            ).apply {
+                setPadding(dp(10), dp(12), dp(10), 0)
+            })
+        } else {
+            panel.addView(text(
+                "Locked mode has no early stop from the phone.",
+                11.5f,
+                Color.parseColor("#667385"),
+            ).apply {
+                setPadding(dp(10), dp(12), dp(10), 0)
             })
         }
+        root.addView(panel, LinearLayout.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+        ))
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
