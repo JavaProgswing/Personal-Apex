@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_FROM_ALARM = "from_alarm"
         const val EXTRA_GAP_START = "gap_start"
         const val EXTRA_GAP_END = "gap_end"
+        private const val FOCUS_POLL_MS = 12_000L // in-app focus banner refresh
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -197,7 +198,13 @@ class MainActivity : ComponentActivity() {
         pingHealth()
         refreshFromServer()
         renderLocalUsage()
-        if (!store.token.isNullOrBlank() && store.autoSync) WellbeingSyncWorker.enqueue(this)
+        // The periodic worker is the background safety-net that revives the
+        // focus guard if the OS killed it — so it must run whenever EITHER
+        // background sync OR the blocker is on (previously tied to autoSync
+        // only, which left a blocker-on/sync-off user with no background poll).
+        if (!store.token.isNullOrBlank() && (store.autoSync || store.blockerEnabled)) {
+            WellbeingSyncWorker.enqueue(this)
+        }
         // Opened from a gap-log notification → straight into the log dialog.
         val gapStart = intent?.getLongExtra(EXTRA_GAP_START, 0L) ?: 0L
         val gapEnd = intent?.getLongExtra(EXTRA_GAP_END, 0L) ?: 0L
@@ -360,11 +367,38 @@ class MainActivity : ComponentActivity() {
         // foreground-service start is always permitted. Keeps the blocker armed
         // even if the OS killed the service or a background start was denied.
         if (store.blockerEnabled && !store.token.isNullOrBlank()) ZenWatchService.start(this)
+        startFocusPolling()
+    }
+
+    override fun onPause() {
+        stopFocusPolling()
+        super.onPause()
     }
 
     override fun onDestroy() {
+        stopFocusPolling()
         scope.cancel()
         super.onDestroy()
+    }
+
+    // Live focus banner: while the app is on-screen, poll /focus every 12s so
+    // toggling Zen / starting a timer on the desktop reflects on the phone
+    // within seconds — no manual pull-to-refresh. (The persistent
+    // ZenWatchService handles enforcement in the background; this only keeps
+    // the in-app banner honest while the user is looking at it.)
+    private val focusPoll = object : Runnable {
+        override fun run() {
+            if (currentTab == "today" && !store.token.isNullOrBlank()) checkFocusState()
+            if (::contentFrame.isInitialized) contentFrame.postDelayed(this, FOCUS_POLL_MS)
+        }
+    }
+    private fun startFocusPolling() {
+        if (!::contentFrame.isInitialized) return
+        contentFrame.removeCallbacks(focusPoll)
+        contentFrame.postDelayed(focusPoll, FOCUS_POLL_MS)
+    }
+    private fun stopFocusPolling() {
+        if (::contentFrame.isInitialized) contentFrame.removeCallbacks(focusPoll)
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -2002,8 +2036,15 @@ class MainActivity : ComponentActivity() {
                 store.blockerEnabled,
             ) { on ->
                 store.blockerEnabled = on
-                if (!on) ZenWatchService.stop(this@MainActivity)
-                else { ZenWatchService.start(this@MainActivity); checkFocusState() }
+                if (!on) {
+                    ZenWatchService.stop(this@MainActivity)
+                } else {
+                    ZenWatchService.start(this@MainActivity)
+                    // Background safety-net so the guard survives the app being
+                    // closed even when background sync is off.
+                    if (!store.token.isNullOrBlank()) WellbeingSyncWorker.enqueue(this@MainActivity)
+                    checkFocusState()
+                }
                 renderReadiness()
                 statusText.text = if (on) "Focus blocker armed." else "Focus blocker off."
             })
@@ -2165,8 +2206,14 @@ class MainActivity : ComponentActivity() {
             if (::focusBanner.isInitialized) {
                 if (focus.active) {
                     val until = focus.endsAt?.let { "  ·  until ${shortTime(it)}" } ?: ""
-                    val heading = if (focus.intensity == "notify") "FOCUS TIMER" else "ZEN - ${focus.intensity.uppercase()}"
-                    focusBanner.text = "◉  $heading - ${focus.title ?: "Focus"}$until"
+                    // mode-derived so a plain timer reads "FOCUS TIMER" and a
+                    // Zen block reads "ZEN - STRICT" etc. (was always strict).
+                    val eff = focus.effectiveIntensity
+                    val heading = if (eff == "notify") "FOCUS TIMER" else "ZEN · ${eff.uppercase()}"
+                    val glyph = if (eff == "notify") "⏱" else "◉"
+                    focusBanner.text = "$glyph  $heading — ${focus.title ?: "Focus"}$until"
+                    // Tint: teal for a soft timer, amber for an enforcing Zen.
+                    focusBanner.background = rounded(if (eff == "notify") accent else amber, dp(12), Color.TRANSPARENT)
                     focusBanner.visibility = View.VISIBLE
                 } else {
                     focusBanner.visibility = View.GONE

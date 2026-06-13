@@ -198,28 +198,45 @@ object WellbeingReader {
     fun currentForegroundPackage(context: Context, windowMs: Long = 60_000): String? {
         val usage = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val now = System.currentTimeMillis()
-        val events = usage.queryEvents(now - windowMs, now) ?: return null
-        val ev = UsageEvents.Event()
+        val events = usage.queryEvents(now - windowMs, now)
         var latestPkg: String? = null
         var latestTs = 0L
-        while (events.hasNextEvent()) {
-            events.getNextEvent(ev)
-            when (ev.eventType) {
-                UsageEvents.Event.MOVE_TO_FOREGROUND -> if (ev.timeStamp >= latestTs) {
-                    latestTs = ev.timeStamp; latestPkg = ev.packageName
-                }
-                UsageEvents.Event.MOVE_TO_BACKGROUND -> if (ev.packageName == latestPkg && ev.timeStamp > latestTs) {
-                    latestPkg = null
-                }
-                // Screen off = nothing foreground; stops the Zen blocker from
-                // "bouncing" apps while the phone is locked in a pocket.
-                UsageEvents.Event.SCREEN_NON_INTERACTIVE,
-                UsageEvents.Event.KEYGUARD_SHOWN -> if (ev.timeStamp > latestTs) {
-                    latestTs = ev.timeStamp; latestPkg = null
+        if (events != null) {
+            val ev = UsageEvents.Event()
+            while (events.hasNextEvent()) {
+                events.getNextEvent(ev)
+                when (ev.eventType) {
+                    UsageEvents.Event.MOVE_TO_FOREGROUND -> if (ev.timeStamp >= latestTs) {
+                        latestTs = ev.timeStamp; latestPkg = ev.packageName
+                    }
+                    UsageEvents.Event.MOVE_TO_BACKGROUND -> if (ev.packageName == latestPkg && ev.timeStamp > latestTs) {
+                        latestPkg = null
+                    }
+                    // Screen off = nothing foreground; stops the Zen blocker from
+                    // "bouncing" apps while the phone is locked in a pocket.
+                    UsageEvents.Event.SCREEN_NON_INTERACTIVE,
+                    UsageEvents.Event.KEYGUARD_SHOWN -> if (ev.timeStamp > latestTs) {
+                        latestTs = ev.timeStamp; latestPkg = null
+                    }
                 }
             }
         }
-        return latestPkg
+        if (latestPkg != null) return latestPkg
+
+        // OEM fallback (Oppo/OnePlus/Xiaomi/Samsung etc. frequently return an
+        // empty or null event stream from queryEvents). Without this, live
+        // foreground detection — and therefore the whole Zen blocker — is
+        // silently blind on those devices. queryUsageStats is coarser but
+        // reliable: take the app with the most recent lastTimeUsed inside the
+        // window, excluding ourselves and launchers.
+        return runCatching {
+            usage.queryUsageStats(UsageStatsManager.INTERVAL_BEST, now - windowMs, now)
+                ?.asSequence()
+                ?.filter { it.lastTimeUsed in (now - windowMs)..now && it.packageName != context.packageName }
+                ?.filter { !it.packageName.contains("launcher") && !it.packageName.startsWith("com.android.systemui") }
+                ?.maxByOrNull { it.lastTimeUsed }
+                ?.packageName
+        }.getOrNull()
     }
 
     private fun inferCategory(packageName: String): String {

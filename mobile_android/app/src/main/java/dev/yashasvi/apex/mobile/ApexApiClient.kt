@@ -79,7 +79,20 @@ data class FocusState(
     // mobile blocker enforces the block.
     val intensity: String,
     val endsAt: String?,
-)
+) {
+    // `mode` is the discriminator the desktop has ALWAYS set correctly
+    // (a plain timer publishes mode="timer"; Zen publishes its mode —
+    // relaxed/strict/locked). The separate `intensity` field was historically
+    // left at its "strict" default by the desktop, which made a gentle focus
+    // timer enforce like strict Zen. Derive enforcement from `mode` first,
+    // falling back to the explicit intensity, then strict.
+    val effectiveIntensity: String
+        get() = when (mode) {
+            "timer" -> "notify"
+            "relaxed", "strict", "locked" -> mode
+            else -> intensity
+        }
+}
 
 data class WellbeingSession(
     val date: String,

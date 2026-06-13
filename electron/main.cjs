@@ -2275,6 +2275,17 @@ ipcMain.handle("zen:extend", (_e, mins) => {
   const timer = db.extendTimer(+mins || 10);
   broadcastTimer(timer);
   broadcastZen(session);
+  // Re-publish so the phone's blocker learns the new deadline — without this
+  // the phone stands down at the OLD ends_at while the desktop keeps enforcing.
+  if (session) {
+    routine.pushFocus?.({
+      active: true,
+      title: session.title,
+      mode: session.mode,
+      intensity: session.mode,
+      endsAt: session.ends_at,
+    }).catch?.(() => {});
+  }
   return session;
 });
 ipcMain.handle("zen:stop", (_e, reason) => finishZenSession(reason || "stopped", { stopTimer: true }));

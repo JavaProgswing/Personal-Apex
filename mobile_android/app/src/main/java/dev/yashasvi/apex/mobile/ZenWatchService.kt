@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 
 // Persistent mobile focus guard. Runs as a foreground service the whole time
 // the blocker is enabled (there is no push channel in this self-hosted setup,
-// so the phone has to poll). Every POLL_MS it asks the sync API for the
+// so the phone has to poll). Every poll tick it asks the sync API for the
 // desktop's focus state; when a block is live it watches the foreground app
 // every CHECK_MS and bounces / nudges distraction apps at the matching
 // intensity. When idle it just keeps polling, so the NEXT desktop Zen is
@@ -62,7 +62,10 @@ class ZenWatchService : Service() {
     private val poller = object : Runnable {
         override fun run() {
             refreshFocus()
-            handler.postDelayed(this, POLL_MS)
+            // Adaptive: poll fast while a block is live (catch extends / early
+            // stop within seconds), relaxed while idle (just waiting for the
+            // next desktop block to start). Saves battery vs a flat fast poll.
+            handler.postDelayed(this, if (focusActive) POLL_ACTIVE_MS else POLL_IDLE_MS)
         }
     }
 
@@ -204,7 +207,10 @@ class ZenWatchService : Service() {
             if (state.active) {
                 focusActive = true
                 title = state.title ?: "Focus"
-                intensity = state.intensity
+                // mode-derived: a plain focus timer (mode="timer") enforces as
+                // "notify" (gentle), Zen modes as themselves. Fixes the bug
+                // where every block behaved like strict.
+                intensity = state.effectiveIntensity
                 state.endsAt?.let { iso ->
                     val ms = runCatching { java.time.Instant.parse(iso).toEpochMilli() }
                         .getOrElse { runCatching { java.time.OffsetDateTime.parse(iso).toInstant().toEpochMilli() }.getOrDefault(0L) }
@@ -212,13 +218,42 @@ class ZenWatchService : Service() {
                 } ?: run { endsAt = 0L }
                 // A fresh block just started — enforce immediately rather than
                 // waiting up to CHECK_MS.
-                if (!wasActive) { updateNotification(); checkForeground() }
+                if (!wasActive) { updateNotification(); warnIfToothless(); checkForeground() }
                 else updateNotification()
             } else if (wasActive) {
                 focusActive = false
                 updateNotification()
             }
         }
+    }
+
+    // When a bounce-level block (strict/locked) starts but overlay permission
+    // is missing OR usage access is off, the guard can only nudge — which
+    // reads as "the blocker doesn't work". Tell the user exactly what to grant,
+    // with a tap target. Once per block start.
+    private fun warnIfToothless() {
+        val enf = enforcementFor(intensity)
+        val noOverlay = enf.bounce && !Settings.canDrawOverlays(this)
+        val noUsage = !WellbeingReader.hasUsageAccess(this)
+        if (!noOverlay && !noUsage) return
+        val (msg, intent) = when {
+            noUsage -> "Grant usage access so Apex can see which app is on screen." to
+                Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            else -> "Allow “display over other apps” so Apex can send distractions home." to
+                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val pi = PendingIntent.getActivity(
+            this, 7404, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NUDGE_ID + 1, baseBuilder(NUDGE_CHANNEL_ID)
+            .setContentTitle("Focus blocker can't enforce yet")
+            .setContentText(msg)
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build())
     }
 
     private fun baseBuilder(channel: String): Notification.Builder {
@@ -246,7 +281,8 @@ class ZenWatchService : Service() {
         private const val FG_ID = 7402
         private const val NUDGE_ID = 7403
         private const val CHECK_MS = 5_000L          // foreground-app scan while active
-        private const val POLL_MS = 30_000L          // /focus poll cadence
+        private const val POLL_ACTIVE_MS = 10_000L   // /focus poll while a block is live
+        private const val POLL_IDLE_MS = 25_000L     // /focus poll while waiting for one
         private const val FG_WINDOW_MS = 10 * 60_000L // detect already-open apps
 
         // Start (or keep alive) the persistent guard. No-op-ish if already
