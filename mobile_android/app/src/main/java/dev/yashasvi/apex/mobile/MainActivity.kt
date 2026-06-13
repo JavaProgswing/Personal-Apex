@@ -202,6 +202,116 @@ class MainActivity : ComponentActivity() {
         val gapStart = intent?.getLongExtra(EXTRA_GAP_START, 0L) ?: 0L
         val gapEnd = intent?.getLongExtra(EXTRA_GAP_END, 0L) ?: 0L
         if (gapStart > 0 && gapEnd > gapStart) showGapLogDialog(gapStart, gapEnd)
+        maybeShowRingingOverlay()
+    }
+
+    // ── In-app alarm dismissal ───────────────────────────────────────────────
+    // The full-screen intent launches THIS activity over the lock screen —
+    // which covers the very notification that holds Dismiss/Snooze. Without
+    // an in-app control the alarm is unstoppable (the "had to power off the
+    // phone" bug). So: whenever AlarmRingService is ringing, lay a dismissal
+    // panel over everything.
+    private var ringOverlay: View? = null
+    private val ringPoll = object : Runnable {
+        override fun run() {
+            if (AlarmRingService.ringingKind == null) hideRingingOverlay()
+            else contentFrame.postDelayed(this, 700)
+        }
+    }
+
+    private fun maybeShowRingingOverlay() {
+        val kind = AlarmRingService.ringingKind ?: return
+        if (ringOverlay != null) return
+        val isSleep = kind == "sleep_reminder"
+        val custom = if (kind.startsWith(RoutineAlarmScheduler.CUSTOM_PREFIX)) {
+            store.alarmById(kind.removePrefix(RoutineAlarmScheduler.CUSTOM_PREFIX))
+        } else null
+        val hard = custom?.hard == true
+        val overlay = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.argb(244, 11, 13, 18))
+            isClickable = true // swallow touches to the UI underneath
+            setPadding(dp(28), dp(28), dp(28), dp(28))
+        }
+        overlay.addView(label(
+            when {
+                hard -> "🔒"
+                custom != null -> "⏰"
+                isSleep -> "☽"
+                else -> "☀"
+            },
+            64f, if (hard) red else if (isSleep) accent else amber, false,
+        ))
+        overlay.addView(space(8))
+        overlay.addView(label(
+            java.text.SimpleDateFormat("HH:mm", Locale.US).format(java.util.Date()),
+            56f, textColor, true,
+        ))
+        overlay.addView(label(
+            custom?.label ?: if (isSleep) "Time to wind down" else "Good morning — rise and shine",
+            15f, muted, false,
+        ))
+        overlay.addView(space(34))
+        fun act(action: String, status: String, pinOk: Boolean = false) {
+            startService(Intent(this, AlarmRingService::class.java)
+                .setAction(action)
+                .putExtra(AlarmRingService.EXTRA_KIND, kind)
+                .putExtra(AlarmRingService.EXTRA_PIN_OK, pinOk))
+            hideRingingOverlay()
+            statusText.text = status
+        }
+        if (hard) {
+            // Hard mode: the PIN is the only exit. No snooze, no dismiss.
+            val pinInput = input("Alarm PIN").apply {
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                gravity = Gravity.CENTER
+                textSize = 22f
+            }
+            overlay.addView(pinInput)
+            overlay.addView(space(12))
+            overlay.addView(wideButton("Unlock & stop") {
+                if (store.checkAlarmPin(pinInput.text.toString().trim())) {
+                    act(AlarmRingService.ACTION_DISMISS, "Hard alarm unlocked ✓", pinOk = true)
+                } else {
+                    pinInput.setText("")
+                    pinInput.hint = "Wrong PIN — alarm keeps ringing"
+                    pinInput.performHapticFeedback(android.view.HapticFeedbackConstants.REJECT)
+                }
+            }.apply { minHeight = dp(58) })
+            overlay.addView(space(10))
+            overlay.addView(label(
+                "This is a hard alarm. It rings in 3-minute cycles until the PIN stops it.",
+                11.5f, faint, false,
+            ).apply { gravity = Gravity.CENTER })
+        } else {
+            overlay.addView(wideButton(
+                when {
+                    custom != null -> "Done ✓"
+                    isSleep -> "Going to bed ✓"
+                    else -> "I'm awake ✓"
+                },
+            ) {
+                if (custom != null) act(AlarmRingService.ACTION_DISMISS, "“${custom.label}” done ✓")
+                else act(AlarmRingService.ACTION_AWAKE, "Routine logged ✓")
+            }.apply { minHeight = dp(58) })
+            overlay.addView(space(12))
+            overlay.addView(buttonRow(
+                quietButton("Snooze 10 min") { act(AlarmRingService.ACTION_SNOOZE, "Snoozed — rings again in 10 min.") },
+                quietButton("Dismiss") { act(AlarmRingService.ACTION_DISMISS, "Alarm dismissed.") },
+            ))
+        }
+        addContentView(overlay, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        ringOverlay = overlay
+        contentFrame.postDelayed(ringPoll, 700) // dismissed elsewhere → overlay follows
+    }
+
+    private fun hideRingingOverlay() {
+        contentFrame.removeCallbacks(ringPoll)
+        ringOverlay?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        ringOverlay = null
     }
 
     // Quick "what was that block of time?" logger. One line + a category →
@@ -245,6 +355,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         if (::usageAccessText.isInitialized) { renderUsageAccess(); renderLocalUsage() }
         renderReadiness()
+        maybeShowRingingOverlay()
     }
 
     override fun onDestroy() {
@@ -785,6 +896,202 @@ class MainActivity : ComponentActivity() {
                 statusText.text = "Sleep is now a ${if (store.sleepStyle == "alarm") "loud alarm" else "quiet reminder"}."
             },
         ))
+        // Custom alarms — anything beyond wake/sleep. Tap edits, long-press
+        // deletes, switch arms/disarms. 🔒 = hard mode (PIN to stop).
+        val customs = store.customAlarms.sortedBy { it.hhmm }
+        customs.forEach { a ->
+            scheduleBox.addView(space(8))
+            scheduleBox.addView(customAlarmRow(a))
+        }
+        scheduleBox.addView(space(10))
+        scheduleBox.addView(quietButton("＋  Add alarm") { showAlarmEditor(null) }.fullWidth())
+    }
+
+    private fun customAlarmRow(a: CustomAlarm): LinearLayout {
+        val violet = Color.parseColor("#B69CFF")
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = rippleRounded(panel2, dp(12), if (a.enabled) (if (a.hard) red else violet) else border2)
+            addView(View(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(9), dp(9)).also { it.marginEnd = dp(10) }
+                background = dot(if (a.enabled) (if (a.hard) red else violet) else faint)
+            })
+            val col = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            col.addView(label("${a.hhmm} · ${a.label}" + if (a.hard) "  🔒" else "", 13.5f, textColor, true))
+            col.addView(label(
+                RoutineAlarmScheduler.describeDays(a) + if (a.hard) " · PIN to stop" else "",
+                11.5f, if (a.enabled) muted else faint, false,
+            ))
+            addView(col)
+            addView(android.widget.Switch(this@MainActivity).apply {
+                isChecked = a.enabled
+                tintSwitch(this)
+                setOnCheckedChangeListener { buttonView, on ->
+                    if (!buttonView.isPressed) return@setOnCheckedChangeListener
+                    store.upsertAlarm(a.copy(enabled = on))
+                    if (on) RoutineAlarmScheduler.scheduleCustom(this@MainActivity, a.copy(enabled = true))
+                    else RoutineAlarmScheduler.cancelCustom(this@MainActivity, a.id)
+                    renderScheduleControls()
+                    statusText.text = "“${a.label}” ${if (on) "armed for ${a.hhmm}" else "off"}."
+                }
+            })
+            setOnClickListener { showAlarmEditor(a) }
+            setOnLongClickListener {
+                android.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Delete “${a.label}”?")
+                    .setPositiveButton("Delete") { _, _ ->
+                        RoutineAlarmScheduler.cancelCustom(this@MainActivity, a.id)
+                        store.removeAlarm(a.id)
+                        renderScheduleControls()
+                        statusText.text = "Alarm deleted."
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+                true
+            }
+        }
+    }
+
+    // ── custom alarm editor ──────────────────────────────────────────────
+    private fun showAlarmEditor(existing: CustomAlarm?) {
+        var hhmm = existing?.hhmm ?: "08:00"
+        var hard = existing?.hard ?: false
+        var once = existing?.once ?: false
+        val pickedDays = (existing?.days ?: emptyList()).toMutableSet()
+
+        val pad = dp(20)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, dp(12), pad, dp(4))
+        }
+        val labelInput = input("e.g. Gym, DSA hour, meds…").apply {
+            setText(existing?.label ?: "")
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        }
+        root.addView(field("Label", labelInput))
+
+        val timeBtn = quietButton("⏰  $hhmm") {}
+        timeBtn.setOnClickListener {
+            val parts = hhmm.split(":")
+            android.app.TimePickerDialog(this, { _, h, m ->
+                hhmm = String.format("%02d:%02d", h, m)
+                timeBtn.text = "⏰  $hhmm"
+            }, parts[0].toIntOrNull() ?: 8, parts.getOrNull(1)?.toIntOrNull() ?: 0, true).show()
+        }
+        root.addView(timeBtn.fullWidth())
+        root.addView(space(12))
+
+        root.addView(label("REPEAT — leave all off for every day", 10.5f, faint, true))
+        root.addView(space(6))
+        val daysBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val dayNames = listOf("M", "T", "W", "T", "F", "S", "S")
+        lateinit var refreshDays: () -> Unit
+        val dayChips = dayNames.mapIndexed { i, name ->
+            val iso = i + 1
+            baseButton(name, panel2, textColor) {
+                if (!pickedDays.add(iso)) pickedDays.remove(iso)
+                refreshDays()
+            }.apply {
+                minHeight = dp(36)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    .also { it.marginEnd = dp(4) }
+            }
+        }
+        refreshDays = {
+            dayChips.forEachIndexed { i, c ->
+                val active = (i + 1) in pickedDays
+                c.background = rippleRounded(if (active) accent else panel2, dp(10), Color.TRANSPARENT)
+                c.setTextColor(if (active) bg else textColor)
+            }
+        }
+        dayChips.forEach { daysBar.addView(it) }
+        refreshDays()
+        root.addView(daysBar)
+        root.addView(space(12))
+
+        root.addView(toggleRow("One-time", "Disables itself after it rings once.", once) { once = it })
+        root.addView(space(6))
+        lateinit var hardToggleRefresh: () -> Unit
+        val hardRow = toggleRow(
+            "Hard mode 🔒",
+            "No snooze, no dismiss — rings in 3-min cycles until your PIN stops it (or the phone is powered off).",
+            hard,
+        ) { on ->
+            if (on && store.alarmPinHash == null) {
+                showSetPinDialog(
+                    onSet = { hard = true },
+                    onCancel = { hard = false; hardToggleRefresh() },
+                )
+            } else hard = on
+        }
+        hardToggleRefresh = {
+            (hardRow.getChildAt(1) as? android.widget.Switch)?.isChecked = hard
+        }
+        root.addView(hardRow)
+
+        android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(if (existing == null) "New alarm" else "Edit alarm")
+            .setView(ScrollView(this).apply { addView(root) })
+            .setPositiveButton("Save") { _, _ ->
+                val alarm = CustomAlarm(
+                    id = existing?.id ?: "a${System.currentTimeMillis()}",
+                    label = labelInput.text.toString().trim().ifBlank { "Alarm" }.take(60),
+                    hhmm = hhmm,
+                    enabled = true,
+                    hard = hard,
+                    days = pickedDays.sorted(),
+                    once = once,
+                )
+                store.upsertAlarm(alarm)
+                RoutineAlarmScheduler.scheduleCustom(this, alarm)
+                renderScheduleControls()
+                statusText.text = "“${alarm.label}” armed for ${alarm.hhmm}" +
+                    (if (alarm.hard) " · hard mode 🔒" else "") + "."
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // PIN setup — two matching 4-8 digit entries. Used the first time hard
+    // mode is enabled, and from Settings → System to change it.
+    private fun showSetPinDialog(onSet: (() -> Unit)? = null, onCancel: (() -> Unit)? = null) {
+        val pad = dp(20)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, dp(12), pad, dp(4))
+        }
+        fun pinField(hintText: String) = input(hintText).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        }
+        val p1 = pinField("4–8 digits")
+        val p2 = pinField("Repeat it")
+        root.addView(field("New alarm PIN", p1))
+        root.addView(field("Confirm", p2))
+        root.addView(label(
+            "Stops hard-mode alarms. Don't pick something you can type half-asleep without waking up.",
+            11.5f, faint, false,
+        ))
+        android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(if (store.alarmPinHash == null) "Set alarm PIN" else "Change alarm PIN")
+            .setView(root)
+            .setPositiveButton("Save") { _, _ ->
+                val a = p1.text.toString().trim()
+                val b = p2.text.toString().trim()
+                when {
+                    !a.matches(Regex("\\d{4,8}")) -> { statusText.text = "PIN must be 4–8 digits."; onCancel?.invoke() }
+                    a != b -> { statusText.text = "PINs didn't match — try again."; onCancel?.invoke() }
+                    else -> { store.setAlarmPin(a); statusText.text = "Alarm PIN saved ✓"; onSet?.invoke() }
+                }
+            }
+            .setNegativeButton("Cancel") { _, _ -> onCancel?.invoke() }
+            .setOnCancelListener { onCancel?.invoke() }
+            .show()
     }
 
     // Clock picker → PUT the new time to the sync API, marked as a mobile edit
@@ -1731,6 +2038,10 @@ class MainActivity : ComponentActivity() {
                 startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                     .putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
             }.fullWidth())
+            addView(space(8))
+            addView(quietButton(
+                if (store.alarmPinHash == null) "Set alarm PIN (for hard alarms)" else "Change alarm PIN",
+            ) { showSetPinDialog() }.fullWidth())
         })
         addView(card {
             addView(sectionTitle("About"))
@@ -2227,6 +2538,30 @@ class MainActivity : ComponentActivity() {
             if (store.autoSync) green else faint,
         ))
         readinessBox.addView(space(8))
+        // Alarm visibility: ringing without a visible notification (or the
+        // full-screen wake screen) is exactly the "unstoppable alarm" bug —
+        // surface both switches here with tap-to-fix.
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val notifOk = nm.areNotificationsEnabled()
+        val fsiOk = Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()
+        readinessBox.addView(readinessRow(
+            "Alarm display",
+            when {
+                !notifOk -> "Notifications blocked — the alarm would ring with no Dismiss button. Tap to fix."
+                !fsiOk -> "Full-screen alarms not allowed — lock-screen wake-ups may hide. Tap to fix."
+                else -> "Notification + full-screen wake screen allowed"
+            },
+            if (notifOk && fsiOk) green else red,
+        ) {
+            if (!notifOk) {
+                startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+            } else if (!fsiOk && Build.VERSION.SDK_INT >= 34) {
+                startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                    Uri.parse("package:$packageName")))
+            }
+        })
+        readinessBox.addView(space(8))
         readinessBox.addView(readinessRow(
             "Zen blocker",
             if (store.blockerEnabled) "Mirrors desktop focus blocks" else "Desktop focus blocks only",
@@ -2243,12 +2578,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun readinessRow(title: String, detail: String, tone: Int): LinearLayout {
+    private fun readinessRow(title: String, detail: String, tone: Int, onTap: (() -> Unit)? = null): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(9), dp(10), dp(9))
-            background = rounded(panel2, dp(10), border2)
+            background = if (onTap != null) rippleRounded(panel2, dp(10), border2) else rounded(panel2, dp(10), border2)
+            if (onTap != null) setOnClickListener { onTap() }
             addView(View(this@MainActivity).apply {
                 layoutParams = LinearLayout.LayoutParams(dp(9), dp(9)).also { it.marginEnd = dp(10) }
                 background = dot(tone)

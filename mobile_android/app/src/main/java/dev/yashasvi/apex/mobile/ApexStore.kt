@@ -70,6 +70,69 @@ class ApexStore(context: Context) {
         get() = prefs.getString(KEY_LAST_SLEEP_TIME, null)
         set(value) = prefs.edit().putString(KEY_LAST_SLEEP_TIME, value).apply()
 
+    // When the ringing alarm last auto-snoozed itself after going unanswered.
+    // Guards against an endless ring → snooze → ring loop.
+    var lastAutoSnoozeAt: Long
+        get() = prefs.getLong("last_auto_snooze_at", 0L)
+        set(value) = prefs.edit().putLong("last_auto_snooze_at", value).apply()
+
+    // ── Custom alarms ────────────────────────────────────────────────────
+    // User-defined alarms beyond wake/sleep, persisted as a JSON array.
+    // `hard` alarms can only be stopped with the alarm PIN (or by powering
+    // the phone off) — no snooze, no dismiss.
+    var customAlarms: List<CustomAlarm>
+        get() = runCatching {
+            val arr = org.json.JSONArray(prefs.getString("custom_alarms", "[]") ?: "[]")
+            (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                CustomAlarm(
+                    id = o.optString("id").ifBlank { return@mapNotNull null },
+                    label = o.optString("label", "Alarm"),
+                    hhmm = o.optString("hhmm", "08:00"),
+                    enabled = o.optBoolean("enabled", true),
+                    hard = o.optBoolean("hard", false),
+                    days = (0 until (o.optJSONArray("days")?.length() ?: 0))
+                        .mapNotNull { j -> o.optJSONArray("days")?.optInt(j) },
+                    once = o.optBoolean("once", false),
+                )
+            }
+        }.getOrDefault(emptyList())
+        set(value) {
+            val arr = org.json.JSONArray()
+            value.forEach { a ->
+                arr.put(org.json.JSONObject().apply {
+                    put("id", a.id); put("label", a.label); put("hhmm", a.hhmm)
+                    put("enabled", a.enabled); put("hard", a.hard); put("once", a.once)
+                    put("days", org.json.JSONArray(a.days))
+                })
+            }
+            prefs.edit().putString("custom_alarms", arr.toString()).apply()
+        }
+
+    fun upsertAlarm(alarm: CustomAlarm) {
+        customAlarms = customAlarms.filter { it.id != alarm.id } + alarm
+    }
+
+    fun removeAlarm(id: String) {
+        customAlarms = customAlarms.filter { it.id != id }
+    }
+
+    fun alarmById(id: String): CustomAlarm? = customAlarms.find { it.id == id }
+
+    // Alarm PIN — required to stop a `hard` alarm. Stored as SHA-256 so a
+    // casual prefs dump doesn't show it (this is friction, not security).
+    var alarmPinHash: String?
+        get() = prefs.getString("alarm_pin_hash", null)
+        set(value) = prefs.edit().putString("alarm_pin_hash", value).apply()
+
+    fun setAlarmPin(pin: String) { alarmPinHash = sha256(pin) }
+    fun checkAlarmPin(pin: String): Boolean = alarmPinHash != null && alarmPinHash == sha256(pin)
+
+    private fun sha256(s: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(s.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+
     // "alarm" = loud (ringtone channel), "quiet" = silent notification.
     var wakeStyle: String
         get() = prefs.getString(KEY_WAKE_STYLE, "alarm") ?: "alarm"
@@ -147,3 +210,16 @@ class ApexStore(context: Context) {
         private const val KEY_IGNORED_PKGS = "ignored_pkgs"
     }
 }
+
+// A user-defined alarm. `days` uses ISO day numbers (1 = Monday … 7 = Sunday);
+// an empty list means every day. `once` alarms disable themselves after they
+// fire. `hard` alarms ignore Dismiss/Snooze and only stop on a correct PIN.
+data class CustomAlarm(
+    val id: String,
+    val label: String,
+    val hhmm: String,
+    val enabled: Boolean = true,
+    val hard: Boolean = false,
+    val days: List<Int> = emptyList(),
+    val once: Boolean = false,
+)

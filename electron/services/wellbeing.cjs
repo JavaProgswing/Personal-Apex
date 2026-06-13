@@ -586,7 +586,7 @@ async function pullFromCloud({ since } = {}) {
       headers: { Authorization: `Bearer ${token}` },
     }).then((res) => (res.ok ? res.json() : null)).catch(() => null);
     const pl = r?.payload || {};
-    if (pl.lastEditedBy === "mobile" && pl.editedAt) {
+    if ((pl.lastEditedBy === "mobile" || pl.lastEditedBy === "web") && pl.editedAt) {
       const applied = db.getSetting("routine.mobileEditApplied") || "";
       if (pl.editedAt > applied && (r.wake_time || r.sleep_time)) {
         routine.saveConfig({

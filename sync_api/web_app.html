@@ -326,6 +326,23 @@
 
   .empty { color: var(--muted); font-size: 13px; padding: 6px 2px; }
 
+  /* routine editor */
+  .routine-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .routine-cell {
+    display: flex; align-items: center; gap: 9px;
+    background: var(--panel2); border: 1px solid var(--border2);
+    border-radius: 13px; padding: 11px 13px; cursor: pointer;
+  }
+  .routine-glyph { font-size: 17px; }
+  .routine-name { font-size: 13px; font-weight: 600; flex: 1; }
+  .routine-cell input[type="time"] {
+    background: none; border: 0; color: var(--text); outline: none;
+    font: 700 16px Sora, Inter, sans-serif; width: auto; padding: 0;
+    color-scheme: dark;
+  }
+  button.conn { background: var(--panel); font-family: inherit; }
+  button.conn:hover { border-color: var(--accent); color: var(--text); }
+
   footer {
     margin-top: 30px; text-align: center;
     color: var(--faint); font-size: 11.5px;
@@ -362,6 +379,7 @@
   <header>
     <span class="logo">APEX</span><span class="logo-tag">WEB</span>
     <span class="head-spacer"></span>
+    <button class="conn" id="alertsBtn" style="display:none; cursor:pointer" title="Get browser notifications for Zen mode and due reminders">🔔 enable alerts</button>
     <span class="conn"><span class="dot" id="connDot"></span><span id="connText">connecting…</span></span>
   </header>
 
@@ -411,6 +429,25 @@
           <div id="planBox"><div class="empty">Loading…</div></div>
         </div>
         <div>
+          <div class="card g-rise">
+            <h3>Routine</h3>
+            <div class="routine-grid">
+              <label class="routine-cell">
+                <span class="routine-glyph" style="color:var(--amber)">☀</span>
+                <span class="routine-name">Wake</span>
+                <input type="time" id="wakeInput" />
+              </label>
+              <label class="routine-cell">
+                <span class="routine-glyph" style="color:var(--accent)">☽</span>
+                <span class="routine-name">Sleep</span>
+                <input type="time" id="sleepInput" />
+              </label>
+            </div>
+            <div style="display:flex; gap:9px; align-items:center; margin-top:11px">
+              <button class="btn tiny" id="routineSaveBtn" style="display:none">Save times</button>
+              <small class="empty" id="routineHint" style="padding:0">Drives the phone's alarms — desktop adopts edits on its next sync.</small>
+            </div>
+          </div>
           <div class="card g-rise">
             <h3>Now</h3>
             <div id="nowBox"><div class="empty">Loading…</div></div>
@@ -673,7 +710,84 @@ async function enterDash(device) {
   $("taskInput").onkeydown = (e) => { if (e.key === "Enter") addTask(); };
   $("noteSaveBtn").onclick = saveNote;
   $("unpairBtn").onclick = unpair;
+  initRoutineEditor();
+  initAlerts();
   initTabs();
+}
+
+// ── routine editor (wake/sleep) ─────────────────────────────────────────
+function initRoutineEditor() {
+  const onEdit = () => { $("routineSaveBtn").style.display = "inline-block"; };
+  $("wakeInput").onchange = onEdit;
+  $("sleepInput").onchange = onEdit;
+  $("routineSaveBtn").onclick = saveRoutineTimes;
+}
+function renderRoutine() {
+  $("wakeInput").value = routine?.wake_time || "07:00";
+  $("sleepInput").value = routine?.sleep_time || "23:30";
+  $("routineSaveBtn").style.display = "none";
+}
+async function saveRoutineTimes() {
+  const base = routine || { date: todayIso(), name: "Daily routine", payload: {} };
+  try {
+    routine = await api("/routine/today", { method: "PUT", body: {
+      id: base.id || null,
+      date: base.date || todayIso(),
+      name: base.name || "Daily routine",
+      wake_time: $("wakeInput").value || "07:00",
+      sleep_time: $("sleepInput").value || "23:30",
+      objective_id: base.objective_id || null,
+      linked_task_id: base.linked_task_id || null,
+      // Same adoption path as phone edits: desktop sees lastEditedBy +
+      // editedAt and takes these times into its routine config instead of
+      // overwriting them on its next push.
+      payload: { ...(base.payload || {}), lastEditedBy: "web", editedAt: new Date().toISOString() },
+    }});
+    renderRoutine(); renderStats();
+    toast("Routine saved ✓ — phone alarms follow on next sync.");
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── browser notifications ───────────────────────────────────────────────
+// Opt-in alerts for two things worth interrupting you for: a focus block
+// going live (Zen / desktop timer) and reminders turning due. Fired only
+// while the tab is hidden — the in-page UI covers the visible case.
+let lastFocusActive = null;
+const notifiedKeys = new Set(JSON.parse(localStorage.getItem("apex.web.notified." + todayIso()) || "[]"));
+function initAlerts() {
+  if (!("Notification" in window)) return;
+  const btn = $("alertsBtn");
+  if (Notification.permission === "default") {
+    btn.style.display = "inline-flex";
+    btn.onclick = async () => {
+      const p = await Notification.requestPermission();
+      btn.style.display = p === "default" ? "inline-flex" : "none";
+      if (p === "granted") toast("Alerts on — focus blocks + due reminders.");
+    };
+  }
+}
+function notify(title, body, key) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  if (!document.hidden) return; // visible tab already shows it in-page
+  if (key) {
+    if (notifiedKeys.has(key)) return;
+    notifiedKeys.add(key);
+    localStorage.setItem("apex.web.notified." + todayIso(), JSON.stringify([...notifiedKeys]));
+  }
+  try { new Notification(title, { body, tag: key || title }); } catch { /* blocked */ }
+}
+function fireAlerts() {
+  const active = !!focus?.active;
+  if (lastFocusActive !== null && active && !lastFocusActive) {
+    const until = focus.ends_at ? " · until " + new Date(focus.ends_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+    notify("Focus block live", `${focus.title || "Focus"}${until} — phone blocker is watching.`);
+  }
+  lastFocusActive = active;
+  for (const r of reminders) {
+    const key = `${r.kind}:${r.title}`;
+    if (r.kind === "wake" || r.kind === "sleep") notify(r.title, "Tap the web app to check in.", key);
+    else if (r.overdue) notify("Overdue: " + r.title, "Due " + (r.due_at || "").replace("T", " ").slice(0, 16), key);
+  }
 }
 
 function renderGreeting() {
@@ -723,12 +837,14 @@ async function refreshLight() {
     focus = await api("/focus");
     reminders = await api("/reminders/due");
     renderFocus(); renderNow();
+    fireAlerts();
   } catch { /* transient network — next tick retries */ }
 }
 
 function renderAll() {
-  renderStats(); renderFocus(); renderPlan(); renderNow();
+  renderStats(); renderFocus(); renderRoutine(); renderPlan(); renderNow();
   renderRecentNotes(); renderTasks(); renderNotes(); renderActivity();
+  fireAlerts();
 }
 
 // ── stats ───────────────────────────────────────────────────────────────
