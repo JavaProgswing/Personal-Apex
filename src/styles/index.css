@@ -7623,6 +7623,18 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+.timer-away-stat { color: var(--warn, #f5b84b); font-weight: 600; }
+.timer-away-now {
+  margin-top: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--warn, #f5b84b);
+  background: color-mix(in srgb, var(--warn, #f5b84b) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn, #f5b84b) 35%, transparent);
+  border-radius: 8px;
+  padding: 4px 9px;
+  display: inline-block;
+}
 
 /* Category-coloured kind pill in the live-timer head. */
 .pill.cat-productive-pill  { background: rgba(78,205,196,0.14);  color: #79e2da; border-color: transparent; }

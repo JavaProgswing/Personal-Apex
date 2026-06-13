@@ -30,8 +30,27 @@ class ZenWatchService : Service() {
     private lateinit var store: ApexStore
     private var endsAt: Long = 0
     private var title: String = "Focus"
+    private var intensity: String = "strict"
     private var lastNudgeAt = 0L
     private var lastNudgePkg = ""
+
+    // Per-intensity enforcement. notify (plain timer) only reminds; Zen modes
+    // escalate from a louder nudge (relaxed) to nudge + bounce (strict) to an
+    // aggressive bounce on every check (locked).
+    private data class Enforcement(
+        val bounce: Boolean,        // send the app home on a distraction
+        val bounceEveryCheck: Boolean, // re-bounce on every poll (locked)
+        val cooldownMs: Long,       // min gap between notifications
+        val loud: Boolean,          // HIGH-importance channel vs gentle
+        val label: String,          // foreground-notification heading
+    )
+    private fun enforcementFor(i: String): Enforcement = when (i) {
+        "notify" -> Enforcement(false, false, 5 * 60_000L, false, "Focus timer")
+        "relaxed" -> Enforcement(false, false, 90_000L, true, "Zen - relaxed")
+        "strict" -> Enforcement(true, false, 30_000L, true, "Zen - strict")
+        "locked" -> Enforcement(true, true, 15_000L, true, "Zen - locked")
+        else -> Enforcement(true, false, 30_000L, true, "Zen")
+    }
 
     private val watcher = object : Runnable {
         override fun run() {
@@ -56,6 +75,7 @@ class ZenWatchService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         title = intent?.getStringExtra(EXTRA_TITLE) ?: "Focus"
         endsAt = intent?.getLongExtra(EXTRA_ENDS_AT, 0L) ?: 0L
+        intensity = intent?.getStringExtra(EXTRA_INTENSITY) ?: "strict"
         startInForeground()
         handler.removeCallbacks(watcher); handler.post(watcher)
         handler.removeCallbacks(refetcher); handler.postDelayed(refetcher, REFRESH_MS)
@@ -77,11 +97,16 @@ class ZenWatchService : Service() {
             manager.createNotificationChannel(
                 NotificationChannel(NUDGE_CHANNEL_ID, "Apex focus violations", NotificationManager.IMPORTANCE_HIGH),
             )
+            manager.createNotificationChannel(
+                NotificationChannel(REMIND_CHANNEL_ID, "Apex focus reminders", NotificationManager.IMPORTANCE_DEFAULT),
+            )
         }
+        val enf = enforcementFor(intensity)
         val until = if (endsAt > 0) " until ${hhmm(endsAt)}" else ""
+        val what = if (enf.bounce) "Distraction apps get sent home." else "You'll get a nudge on distraction apps."
         val notification = baseBuilder(CHANNEL_ID)
-            .setContentTitle("Zen mode - $title")
-            .setContentText("Desktop focus active$until. Distraction apps are blocked.")
+            .setContentTitle("${enf.label} - $title")
+            .setContentText("Desktop focus active$until. $what")
             .setOngoing(true)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -98,10 +123,15 @@ class ZenWatchService : Service() {
         if (pkg == packageName) return
         if (WellbeingReader.categoryFor(pkg) != "distraction") return
 
-        store.bumpBlockedToday(java.time.LocalDate.now().toString())
+        val enf = enforcementFor(intensity)
+        val now = System.currentTimeMillis()
+        val onCooldown = pkg == lastNudgePkg && now - lastNudgeAt < enf.cooldownMs
+
+        // Bounce (strict/locked). Locked re-bounces on every poll; strict only
+        // when off cooldown so it doesn't fight a legit quick glance forever.
         val canOverlay = Settings.canDrawOverlays(this)
-        if (canOverlay) {
-            // Bounce to the home screen - the actual "block".
+        if (enf.bounce && canOverlay && (enf.bounceEveryCheck || !onCooldown)) {
+            store.bumpBlockedToday(java.time.LocalDate.now().toString())
             try {
                 startActivity(Intent(Intent.ACTION_MAIN).apply {
                     addCategory(Intent.CATEGORY_HOME)
@@ -109,16 +139,23 @@ class ZenWatchService : Service() {
                 })
             } catch (_: Throwable) { /* fall through to nudge */ }
         }
-        val now = System.currentTimeMillis()
-        if (pkg == lastNudgePkg && now - lastNudgeAt < NUDGE_COOLDOWN_MS) return
+
+        // Notification, rate-limited per intensity.
+        if (onCooldown) return
         lastNudgePkg = pkg; lastNudgeAt = now
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val appLabel = try {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
         } catch (_: Exception) { pkg.substringAfterLast('.') }
-        manager.notify(NUDGE_ID, baseBuilder(NUDGE_CHANNEL_ID)
-            .setContentTitle(if (canOverlay) "Blocked: $appLabel" else "Zen drift: $appLabel")
-            .setContentText("Desktop focus block is running - stay with “$title”.")
+        val channel = if (enf.loud) NUDGE_CHANNEL_ID else REMIND_CHANNEL_ID
+        val heading = when {
+            enf.bounce && canOverlay -> "Blocked: $appLabel"
+            enf.bounce -> "Off track: $appLabel"      // wants to bounce but no overlay grant
+            else -> "Heads up: $appLabel"             // notify / relaxed
+        }
+        manager.notify(NUDGE_ID, baseBuilder(channel)
+            .setContentTitle(heading)
+            .setContentText("Focus block running - stay with “$title”.")
             .setAutoCancel(true)
             .build())
     }
@@ -128,7 +165,18 @@ class ZenWatchService : Service() {
             val state = try {
                 ApexApiClient(store.apiBase, tokenProvider = { store.token }).focus()
             } catch (_: Throwable) { return@launch } // offline: keep local timer
-            if (!state.active) stopSelf()
+            if (!state.active) { stopSelf(); return@launch }
+            // The desktop can escalate/relax mid-block (timer -> Zen, relaxed ->
+            // locked). Adopt the new intensity + end time live.
+            if (state.intensity != intensity) {
+                intensity = state.intensity
+                startInForeground() // refresh the ongoing notification text
+            }
+            state.endsAt?.let { iso ->
+                val ms = runCatching { java.time.Instant.parse(iso).toEpochMilli() }
+                    .getOrElse { runCatching { java.time.OffsetDateTime.parse(iso).toInstant().toEpochMilli() }.getOrDefault(0L) }
+                if (ms > 0) endsAt = ms
+            }
         }
     }
 
@@ -153,15 +201,16 @@ class ZenWatchService : Service() {
     companion object {
         private const val CHANNEL_ID = "apex_zen_watch"
         private const val NUDGE_CHANNEL_ID = "apex_zen_nudge"
+        private const val REMIND_CHANNEL_ID = "apex_focus_remind"
         private const val FG_ID = 7402
         private const val NUDGE_ID = 7403
         private const val CHECK_MS = 5_000L
         private const val REFRESH_MS = 120_000L
-        private const val NUDGE_COOLDOWN_MS = 30_000L
         const val EXTRA_TITLE = "title"
         const val EXTRA_ENDS_AT = "ends_at"
+        const val EXTRA_INTENSITY = "intensity"
 
-        fun start(context: Context, title: String?, endsAtIso: String?) {
+        fun start(context: Context, title: String?, endsAtIso: String?, intensity: String = "strict") {
             val endsAt = try {
                 endsAtIso?.let { java.time.Instant.parse(it).toEpochMilli() } ?: 0L
             } catch (_: Exception) {
@@ -171,6 +220,7 @@ class ZenWatchService : Service() {
             val intent = Intent(context, ZenWatchService::class.java)
                 .putExtra(EXTRA_TITLE, title ?: "Focus")
                 .putExtra(EXTRA_ENDS_AT, endsAt)
+                .putExtra(EXTRA_INTENSITY, intensity)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {

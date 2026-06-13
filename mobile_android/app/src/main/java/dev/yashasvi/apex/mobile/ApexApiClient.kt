@@ -75,6 +75,9 @@ data class FocusState(
     val active: Boolean,
     val title: String?,
     val mode: String?,
+    // notify (plain timer) < relaxed < strict < locked. Drives how hard the
+    // mobile blocker enforces the block.
+    val intensity: String,
     val endsAt: String?,
 )
 
@@ -155,6 +158,7 @@ class ApexApiClient(
             active = json.optBoolean("active", false),
             title = json.str("title"),
             mode = json.str("mode"),
+            intensity = json.str("intensity") ?: "strict",
             endsAt = json.str("ends_at"),
         )
     }

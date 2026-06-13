@@ -36,7 +36,7 @@ class WellbeingSyncWorker(
         try {
             val focus = client.focus()
             if (focus.active && store.blockerEnabled) {
-                ZenWatchService.start(applicationContext, focus.title, focus.endsAt)
+                ZenWatchService.start(applicationContext, focus.title, focus.endsAt, focus.intensity)
             }
         } catch (_: Throwable) { /* offline - fine */ }
 

@@ -606,7 +606,7 @@ async function revokeDevice(deviceId) {
 
 // Publish desktop focus state (Zen mode) so the phone can mirror it with a
 // mobile distraction blocker. Best-effort: never throws.
-async function pushFocus({ active, title, mode, endsAt } = {}) {
+async function pushFocus({ active, title, mode, intensity, endsAt } = {}) {
   try {
     await apiFetch("/focus", {
       method: "PUT",
@@ -614,6 +614,7 @@ async function pushFocus({ active, title, mode, endsAt } = {}) {
         active: !!active,
         title: title || null,
         mode: mode || "zen",
+        intensity: intensity || "strict",
         ends_at: endsAt || null,
       }),
     });

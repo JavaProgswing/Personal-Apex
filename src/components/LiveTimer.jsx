@@ -61,6 +61,12 @@ export default function LiveTimer({ tasks = [], onChanged }) {
   // timer. Polled alongside the regular timer refresh.
   const [leisure, setLeisure] = useState(null);
   const [zen, setZen] = useState(null);
+  // Away/idle awareness while a timer runs — so a focus block can't quietly
+  // claim minutes you spent away from the desk.
+  const [away, setAway] = useState(false);
+  const [awayMin, setAwayMin] = useState(0);
+  const lastIdlePollRef = useRef(0);
+  const awayTimerIdRef = useRef(null);
   const tickRef = useRef(null);
 
   async function refresh() {
@@ -109,11 +115,41 @@ export default function LiveTimer({ tasks = [], onChanged }) {
   }, []);
 
   // 1Hz tick to drive the countdown/leisure elapsed time without re-fetching.
+  // Snap `now` to the present the instant a timer activates — otherwise the
+  // first render uses a `now` frozen from when the tick was last running.
   useEffect(() => {
     if (!active && !leisure) return;
+    setNow(Date.now());
     tickRef.current = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(tickRef.current);
   }, [active, leisure]);
+
+  // Poll the system idle state while a timer runs; accumulate away minutes
+  // per block (reset when a new timer starts). powerMonitor works even when
+  // the per-app tracker is off.
+  useEffect(() => {
+    if (!active) { setAway(false); return; }
+    if (awayTimerIdRef.current !== active.id) {
+      awayTimerIdRef.current = active.id;
+      setAwayMin(0);
+    }
+    lastIdlePollRef.current = Date.now();
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const s = await api.tracker?.status?.();
+        if (cancelled) return;
+        const isAway = !!s?.idle;
+        const nowMs = Date.now();
+        if (isAway) setAwayMin((m) => m + (nowMs - lastIdlePollRef.current) / 60000);
+        lastIdlePollRef.current = nowMs;
+        setAway(isAway);
+      } catch { /* ignore */ }
+    };
+    poll();
+    const id = setInterval(poll, 20_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [active?.id]);
 
   // Auto-finish when the timer has been at/under 0 for 45s — long enough to
   // hit "+10m keep going" without racing the auto-stop, short enough that an
@@ -299,8 +335,14 @@ export default function LiveTimer({ tasks = [], onChanged }) {
           {active.extended_minutes ? (
             <> · +{active.extended_minutes}m extended</>
           ) : null}
+          {awayMin >= 1 ? (
+            <> · <span className="timer-away-stat">{Math.round(awayMin)}m away</span></>
+          ) : null}
           {lockedByZen ? <> · locked by Zen</> : null}
         </div>
+        {away && (
+          <div className="timer-away-now">⏸ You're away — this time isn't focus.</div>
+        )}
       </div>
       <div className="live-timer-clock">
         <div className={"live-timer-time" + (isOver ? " over" : isLow ? " low" : "")}>
@@ -590,7 +632,12 @@ function remainingSec(active, now) {
   const start = new Date(active.started_at).getTime();
   const total =
     ((active.planned_minutes || 0) + (active.extended_minutes || 0)) * 60;
-  return total - Math.floor((now - start) / 1000);
+  // Clamp elapsed to >= 0. While no timer runs the 1Hz tick is paused, so
+  // `now` is stale; the first frame after start would otherwise compute a
+  // negative elapsed and flash an inflated time (e.g. 45:00) before settling
+  // on the real countdown.
+  const elapsed = Math.max(0, Math.floor((now - start) / 1000));
+  return total - elapsed;
 }
 function fmt(sec) {
   const s = Math.max(0, Math.floor(sec));

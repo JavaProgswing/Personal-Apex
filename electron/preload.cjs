@@ -261,6 +261,8 @@ contextBridge.exposeInMainWorld("apex", {
     feed: (opts) => invoke("activity:feed", opts),
     buckets: (d) => invoke("activity:buckets", d),
     clearAll: () => invoke("activity:clearAll"),
+    // Currently open/focused windows — Zen's app picker seeds from these.
+    openApps: () => invoke("tracker:openApps"),
     // Fired by main whenever a cloud pull writes fresh phone rows.
     onRefresh: (h) => on("activity:refresh", h),
     openApps: () => invoke("activity:openApps"),
@@ -276,6 +278,7 @@ contextBridge.exposeInMainWorld("apex", {
     start: () => invoke("tracker:start"),
     stop: () => invoke("tracker:stop"),
     status: () => invoke("tracker:status"),
+    openApps: () => invoke("tracker:openApps"),
     categorize: (app, category) => invoke("tracker:categorize", app, category),
     onNudge: (h) => on("activity:nudge", h),
     onSessionEnded: (h) => on("activity:sessionEnded", h),

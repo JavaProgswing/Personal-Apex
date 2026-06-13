@@ -168,6 +168,7 @@ def init_db() -> None:
                 active INTEGER NOT NULL DEFAULT 0,
                 title TEXT,
                 mode TEXT,
+                intensity TEXT DEFAULT 'strict',
                 ends_at TEXT,
                 source_device TEXT,
                 updated_at TEXT
@@ -191,6 +192,10 @@ def init_db() -> None:
             conn.execute("UPDATE wellbeing_sessions SET updated_at = COALESCE(ended_at, date)")
         # Safe now that the column is guaranteed to exist.
         conn.execute("CREATE INDEX IF NOT EXISTS idx_wellbeing_updated ON wellbeing_sessions(updated_at)")
+        # focus_state.intensity added after the table shipped — backfill.
+        fcols = {row[1] for row in conn.execute("PRAGMA table_info(focus_state)")}
+        if "intensity" not in fcols:
+            conn.execute("ALTER TABLE focus_state ADD COLUMN intensity TEXT DEFAULT 'strict'")
 
 
 app = FastAPI(title=APP_NAME, version="1.0.0")
@@ -651,23 +656,30 @@ class FocusIn(BaseModel):
     title: str | None = None
     mode: str = "zen"
     ends_at: str | None = None
+    # How hard the phone should enforce this block:
+    #   notify  - plain productive timer: gentle notification only
+    #   relaxed - Zen relaxed: notification, shorter cooldown
+    #   strict  - Zen strict: notification + bounce to home
+    #   locked  - Zen locked: aggressive bounce, shortest cooldown
+    intensity: str = "strict"
 
 
 @app.put("/focus")
 def put_focus(payload: FocusIn, device: Device = Depends(current_device)) -> dict[str, Any]:
-    """Desktop publishes its focus state here when Zen mode starts/stops; the
-    phone polls it to run the mobile distraction blocker."""
+    """Desktop publishes its focus state here when a timer / Zen mode starts or
+    stops; the phone polls it to run the mobile distraction blocker at the
+    matching intensity."""
     with db() as conn:
         conn.execute(
             """
-            INSERT INTO focus_state (id, active, title, mode, ends_at, source_device, updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?)
+            INSERT INTO focus_state (id, active, title, mode, intensity, ends_at, source_device, updated_at)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 active = excluded.active, title = excluded.title, mode = excluded.mode,
-                ends_at = excluded.ends_at, source_device = excluded.source_device,
-                updated_at = excluded.updated_at
+                intensity = excluded.intensity, ends_at = excluded.ends_at,
+                source_device = excluded.source_device, updated_at = excluded.updated_at
             """,
-            (1 if payload.active else 0, payload.title, payload.mode, payload.ends_at, device.id, now_iso()),
+            (1 if payload.active else 0, payload.title, payload.mode, payload.intensity, payload.ends_at, device.id, now_iso()),
         )
     return {"ok": True, "active": payload.active}
 
@@ -677,7 +689,7 @@ def get_focus(device: Device = Depends(current_device)) -> dict[str, Any]:
     with db() as conn:
         row = conn.execute("SELECT * FROM focus_state WHERE id = 1").fetchone()
     if not row:
-        return {"active": False, "title": None, "mode": None, "ends_at": None}
+        return {"active": False, "title": None, "mode": None, "intensity": "strict", "ends_at": None}
     data = dict(row)
     active = bool(data.get("active"))
     ends_at = data.get("ends_at")
@@ -693,6 +705,7 @@ def get_focus(device: Device = Depends(current_device)) -> dict[str, Any]:
         "active": active,
         "title": data.get("title"),
         "mode": data.get("mode"),
+        "intensity": data.get("intensity") or "strict",
         "ends_at": ends_at,
         "updated_at": data.get("updated_at"),
     }

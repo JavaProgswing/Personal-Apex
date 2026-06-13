@@ -2161,14 +2161,15 @@ class MainActivity : ComponentActivity() {
             if (::focusBanner.isInitialized) {
                 if (focus.active) {
                     val until = focus.endsAt?.let { "  ·  until ${shortTime(it)}" } ?: ""
-                    focusBanner.text = "◉  ZEN MODE - ${focus.title ?: "Focus"}$until"
+                    val heading = if (focus.intensity == "notify") "FOCUS TIMER" else "ZEN - ${focus.intensity.uppercase()}"
+                    focusBanner.text = "◉  $heading - ${focus.title ?: "Focus"}$until"
                     focusBanner.visibility = View.VISIBLE
                 } else {
                     focusBanner.visibility = View.GONE
                 }
             }
             if (focus.active && store.blockerEnabled) {
-                ZenWatchService.start(this@MainActivity, focus.title, focus.endsAt)
+                ZenWatchService.start(this@MainActivity, focus.title, focus.endsAt, focus.intensity)
             } else if (!focus.active) {
                 ZenWatchService.stop(this@MainActivity)
             }

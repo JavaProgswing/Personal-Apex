@@ -1947,6 +1947,7 @@ function mirrorTimerFocus(row) {
       active: true,
       title: row.title || "Focus block",
       mode: "timer",
+      intensity: "notify", // plain timer = gentle phone reminder only
       endsAt: timerEndsAtIso(row),
     }).catch?.(() => {});
   } else {
@@ -2250,10 +2251,12 @@ ipcMain.handle("zen:start", async (_e, p) => {
   broadcastZen(session, { timer: timerRow });
 
   // Mirror the focus block to the phone (mobile distraction blocker).
+  // Intensity escalates with the Zen mode: relaxed < strict < locked.
   routine.pushFocus?.({
     active: true,
     title: session.title,
     mode: session.mode,
+    intensity: session.mode, // relaxed | strict | locked
     endsAt: session.ends_at,
   }).catch?.(() => {});
 
@@ -2358,6 +2361,32 @@ ipcMain.handle("schedule:deleteOverrideById", (_e, id) => {
 ipcMain.handle("tracker:start", () => activityTracker.start((ch, p) => emit(ch, p)));
 ipcMain.handle("tracker:stop", () => activityTracker.stop());
 ipcMain.handle("tracker:status", () => activityTracker.status());
+// Currently open windows (focused first), deduped per exe with inferred
+// category — Zen's app picker uses this so you can allow/block what's
+// literally on screen right now, not just today's tracked apps.
+ipcMain.handle("tracker:openApps", async () => {
+  try {
+    const wins = await activityTracker.getVisibleWindows();
+    const byExe = new Map();
+    for (const w of wins || []) {
+      if (!w.exe) continue;
+      const key = String(w.exe).toLowerCase();
+      const prev = byExe.get(key);
+      // Keep the focused instance's title when an app has multiple windows.
+      if (!prev || (w.focused && !prev.focused)) {
+        byExe.set(key, {
+          app: w.exe,
+          title: w.title || "",
+          focused: !!w.focused,
+          category: activityTracker.inferCategory(w.exe, w.title || ""),
+        });
+      }
+    }
+    return [...byExe.values()].sort((a, b) => (b.focused ? 1 : 0) - (a.focused ? 1 : 0));
+  } catch {
+    return [];
+  }
+});
 ipcMain.handle("tracker:categorize", (_e, app, category) => {
   // Two-step override:
   //   1. Persist the rule so future tracker ticks (and mobile syncs) pick

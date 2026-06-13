@@ -104,6 +104,13 @@ export default function ZenMode({ onChanged, onActiveChange }) {
     return () => clearInterval(id);
   }, []);
 
+  // Re-pull the open-window list each time the composer opens so the app
+  // picker reflects what's actually on screen right now, not at mount.
+  useEffect(() => {
+    if (expanded) refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded]);
+
   useEffect(() => {
     if (seededAllowed) return;
     if (!(mode === "strict" || mode === "locked")) return;

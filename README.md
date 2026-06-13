@@ -28,11 +28,14 @@ Zen mode, locked to a running timer:
 
 - **One dashboard** - classes (day-order aware), tasks, weekly goals, a live
   timer, and a 7-day picture of where your time went.
-- **Screen time everywhere** - desktop foreground tracking (app, site, idle-aware)
-  plus the phone's usage synced over the network. One timeline, Digital
-  Wellbeing accuracy.
-- **Focus defense** - Zen mode in strict / relaxed / locked flavors; locked
-  cannot be stopped until the timer ends, and the phone mirrors the block.
+- **Screen time everywhere** - desktop foreground tracking (app, site,
+  idle-aware: walk away mid-timer and it stops counting as focus) plus the
+  phone's usage synced over the network, launch counts and all. One timeline,
+  Digital Wellbeing accuracy.
+- **Focus defense, graduated** - Zen mode in relaxed / strict / locked flavors;
+  locked cannot be stopped until the timer ends. The phone mirrors the block at
+  matching intensity: a plain timer only nudges, relaxed nudges louder, strict
+  bounces distraction apps to the home screen, locked re-bounces relentlessly.
   Quitting the app asks for a reason that lands in your day log.
 - **Real alarms** - the phone rings (looping, full-screen, snooze); marking
   yourself awake triggers a morning brief on the desktop.

@@ -541,7 +541,18 @@ function status() {
     todayDesktop.topCategory = rows[0]?.category || null;
   } catch {}
 
-  return { running, current, last, todayDesktop, lastError: lastPsError };
+  // Live idle, independent of whether per-app tracking is on — the live
+  // timer uses this to flag "away" minutes so a focus block can't claim you
+  // were present the whole time.
+  const idleFor = idleSeconds();
+  const idle = idleFor >= IDLE_AFTER_SEC;
+
+  return {
+    running, current, last, todayDesktop, lastError: lastPsError,
+    idleSeconds: idleFor,
+    idle,
+    idleAfterSec: IDLE_AFTER_SEC,
+  };
 }
 
 async function currentWindow() {
