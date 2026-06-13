@@ -38,10 +38,10 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
-        // The catalog was trimmed to five curated themes (2026-06-12). Map a
-        // stored legacy key onto the nearest survivor (and persist the fix so
-        // the migration runs once).
-        const KNOWN = ["apex-focus", "library", "tokyo-night", "obsidian", "default-light"];
+        // Curated catalog (2026-06-13): apex-focus, slate, sand, moss,
+        // obsidian, default-light. Map any stored legacy/removed key (library,
+        // tokyo-night, …) onto the nearest survivor and persist the fix.
+        const KNOWN = ["apex-focus", "slate", "sand", "moss", "obsidian", "default-light"];
         const LIGHT_LEGACY = ["paper", "solarized-light", "latte", "default-light"];
         let t = (await api.settings?.get?.("ui.theme")) || "apex-focus";
         if (!KNOWN.includes(t)) {

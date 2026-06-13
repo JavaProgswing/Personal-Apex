@@ -65,6 +65,9 @@ export default function ZenMode({ onChanged, onActiveChange }) {
   const [playlistState, setPlaylistState] = useState(null);
   const [lastSummary, setLastSummary] = useState(null);
   const [expanded, setExpanded] = useState(false);
+  // Stop isn't a persistent button while a block runs — double-click the live
+  // card to reveal "End now" for a few seconds.
+  const [endPrompt, setEndPrompt] = useState(false);
 
   useEffect(() => {
     refresh();
@@ -324,9 +327,18 @@ export default function ZenMode({ onChanged, onActiveChange }) {
     const isLocked = active.mode === "locked";
     const activeAllowed = active.allowed_apps || [];
     const activeBlocked = active.blocked_apps || [];
+    const revealEnd = () => {
+      if (isLocked) return; // locked ends only when the timer hits zero
+      setEndPrompt(true);
+      setTimeout(() => setEndPrompt(false), 4000);
+    };
     return (
       <>
-        <section className={`zen-panel active mode-${active.mode}`}>
+        <section
+          className={`zen-panel active mode-${active.mode}`}
+          onDoubleClick={revealEnd}
+          title={isLocked ? undefined : "Double-click to end"}
+        >
           <div className="zen-meter" style={{ "--zen-progress": `${elapsedPct}%` }} />
           <div className="zen-active-main">
             <div>
@@ -362,15 +374,11 @@ export default function ZenMode({ onChanged, onActiveChange }) {
               <button className="ghost small" onClick={() => extend(10)}>+10m</button>
               <button className="ghost small" onClick={() => extend(25)}>+25m</button>
               {isLocked ? (
-                <button
-                  className="ghost small"
-                  disabled
-                  title="Locked focus ends only when the timer reaches zero"
-                >
-                  Locked until done
-                </button>
+                <span className="zen-lock-tag" title="Locked focus ends only when the timer reaches zero">🔒 until timer ends</span>
+              ) : endPrompt ? (
+                <button className="primary small" onClick={() => stop("stopped")}>End now</button>
               ) : (
-                <button className="primary small" onClick={() => stop("stopped")}>End Zen</button>
+                <span className="zen-end-hint muted">double-click to end</span>
               )}
             </div>
           </div>

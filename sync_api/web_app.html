@@ -18,18 +18,18 @@
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --bg: #0B0D12;
-    --panel: rgba(20, 25, 34, 0.72);
-    --panel-solid: #141922;
-    --panel2: rgba(27, 34, 48, 0.82);
-    --panel2-solid: #1B2230;
-    --border: rgba(56, 216, 196, 0.10);
-    --border2: #2A3444;
-    --text: #F4F7FB;
-    --muted: #9AA8BA;
-    --faint: #667386;
-    --accent: #38D8C4;
-    --accent-soft: rgba(56, 216, 196, 0.14);
+    --bg: #0C0D0F;
+    --panel: rgba(22, 24, 28, 0.72);
+    --panel-solid: #14161B;
+    --panel2: rgba(30, 34, 41, 0.82);
+    --panel2-solid: #1C1F26;
+    --border: rgba(46, 199, 180, 0.09);
+    --border2: #30343D;
+    --text: #F1F3F5;
+    --muted: #A6ADB6;
+    --faint: #6A7079;
+    --accent: #2EC7B4;
+    --accent-soft: rgba(46, 199, 180, 0.13);
     --amber: #F5B84B;
     --green: #3DD68C;
     --red: #E5675C;
@@ -221,8 +221,8 @@
   #focusBanner {
     display: none;
     align-items: center; gap: 12px;
-    background: linear-gradient(110deg, rgba(56,216,196,0.16), rgba(43,168,216,0.10));
-    border: 1px solid rgba(56,216,196,0.45);
+    background: linear-gradient(110deg, rgba(46,199,180,0.15), rgba(37,169,176,0.09));
+    border: 1px solid rgba(46,199,180,0.40);
     border-radius: 15px; padding: 13px 18px; margin-bottom: 18px;
     font-weight: 600; font-size: 14px;
     backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
@@ -231,13 +231,9 @@
     width: 11px; height: 11px; border-radius: 50%;
     background: var(--accent); flex: none;
   }
+  #focusBanner { cursor: pointer; }
   #focusBanner #focusText { flex: 1; }
-  .focus-stop {
-    flex: none;
-    border-color: rgba(229,103,92,0.5) !important;
-    color: var(--red) !important;
-  }
-  .focus-stop:hover { border-color: var(--red) !important; box-shadow: none !important; }
+  .focus-chev { flex: none; font-size: 22px; line-height: 1; opacity: 0.45; }
 
   .row-item {
     display: flex; align-items: center; gap: 12px;
@@ -409,9 +405,9 @@
     <div class="greet g-rise" id="greet"></div>
     <div class="date-line g-rise" id="dateLine"></div>
 
-    <div id="focusBanner" class="g-rise">
+    <div id="focusBanner" class="g-rise" title="Click to stop this focus block everywhere">
       <span class="pulse"></span><span id="focusText"></span>
-      <button class="btn tiny ghost focus-stop" id="focusStopBtn" title="Force-end this focus block on every device">⏹ Stop</button>
+      <span class="focus-chev">›</span>
     </div>
 
     <div class="stats">
@@ -721,7 +717,7 @@ async function enterDash(device) {
   initRoutineEditor();
   initAlerts();
   initTabs();
-  $("focusStopBtn").onclick = emergencyStopFocus;
+  $("focusBanner").onclick = emergencyStopFocus;
 }
 
 // Emergency stop — kills the active focus block on every device (the desktop
@@ -891,7 +887,10 @@ function renderFocus() {
   const b = $("focusBanner");
   if (focus?.active) {
     const until = focus.ends_at ? " · until " + new Date(focus.ends_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
-    $("focusText").textContent = `ZEN MODE — ${focus.title || "Focus"}${until}`;
+    const eff = focus.mode === "timer" ? "notify"
+      : (["relaxed", "strict", "locked"].includes(focus.mode) ? focus.mode : (focus.intensity || "strict"));
+    const head = eff === "notify" ? "FOCUS TIMER" : "ZEN " + eff.toUpperCase();
+    $("focusText").textContent = `${head} — ${focus.title || "Focus"}${until}`;
     b.style.display = "flex";
     if (window.gsap && !b._pulse && !REDUCED) {
       b._pulse = gsap.to(b.querySelector(".pulse"), { opacity: 0.25, scale: 0.7, duration: 0.9, yoyo: true, repeat: -1, ease: "sine.inOut" });

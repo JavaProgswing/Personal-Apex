@@ -6,9 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
-import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -66,6 +64,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var contentFrame: FrameLayout
     private val tabViews = HashMap<String, View>()
     private val navButtons = HashMap<String, TextView>()
+    private val navMeta = LinkedHashMap<String, Pair<String, String>>() // key -> glyph, title
     private var currentTab = ""
 
     // ── Today tab ────────────────────────────────────────────────────────────
@@ -130,17 +129,16 @@ class MainActivity : ComponentActivity() {
     private lateinit var pairButton: Button
 
     // ── palette ──────────────────────────────────────────────────────────────
-    private val bg = Color.parseColor("#0B0D12")
-    private val panel = Color.parseColor("#141922")
-    private val panel2 = Color.parseColor("#1B2230")
-    private val border = Color.parseColor("#263244")
-    private val border2 = Color.parseColor("#2A3444")
-    private val textColor = Color.parseColor("#F4F7FB")
-    private val muted = Color.parseColor("#9AA8BA")
-    private val faint = Color.parseColor("#667386")
-    private val accent = Color.parseColor("#38D8C4")
-    private val accent2 = Color.parseColor("#2BC4D8")
-    private val accentSoft = Color.argb(38, 56, 216, 196)
+    private val bg = Color.parseColor("#0C0D0F")
+    private val panel = Color.parseColor("#14161B")
+    private val panel2 = Color.parseColor("#1C1F26")
+    private val border = Color.parseColor("#2A2E36")
+    private val border2 = Color.parseColor("#30343D")
+    private val textColor = Color.parseColor("#F1F3F5")
+    private val muted = Color.parseColor("#A6ADB6")
+    private val faint = Color.parseColor("#6A7079")
+    private val accent = Color.parseColor("#2EC7B4")
+    private val accentSoft = Color.argb(34, 46, 199, 180)
     private val amber = Color.parseColor("#F5B84B")
     private val green = Color.parseColor("#3DD68C")
     private val red = Color.parseColor("#E5675C")
@@ -411,11 +409,7 @@ class MainActivity : ComponentActivity() {
     private fun buildUi() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            // Deep vertical gradient instead of a flat fill — cards float on it.
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.parseColor("#0A0C11"), Color.parseColor("#0D1018"), Color.parseColor("#0A0D14")),
-            )
+            setBackgroundColor(bg)
         }
 
         root.addView(buildHeader().apply {
@@ -467,17 +461,7 @@ class MainActivity : ComponentActivity() {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             }
-            // Gradient wordmark — same teal→blue ramp as the web app's logo.
-            titleCol.addView(label("Apex", 26f, textColor, true).apply {
-                post {
-                    paint.shader = LinearGradient(
-                        0f, 0f, paint.measureText(text.toString()), 0f,
-                        intArrayOf(Color.parseColor("#7CF5E6"), accent, Color.parseColor("#2BA8D8")),
-                        null, Shader.TileMode.CLAMP,
-                    )
-                    invalidate()
-                }
-            })
+            titleCol.addView(label("Apex", 26f, accent, true).apply { letterSpacing = -0.02f })
             addView(titleCol)
             statusDot = View(this@MainActivity).apply {
                 layoutParams = LinearLayout.LayoutParams(dp(11), dp(11)).also { it.marginEnd = dp(12) }
@@ -492,25 +476,21 @@ class MainActivity : ComponentActivity() {
         val navBg = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(panel)
-            setPadding(dp(8), dp(6), dp(8), dp(10))
+            setPadding(dp(8), dp(8), dp(8), dp(10))
         }
-        listOf(
-            Triple("today", "☀", "Today"),
-            Triple("tasks", "✓", "Tasks"),
-            Triple("notes", "✎", "Notes"),
-            Triple("activity", "▤", "Activity"),
-            Triple("settings", "⚙", "Settings"),
-        ).forEach { (key, glyph, title) ->
+        navMeta["today"] = "☀" to "Today"
+        navMeta["tasks"] = "✓" to "Tasks"
+        navMeta["notes"] = "✎" to "Notes"
+        navMeta["activity"] = "▤" to "Activity"
+        navMeta["settings"] = "⚙" to "Settings"
+        navMeta.keys.forEach { key ->
             val btn = TextView(this).apply {
-                tag = "$glyph\n$title" // base label; updateNavBadges() appends counts
-                text = "$glyph\n$title"
                 gravity = Gravity.CENTER
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f) // glyph size; label scales down
                 setTextColor(muted)
-                setLineSpacing(dp(2).toFloat(), 1f)
-                background = rippleRounded(Color.TRANSPARENT, dp(10), Color.TRANSPARENT)
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                setPadding(0, dp(6), 0, dp(6))
+                setLineSpacing(dp(1).toFloat(), 1f)
+                background = rippleRounded(Color.TRANSPARENT, dp(14), Color.TRANSPARENT)
+                layoutParams = LinearLayout.LayoutParams(0, dp(50), 1f)
                 setOnClickListener {
                     hapticTap(this)
                     selectTab(key)
@@ -519,22 +499,51 @@ class MainActivity : ComponentActivity() {
             navButtons[key] = btn
             navBg.addView(btn)
         }
+        renderNav()
         return navBg
+    }
+
+    // Icon-forward bottom bar: inactive tabs are glyph-only; the active tab
+    // reveals its label in an accent pill. Keeps the bar calm and removes the
+    // five always-on text labels.
+    private fun renderNav() {
+        val openCount = tasks.count { it.status != "done" && it.status != "archived" }
+        navMeta.forEach { (key, meta) ->
+            val btn = navButtons[key] ?: return@forEach
+            val active = key == currentTab
+            val badge = if (key == "tasks" && openCount > 0) (if (openCount > 9) "9+" else "$openCount") else null
+            btn.text = navContent(meta.first, meta.second, active, badge)
+            btn.setTextColor(if (active) accent else muted)
+            btn.setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
+            btn.background = rippleRounded(if (active) accentSoft else Color.TRANSPARENT, dp(14), Color.TRANSPARENT)
+        }
+    }
+
+    // glyph (full size) + optional accent badge + label (only when active),
+    // label and badge rendered smaller via spans so the glyph stays dominant.
+    private fun navContent(glyph: String, title: String, active: Boolean, badge: String?): CharSequence {
+        val sb = android.text.SpannableStringBuilder(glyph)
+        if (badge != null) {
+            val s = sb.length
+            sb.append("  $badge")
+            sb.setSpan(android.text.style.RelativeSizeSpan(0.5f), s, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.setSpan(android.text.style.ForegroundColorSpan(accent), s, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        if (active) {
+            val s = sb.length
+            sb.append("\n$title")
+            sb.setSpan(android.text.style.RelativeSizeSpan(0.6f), s, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return sb
     }
 
     private fun selectTab(key: String) {
         if (key == currentTab) return
         currentTab = key
-        navButtons.forEach { (k, b) ->
-            val active = k == key
-            b.setTextColor(if (active) accent else muted)
-            b.setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
-            // Soft accent pill behind the active tab, with a small scale pop.
-            b.background = rippleRounded(if (active) accentSoft else Color.TRANSPARENT, dp(12), Color.TRANSPARENT)
-            if (active) {
-                b.scaleX = 0.9f; b.scaleY = 0.9f
-                b.animate().scaleX(1f).scaleY(1f).setDuration(180).start()
-            }
+        renderNav()
+        navButtons[key]?.let { b ->
+            b.scaleX = 0.88f; b.scaleY = 0.88f
+            b.animate().scaleX(1f).scaleY(1f).setDuration(180).start()
         }
         contentFrame.removeAllViews()
         val view = tabViews.getOrPut(key) {
@@ -713,13 +722,7 @@ class MainActivity : ComponentActivity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(14))
-            background = GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(Color.parseColor("#142032"), Color.parseColor("#101722")),
-            ).apply {
-                cornerRadius = dp(18).toFloat()
-                setStroke(dp(1), Color.parseColor("#2B3A4D"))
-            }
+            background = rounded(panel, dp(18), Color.parseColor("#2B3A4D"))
             elevation = dp(3).toFloat()
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -769,11 +772,9 @@ class MainActivity : ComponentActivity() {
             col.addView(space(3))
             col.addView(focusBannerDetail)
             addView(col)
-            addView(View(this@MainActivity).apply { layoutParams = LinearLayout.LayoutParams(dp(10), 1) })
-            addView(baseButton("Stop", red, Color.WHITE) { confirmEmergencyStop() }.apply {
-                minHeight = dp(42)
-                setTypeface(typeface, Typeface.BOLD)
-            })
+            // Tap the banner to stop (confirm dialog). No persistent red button —
+            // just a quiet chevron so it reads as tappable, not as an alert.
+            addView(label("›", 22f, faint, false).apply { setPadding(dp(8), 0, dp(4), 0) })
         }
     }
 
@@ -1523,11 +1524,7 @@ class MainActivity : ComponentActivity() {
     // ═══════════════════════════════════════════════════════════════════════
     private fun buildTasksTab(): LinearLayout = tabColumn {
         addView(card {
-            addView(sectionTitle("Todo capture"))
-            addView(label(
-                "Quick add is for low-friction capture. Details opens the desktop-style fields: priority, category, and deadline.",
-                12.2f, muted, false,
-            ))
+            addView(sectionTitle("Add task"))
             addView(space(10))
             addView(label("Written todo", 11f, faint, true).apply {
                 letterSpacing = 0.08f
@@ -1768,14 +1765,7 @@ class MainActivity : ComponentActivity() {
     // Open-task count on the Tasks nav item so the backlog is visible from
     // any tab. Base label lives in the view's tag.
     private fun updateNavBadges() {
-        val btn = navButtons["tasks"] ?: return
-        val base = btn.tag as? String ?: return
-        val openCount = tasks.count { it.status != "done" && it.status != "archived" }
-        btn.text = when {
-            openCount <= 0 -> base
-            openCount > 9 -> "$base 9+"
-            else -> "$base $openCount"
-        }
+        if (navButtons.isNotEmpty()) renderNav()
     }
 
     private fun prettyRecurrence(rule: String): String = when {
@@ -2418,7 +2408,7 @@ class MainActivity : ComponentActivity() {
                     val heading = if (eff == "notify") "⏱ Focus timer active" else "🛡 Zen ${eff.uppercase()} active"
                     focusBannerTitle.text = heading
                     focusBannerTitle.setTextColor(if (eff == "notify") accent else amber)
-                    focusBannerDetail.text = "${focus.title ?: "Focus"} - $until. Stop ends it on desktop and phone."
+                    focusBannerDetail.text = "${focus.title ?: "Focus"}  ·  $until"
                     focusBanner.background = rippleRounded(panel2, dp(16), if (eff == "notify") accent else amber)
                     focusBanner.visibility = View.VISIBLE
                 } else {
@@ -2907,15 +2897,7 @@ class MainActivity : ComponentActivity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(18), dp(18))
-            // Soft vertical gradient + faint shadow so cards float instead of
-            // sitting flat on the background.
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.parseColor("#171D28"), Color.parseColor("#121722")),
-            ).apply {
-                cornerRadius = dp(18).toFloat()
-                setStroke(dp(1), Color.parseColor("#2A3342"))
-            }
+            background = rounded(panel, dp(18), Color.parseColor("#2A3342"))
             elevation = dp(3).toFloat()
             val params = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -2992,7 +2974,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun actionButton(textValue: String, onClick: () -> Unit): Button =
-        baseButton(textValue, accent, bg, onClick).apply { background = gradientRipple(dp(10)) }
+        baseButton(textValue, accent, bg, onClick)
 
     private fun quietButton(textValue: String, onClick: () -> Unit): Button =
         baseButton(textValue, panel2, textColor, onClick).apply {
@@ -3001,7 +2983,6 @@ class MainActivity : ComponentActivity() {
 
     private fun wideButton(textValue: String, onClick: () -> Unit): Button =
         baseButton(textValue, accent, bg, onClick).apply {
-            background = gradientRipple(dp(12))
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             minHeight = dp(48)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
@@ -3115,16 +3096,6 @@ class MainActivity : ComponentActivity() {
 
     private fun rippleRounded(fill: Int, radius: Int, stroke: Int): Drawable {
         val content = rounded(fill, radius, stroke)
-        val mask = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = radius.toFloat() }
-        return RippleDrawable(ColorStateList.valueOf(Color.parseColor("#33FFFFFF")), content, mask)
-    }
-
-    // Teal→blue ramp for primary actions, matching the web app's buttons.
-    private fun gradientRipple(radius: Int): Drawable {
-        val content = GradientDrawable(
-            GradientDrawable.Orientation.LEFT_RIGHT,
-            intArrayOf(accent, accent2),
-        ).apply { cornerRadius = radius.toFloat() }
         val mask = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = radius.toFloat() }
         return RippleDrawable(ColorStateList.valueOf(Color.parseColor("#33FFFFFF")), content, mask)
     }

@@ -1,36 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Apex app icon">
-  <!-- Refined minimal mark: gradient "A" peak on graphite. One idea, no noise.
-       The teal→blue ramp is the same brand gradient used by the desktop
-       sidebar wordmark, the web app logo, and the Android header. -->
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#141b28"/>
-      <stop offset="0.55" stop-color="#0c1018"/>
-      <stop offset="1" stop-color="#07090d"/>
-    </linearGradient>
-    <linearGradient id="mark" x1="300" y1="812" x2="744" y2="230" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#2ba8d8"/>
-      <stop offset="0.55" stop-color="#38d8c4"/>
-      <stop offset="1" stop-color="#7cf5e6"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="50%" cy="34%" r="62%">
-      <stop offset="0" stop-color="#38d8c4" stop-opacity="0.16"/>
-      <stop offset="1" stop-color="#38d8c4" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
-
-  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
-  <rect width="1024" height="1024" rx="230" fill="url(#glow)"/>
-
-  <!-- A peak -->
-  <path d="M512 248 282 776" fill="none" stroke="url(#mark)" stroke-width="96" stroke-linecap="round"/>
-  <path d="M512 248 742 776" fill="none" stroke="url(#mark)" stroke-width="96" stroke-linecap="round"/>
-  <!-- crossbar, slightly low for stance -->
-  <path d="M400 624h224" fill="none" stroke="url(#mark)" stroke-width="84" stroke-linecap="round"/>
-  <!-- summit light -->
-  <circle cx="512" cy="248" r="58" fill="#7cf5e6"/>
-  <circle cx="512" cy="248" r="58" fill="url(#mark)" opacity="0.35"/>
-
-  <!-- hairline ring for definition on light surfaces -->
-  <rect x="10" y="10" width="1004" height="1004" rx="222" fill="none" stroke="#ffffff" stroke-opacity="0.05" stroke-width="20"/>
+  <rect x="64" y="64" width="896" height="896" rx="220" fill="#0b0d12"/>
+  <rect x="104" y="104" width="816" height="816" rx="184" fill="#141922" stroke="#2a3444" stroke-width="28"/>
+  <path fill="#38d8c4" d="M512 150 838 866H672l-56-142H408l-56 142H186L512 150Zm-60 450h120l-60-162-60 162Z"/>
 </svg>

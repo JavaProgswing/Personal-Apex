@@ -18,9 +18,9 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import kotlinx.coroutines.CoroutineScope
@@ -47,6 +47,7 @@ class ZenWatchService : Service() {
     private var intensity: String = "strict"
     private var lastNudgeAt = 0L
     private var lastNudgePkg = ""
+    private val accentColor = Color.parseColor("#2EC7B4")
 
     private data class Enforcement(
         val bounce: Boolean,
@@ -66,7 +67,9 @@ class ZenWatchService : Service() {
     private val watcher = object : Runnable {
         override fun run() {
             if (focusActive) checkForeground()
-            handler.postDelayed(this, CHECK_MS)
+            // Snappy teardown: while the block card is up, re-check quickly so it
+            // disappears the moment the user leaves for an allowed app / home.
+            handler.postDelayed(this, if (blockOverlay != null) OVERLAY_CHECK_MS else CHECK_MS)
         }
     }
     private val poller = object : Runnable {
@@ -87,11 +90,6 @@ class ZenWatchService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP_FOCUS) {
-            startInForeground()
-            stopFocusFromNotification()
-            return START_STICKY
-        }
         // Guard is off when the user disabled the blocker or unpaired.
         if (!store.blockerEnabled || store.token.isNullOrBlank()) {
             stopSelf()
@@ -142,11 +140,12 @@ class ZenWatchService : Service() {
             val enf = enforcementFor(intensity)
             val until = if (endsAt > 0) " until ${hhmm(endsAt)}" else ""
             val what = if (enf.bounce) "Distraction apps are blocked." else "Distraction apps send nudges."
+            // No Stop action — a focus block is ended from the Apex app or
+            // desktop, not dismissed straight from the notification shade.
             baseBuilder(CHANNEL_ID)
                 .setContentTitle("${enf.label} - $title")
                 .setContentText("Desktop focus active$until. $what")
                 .setOngoing(true)
-                .addAction(stopAction())
                 .build()
         } else {
             baseBuilder(CHANNEL_ID)
@@ -194,7 +193,6 @@ class ZenWatchService : Service() {
             // background service on aggressive OEMs (ColorOS/MIUI etc.) — the
             // overlay always renders because SYSTEM_ALERT_WINDOW is granted.
             if (Settings.canDrawOverlays(this)) {
-                store.bumpBlockedToday(java.time.LocalDate.now().toString())
                 showBlockOverlay(appLabel, enf.label, locked = enf.bounceEveryCheck)
                 return // overlay IS the nudge; no need for a notification too
             }
@@ -217,7 +215,6 @@ class ZenWatchService : Service() {
         manager.notify(NUDGE_ID, baseBuilder(channel)
             .setContentTitle(heading)
             .setContentText("Focus block running - stay with \"$title\".")
-            .addAction(stopAction(7407))
             .setAutoCancel(true)
             .build())
     }
@@ -226,7 +223,9 @@ class ZenWatchService : Service() {
     // Drawn over the distraction app via TYPE_APPLICATION_OVERLAY. Unlike a
     // background activity start, this is permitted from the background once
     // SYSTEM_ALERT_WINDOW is granted — so it actually works on locked-down
-    // OEMs. Rebuilt only when the blocked app changes (avoids flicker).
+    // OEMs. Rebuilt only when the blocked app changes (avoids flicker). One
+    // gesture surface: single tap → Home, double tap → end focus (unless
+    // locked). The system blurs whatever is behind it.
     private var blockOverlay: View? = null
     private var overlayForApp: String = ""
 
@@ -241,115 +240,117 @@ class ZenWatchService : Service() {
                 textSize = sp
                 gravity = Gravity.CENTER
                 if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                setLineSpacing(dp(3).toFloat(), 1f)
+                setLineSpacing(dp(2).toFloat(), 1f)
             }
-        fun rounded(fill: String, stroke: String, radius: Int): GradientDrawable =
-            GradientDrawable().apply {
-                setColor(Color.parseColor(fill))
-                cornerRadius = dp(radius).toFloat()
-                setStroke(dp(1), Color.parseColor(stroke))
-            }
-        fun overlayButton(label: String, fill: String, fg: String, onClick: () -> Unit): Button =
-            Button(this).apply {
-                text = label
-                isAllCaps = false
-                setTextColor(Color.parseColor(fg))
-                textSize = 14f
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                background = rounded(fill, fill, 14)
-                minHeight = dp(48)
-                setOnClickListener { onClick() }
-            }
+
+        // Tap anywhere (scrim or card) sends you Home. No "end" action here.
+        val goHome = View.OnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            goHomeFromOverlay()
+        }
+
+        // Dim scrim. With cross-window blur the system also frosts the app
+        // behind; the scrim alone carries it on older/limited devices.
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#E60B0D12"))
-            setPadding(dp(22), dp(32), dp(22), dp(32))
-            isClickable = true // swallow taps so the app behind stays unusable
+            setBackgroundColor(Color.argb(120, 7, 8, 11))
+            setPadding(dp(30), dp(30), dp(30), dp(30))
+            isClickable = true
+            setOnClickListener(goHome)
+            alpha = 0f
+        }
+
+        // The card — left-aligned, calm, no gimmick emblem.
+        val accentBar = View(this).apply {
+            background = GradientDrawable().apply {
+                setColor(accentColor); cornerRadius = dp(2).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(32), dp(4))
         }
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(22), dp(24), dp(22), dp(22))
-            background = rounded("#151B27", "#324156", 24)
+            gravity = Gravity.START
+            setPadding(dp(26), dp(24), dp(26), dp(22))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#161A20"))
+                cornerRadius = dp(26).toFloat()
+                setStroke(dp(1), Color.parseColor("#2A3038"))
+            }
+            isClickable = true
+            setOnClickListener(goHome)
         }
-        panel.addView(text("APEX GUARD", 12.5f, Color.parseColor("#38D8C4"), true).apply {
-            letterSpacing = 0.18f
+        panel.addView(accentBar)
+        panel.addView(text(modeLabel.uppercase(), 11f, accentColor, true).apply {
+            gravity = Gravity.START; letterSpacing = 0.16f
+            setPadding(0, dp(14), 0, 0)
         })
-        panel.addView(text(modeLabel.uppercase(), 11.5f, Color.parseColor("#9AA8BA"), true).apply {
-            letterSpacing = 0.14f
-            setPadding(0, dp(12), 0, dp(4))
+        panel.addView(text(appLabel, 22f, Color.parseColor("#F2F5F8"), true).apply {
+            gravity = Gravity.START
+            setPadding(0, dp(7), 0, 0)
         })
-        panel.addView(text(appLabel, 26f, Color.parseColor("#F4F7FB"), true))
+        val until = if (endsAt > 0) " · ends ${hhmm(endsAt)}" else ""
         panel.addView(text(
-            if (locked) "Locked focus is active. This app stays blocked until the timer finishes."
-            else "Focus is running on desktop. Step away from this app or stop the block intentionally.",
-            14f,
-            Color.parseColor("#B7C3D2"),
-        ).apply {
-            setPadding(dp(6), dp(10), dp(6), dp(22))
+            if (locked) "Locked focus$until" else "Back to \"$title\"$until",
+            13f, Color.parseColor("#9AA6B4"),
+        ).apply { gravity = Gravity.START; setPadding(0, dp(6), 0, 0) })
+        panel.addView(text("Tap anywhere to go back", 11.5f, Color.parseColor("#5C6675")).apply {
+            gravity = Gravity.START
+            setPadding(0, dp(18), 0, 0)
         })
-        panel.addView(overlayButton("Leave and refocus", "#38D8C4", "#081014") {
-            hideBlockOverlay()
-            try {
-                startActivity(Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
-            } catch (_: Throwable) {}
-        }.apply {
-            layoutParams = LinearLayout.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-            )
-        })
-        if (!locked) {
-            panel.addView(View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(1, dp(10))
-            })
-            panel.addView(overlayButton("Stop focus on all devices", "#241B20", "#E5675C") {
-                hideBlockOverlay()
-                stopFocusFromNotification()
-            }.apply {
-                background = rounded("#241B20", "#E5675C", 14)
-                layoutParams = LinearLayout.LayoutParams(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.WRAP_CONTENT,
-                )
-            })
-            panel.addView(text(
-                "Use stop only for a real interruption. Home is faster if you just drifted.",
-                11.5f,
-                Color.parseColor("#667385"),
-            ).apply {
-                setPadding(dp(10), dp(12), dp(10), 0)
-            })
-        } else {
-            panel.addView(text(
-                "Locked mode has no early stop from the phone.",
-                11.5f,
-                Color.parseColor("#667385"),
-            ).apply {
-                setPadding(dp(10), dp(12), dp(10), 0)
-            })
-        }
+
         root.addView(panel, LinearLayout.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            (resources.displayMetrics.widthPixels * 0.84f).toInt().coerceAtMost(dp(380)),
+            LinearLayout.LayoutParams.WRAP_CONTENT,
         ))
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT,
         )
+        applyBlurBehind(params)
+
         runCatching {
             wm.addView(root, params)
             blockOverlay = root
             overlayForApp = appLabel
+            // Count once per entry to a distraction app (this path only runs when
+            // the overlay wasn't already up for it), not every re-check.
+            store.bumpBlockedToday(java.time.LocalDate.now().toString())
+            // Buzz so the user feels the block land, then a soft scale/fade-in.
+            root.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            panel.scaleX = 0.92f; panel.scaleY = 0.92f
+            root.animate().alpha(1f).setDuration(160).start()
+            panel.animate().scaleX(1f).scaleY(1f).setDuration(200).start()
         }
+    }
+
+    // Frost the distraction app behind the card (Android 12+). dimAmount is the
+    // graceful fallback when the device has cross-window blur disabled.
+    private fun applyBlurBehind(params: WindowManager.LayoutParams) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        params.flags = params.flags or WindowManager.LayoutParams.FLAG_DIM_BEHIND
+        params.dimAmount = 0.5f
+        val wm = getSystemService(WindowManager::class.java)
+        if (wm?.isCrossWindowBlurEnabled == true) {
+            params.flags = params.flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
+            params.blurBehindRadius = dp(24)
+        }
+    }
+
+    private fun goHomeFromOverlay() {
+        hideBlockOverlay()
+        try {
+            startActivity(Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+        } catch (_: Throwable) {}
     }
 
     private fun hideBlockOverlay() {
@@ -423,24 +424,6 @@ class ZenWatchService : Service() {
             .build())
     }
 
-    private fun stopFocusFromNotification() {
-        scope.launch {
-            runCatching { ApexApiClient(store.apiBase, tokenProvider = { store.token }).stopFocus() }
-            focusActive = false
-            hideBlockOverlay()
-            updateNotification()
-        }
-    }
-
-    private fun stopAction(requestCode: Int = 7405): Notification.Action {
-        val pi = PendingIntent.getService(
-            this, requestCode,
-            Intent(this, ZenWatchService::class.java).setAction(ACTION_STOP_FOCUS),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        return Notification.Action.Builder(null, "Stop focus", pi).build()
-    }
-
     private fun baseBuilder(channel: String): Notification.Builder {
         val open = PendingIntent.getActivity(
             this, 7401, Intent(this, MainActivity::class.java),
@@ -470,11 +453,10 @@ class ZenWatchService : Service() {
         private const val FG_ID = 7402
         private const val NUDGE_ID = 7403
         private const val CHECK_MS = 5_000L          // foreground-app scan while active
+        private const val OVERLAY_CHECK_MS = 700L    // fast re-check while the card is up
         private const val POLL_ACTIVE_MS = 10_000L   // /focus poll while a block is live
         private const val POLL_IDLE_MS = 25_000L     // /focus poll while waiting for one
         private const val FG_WINDOW_MS = 10 * 60_000L // detect already-open apps
-        private const val ACTION_STOP_FOCUS = "dev.yashasvi.apex.mobile.STOP_FOCUS"
-
         // Start (or keep alive) the persistent guard. No-op-ish if already
         // running — onStartCommand just re-validates. Call whenever the blocker
         // is enabled: app open, toggle, boot, periodic worker.

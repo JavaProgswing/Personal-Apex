@@ -2853,19 +2853,22 @@ function AppearanceTab({ all, setAll, save }) {
   const current = all["ui.theme"] || "apex-focus";
   const customAccent = all["ui.customAccent"] || "";
 
-  // Curated, bare-minimum catalog. Five palettes, each with a distinct job:
-  // signature dark, warm dark, cool dark, OLED black, and one light. Fonts
-  // are unified app-wide (Inter + Sora display + JetBrains Mono).
+  // Curated catalog. Six palettes, each a distinct mood: signature teal,
+  // cool slate, warm sand, green moss, OLED black, and one light. Fonts are
+  // unified app-wide (Inter + Sora display + JetBrains Mono).
   const THEMES = [
     { key: "apex-focus", label: "Apex",
       desc: "Graphite + teal. The signature - matches web and mobile.",
-      swatches: ["#0b0d12", "#38d8c4", "#ff6b7a", "#f5b84b"] },
-    { key: "library", label: "Library",
-      desc: "Warm coffee + honey amber. The reading room.",
-      swatches: ["#14110e", "#e8a23a", "#82caa9", "#e07a5f"] },
-    { key: "tokyo-night", label: "Tokyo Night",
-      desc: "Indigo midnight + pastel blues. The dev classic.",
-      swatches: ["#1a1b26", "#7aa2f7", "#bb9af7", "#9ece6a"] },
+      swatches: ["#0c0d0f", "#2ec7b4", "#ff6b7a", "#f5b84b"] },
+    { key: "slate", label: "Slate",
+      desc: "Cool neutral slate + soft periwinkle. Calm and pro.",
+      swatches: ["#0e1014", "#8aa0ff", "#6fcf97", "#f2788c"] },
+    { key: "sand", label: "Sand",
+      desc: "Warm taupe + muted clay. Cozy dark.",
+      swatches: ["#100f0d", "#d7a36a", "#8bc6a0", "#e0826a"] },
+    { key: "moss", label: "Moss",
+      desc: "Desaturated green-gray + sage. Quiet focus.",
+      swatches: ["#0d100e", "#82c79e", "#d6b06a", "#e0796f"] },
     { key: "obsidian", label: "Obsidian",
       desc: "True OLED black + cyan glow. Lights off.",
       swatches: ["#000000", "#00e5ff", "#2fe6a0", "#ff4d72"] },

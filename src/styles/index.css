@@ -24,11 +24,12 @@
 }
 
 /* ─── THEMES ─────────────────────────────────────────────────────────────
-   Curated, bare-minimum set — five palettes that each earn their place:
+   Curated, bare-minimum set — six palettes that each earn their place:
 
      apex-focus     graphite + teal          the signature (default)
-     library        coffee + honey amber     warm reading-room
-     tokyo-night    indigo + pastel blues    cool dev classic
+     slate          cool slate + periwinkle  calm & professional
+     sand           warm taupe + clay        cozy dark
+     moss           green-gray + sage        desaturated calm
      obsidian       OLED black + cyan        lights-off
      default-light  off-white + indigo       daylight
 
@@ -46,18 +47,18 @@
 /* ─── Apex - graphite surfaces, teal focus. The signature. ─────────────── */
 :root,
 [data-theme="apex-focus"] {
-  --bg: #0b0d12;
-  --bg-elev: #121720;
-  --bg-elev-2: #1b2330;
-  --border: #293241;
+  --bg: #0c0d0f;
+  --bg-elev: #141619;
+  --bg-elev-2: #1c1f24;
+  --border: #2a2e35;
 
-  --text: #f3f7fb;
-  --text-dim: #a9b5c4;
-  --text-faint: #667385;
+  --text: #f1f3f5;
+  --text-dim: #a6adb6;
+  --text-faint: #6a7079;
 
-  --accent: #38d8c4;
-  --accent-soft: rgba(56, 216, 196, 0.16);
-  --accent-strong: #71eadc;
+  --accent: #2ec7b4;
+  --accent-soft: rgba(46, 199, 180, 0.13);
+  --accent-strong: #4fd8c8;
 
   --productive: #66d38f;
   --productive-soft: rgba(102, 211, 143, 0.15);
@@ -77,12 +78,12 @@
   --bad: var(--distraction);
   --info: var(--rest);
 
-  /* Brand ramp — same teal→blue as the web app + mobile wordmark. */
-  --grad-accent: linear-gradient(120deg, #38d8c4, #2ba8d8);
-  --grad-card: linear-gradient(135deg, rgba(56, 216, 196, 0.05), transparent 62%);
+  /* Brand ramp — restrained, near-monochrome teal. One faint wash, no
+     competing blue glow (that two-tone radial read as generic/AI). */
+  --grad-accent: linear-gradient(120deg, #2ec7b4, #25a9b0);
+  --grad-card: linear-gradient(135deg, rgba(46, 199, 180, 0.035), transparent 60%);
   --grad-bg:
-    radial-gradient(1100px 600px at 85% -10%, rgba(56, 216, 196, 0.055), transparent 60%),
-    radial-gradient(900px 540px at -12% 108%, rgba(125, 183, 255, 0.045), transparent 60%);
+    radial-gradient(1000px 560px at 88% -14%, rgba(46, 199, 180, 0.022), transparent 62%);
 
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
   --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.48);
@@ -90,92 +91,134 @@
   color-scheme: dark;
 }
 
-/* ─── Library - warm coffee + honey amber reading room. ────────────────── */
-[data-theme="library"] {
-  --bg: #14110e;
-  --bg-elev: #1d1814;
-  --bg-elev-2: #28211a;
-  --border: #3a2f24;
+/* ─── Slate - cool neutral slate + soft periwinkle. Sand - warm taupe + clay. ────────────────── */
+[data-theme="slate"] {
+  --bg: #0e1014;
+  --bg-elev: #161922;
+  --bg-elev-2: #1e2230;
+  --border: #2c3242;
 
-  --text: #f6ecdb;
-  --text-dim: #b6a48e;
-  --text-faint: #74634f;
+  --text: #eef1f6;
+  --text-dim: #a4adbd;
+  --text-faint: #6a7383;
 
-  --accent: #e8a23a;
-  --accent-soft: rgba(232, 162, 58, 0.16);
-  --accent-strong: #f5b94a;
+  --accent: #8aa0ff;
+  --accent-soft: rgba(138, 160, 255, 0.14);
+  --accent-strong: #a6b6ff;
 
-  --productive: #82caa9;
-  --productive-soft: rgba(130, 202, 169, 0.16);
-  --distraction: #e07a5f;
-  --distraction-soft: rgba(224, 122, 95, 0.16);
-  --leisure: #d68aa1;
-  --leisure-soft: rgba(214, 138, 161, 0.16);
-  --rest: #9cc3d8;
-  --rest-soft: rgba(156, 195, 216, 0.16);
-  --neutral: #b6a48e;
-  --neutral-soft: rgba(182, 164, 142, 0.16);
-  --mobile: #b8a9d6;
+  --productive: #6fcf97;
+  --productive-soft: rgba(111, 207, 151, 0.14);
+  --distraction: #f2788c;
+  --distraction-soft: rgba(242, 120, 140, 0.14);
+  --leisure: #e7b768;
+  --leisure-soft: rgba(231, 183, 104, 0.14);
+  --rest: #79b8ff;
+  --rest-soft: rgba(121, 184, 255, 0.14);
+  --neutral: #a4adbd;
+  --neutral-soft: rgba(164, 173, 189, 0.14);
+  --mobile: #b3a0e6;
 
   --ok: var(--productive);
   --ok-soft: var(--productive-soft);
-  --warn: var(--accent);
-  --bad: #c4493b;
+  --warn: var(--leisure);
+  --bad: var(--distraction);
   --info: var(--rest);
 
-  --grad-accent: linear-gradient(120deg, #e8a23a, #d97742);
-  --grad-card: linear-gradient(135deg, rgba(232, 162, 58, 0.05), transparent 62%);
+  --grad-accent: linear-gradient(120deg, #8aa0ff, #6d7cf0);
+  --grad-card: linear-gradient(135deg, rgba(138, 160, 255, 0.035), transparent 60%);
   --grad-bg:
-    radial-gradient(1100px 600px at 85% -10%, rgba(232, 162, 58, 0.05), transparent 60%),
-    radial-gradient(900px 540px at -12% 108%, rgba(224, 122, 95, 0.04), transparent 60%);
+    radial-gradient(1000px 560px at 88% -14%, rgba(138, 160, 255, 0.022), transparent 62%);
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5);
 
   color-scheme: dark;
 }
 
-/* ─── Tokyo Night - indigo midnight + pastel blues. ────────────────────── */
-[data-theme="tokyo-night"] {
-  --bg: #1a1b26;
-  --bg-elev: #1f2335;
-  --bg-elev-2: #292e42;
-  --border: #3b4261;
+/* ─── Sand - warm taupe graphite + muted clay. Cozy dark. ──────────────── */
+[data-theme="sand"] {
+  --bg: #100f0d;
+  --bg-elev: #1a1815;
+  --bg-elev-2: #24211c;
+  --border: #322d25;
 
-  --text: #c0caf5;
-  --text-dim: #a9b1d6;
-  --text-faint: #565f89;
+  --text: #f2efe9;
+  --text-dim: #b3a99b;
+  --text-faint: #74695a;
 
-  --accent: #7aa2f7;
-  --accent-soft: rgba(122, 162, 247, 0.16);
-  --accent-strong: #b4f9f8;
+  --accent: #d7a36a;
+  --accent-soft: rgba(215, 163, 106, 0.14);
+  --accent-strong: #e6b884;
 
-  --productive: #9ece6a;
-  --productive-soft: rgba(158, 206, 106, 0.14);
-  --distraction: #f7768e;
-  --distraction-soft: rgba(247, 118, 142, 0.14);
-  --leisure: #bb9af7;
-  --leisure-soft: rgba(187, 154, 247, 0.14);
-  --rest: #7dcfff;
-  --rest-soft: rgba(125, 207, 255, 0.14);
-  --neutral: #a9b1d6;
-  --neutral-soft: rgba(169, 177, 214, 0.14);
-  --mobile: #bb9af7;
+  --productive: #8bc6a0;
+  --productive-soft: rgba(139, 198, 160, 0.14);
+  --distraction: #e0826a;
+  --distraction-soft: rgba(224, 130, 106, 0.14);
+  --leisure: #d7a36a;
+  --leisure-soft: rgba(215, 163, 106, 0.14);
+  --rest: #93b4c4;
+  --rest-soft: rgba(147, 180, 196, 0.14);
+  --neutral: #b3a99b;
+  --neutral-soft: rgba(179, 169, 155, 0.14);
+  --mobile: #c0a7d6;
 
   --ok: var(--productive);
   --ok-soft: var(--productive-soft);
-  --warn: #e0af68;
+  --warn: var(--leisure);
   --bad: var(--distraction);
   --info: var(--rest);
 
-  --grad-accent: linear-gradient(120deg, #7aa2f7, #bb9af7);
-  --grad-card: linear-gradient(135deg, rgba(122, 162, 247, 0.05), transparent 62%);
+  --grad-accent: linear-gradient(120deg, #d7a36a, #c0824f);
+  --grad-card: linear-gradient(135deg, rgba(215, 163, 106, 0.035), transparent 60%);
   --grad-bg:
-    radial-gradient(1100px 600px at 85% -10%, rgba(122, 162, 247, 0.06), transparent 60%),
-    radial-gradient(900px 540px at -12% 108%, rgba(187, 154, 247, 0.05), transparent 60%);
+    radial-gradient(1000px 560px at 88% -14%, rgba(215, 163, 106, 0.022), transparent 62%);
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.65);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5);
+
+  color-scheme: dark;
+}
+
+/* ─── Moss - desaturated green-gray + sage. Quiet. ────────────────────── */
+[data-theme="moss"] {
+  --bg: #0d100e;
+  --bg-elev: #151a16;
+  --bg-elev-2: #1d241f;
+  --border: #2a332c;
+
+  --text: #eef2ee;
+  --text-dim: #a3b0a6;
+  --text-faint: #67746a;
+
+  --accent: #82c79e;
+  --accent-soft: rgba(130, 199, 158, 0.14);
+  --accent-strong: #9fd8b5;
+
+  --productive: #6cc18a;
+  --productive-soft: rgba(108, 193, 138, 0.14);
+  --distraction: #e0796f;
+  --distraction-soft: rgba(224, 121, 111, 0.14);
+  --leisure: #d6b06a;
+  --leisure-soft: rgba(214, 176, 106, 0.14);
+  --rest: #84b8c4;
+  --rest-soft: rgba(132, 184, 196, 0.14);
+  --neutral: #a3b0a6;
+  --neutral-soft: rgba(163, 176, 166, 0.14);
+  --mobile: #b3a0d6;
+
+  --ok: var(--productive);
+  --ok-soft: var(--productive-soft);
+  --warn: var(--leisure);
+  --bad: var(--distraction);
+  --info: var(--rest);
+
+  --grad-accent: linear-gradient(120deg, #82c79e, #5fa888);
+  --grad-card: linear-gradient(135deg, rgba(130, 199, 158, 0.035), transparent 60%);
+  --grad-bg:
+    radial-gradient(1000px 560px at 88% -14%, rgba(130, 199, 158, 0.022), transparent 62%);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5);
 
   color-scheme: dark;
 }
@@ -7405,6 +7448,19 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .zen-actions {
   flex-shrink: 0;
 }
+.zen-end-hint,
+.zen-lock-tag {
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: none;
+}
+.zen-end-hint {
+  opacity: 0.5;
+  font-style: italic;
+}
+.zen-lock-tag {
+  color: var(--text-dim);
+}
 .zen-actions button:disabled,
 .zen-quick-minutes .chip:disabled,
 .zen-duration-row .chip:disabled,
@@ -7502,7 +7558,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   background: var(--bg-elev);
   box-shadow: var(--shadow-sm);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   transition: border-color 180ms ease, background 180ms ease;
 }
 .live-timer.idle {
@@ -7680,6 +7736,7 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
   align-items: flex-end;
   gap: 6px;
   flex-shrink: 0;
+  position: relative;
 }
 .live-timer-time {
   font-size: 28px;
@@ -7694,40 +7751,54 @@ button.xsmall:hover { border-color: var(--accent-soft); color: var(--text); }
 .live-timer-actions {
   display: flex;
   gap: 4px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
 }
-.live-timer-emergency-zone {
-  width: 100%;
-  margin-top: 8px;
-  padding: 8px;
-  border: 1px solid color-mix(in srgb, var(--bad) 26%, var(--border));
-  border-radius: 12px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--bad) 8%, transparent), transparent);
+.live-timer-actions::-webkit-scrollbar {
+  display: none;
 }
-.live-timer-emergency {
+.live-timer-more {
+  min-width: 44px;
+}
+.live-timer-more.active {
+  color: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+.live-timer-more-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 7px);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 158px;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 10px;
+  background: var(--bg-elev-2);
+  box-shadow: var(--shadow-md);
+}
+.live-timer-emergency-button {
   width: 100%;
-  background: color-mix(in srgb, var(--bad) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--bad) 48%, transparent);
-  color: var(--bad);
-  border-radius: 8px;
   padding: 6px 10px;
-  font-size: 12px;
+  border: 1px solid color-mix(in srgb, var(--bad) 56%, var(--border));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--bad);
+  font-size: 11px;
   font-weight: 800;
+  line-height: 1.1;
   cursor: pointer;
-  transition: background 120ms, border-color 120ms, transform 120ms;
 }
-.live-timer-emergency:hover {
-  background: color-mix(in srgb, var(--bad) 18%, transparent);
+.live-timer-emergency-button:hover {
+  background: color-mix(in srgb, var(--bad) 10%, transparent);
   border-color: var(--bad);
-  transform: translateY(-1px);
-}
-.live-timer-emergency-zone small {
-  display: block;
-  margin-top: 5px;
-  color: var(--text-faint);
-  font-size: 10.8px;
-  line-height: 1.25;
 }
 .live-timer-actions .ghost.xsmall {
   padding: 3px 8px;
@@ -11701,4 +11772,270 @@ optgroup {
   .day-summary-foot {
     flex-direction: column;
   }
+}
+
+/* v1.2 flat surface reset. Apex was drifting into ambient-gradient soup;
+   keep the depth in borders/spacing, not background ramps. */
+:root,
+[data-theme] {
+  --grad-accent: var(--accent);
+  --grad-card: none;
+  --grad-bg: none;
+  --grad-ok: var(--productive);
+  --grad-warn: var(--warn);
+  --grad-bad: var(--bad);
+}
+
+*,
+*::before,
+*::after {
+  background-image: none !important;
+}
+
+body {
+  background-color: var(--bg);
+}
+
+.sidebar .brand .brand-text,
+.hero-title,
+.spm-title,
+.settings-hero-title {
+  background: none !important;
+  background-clip: border-box !important;
+  -webkit-background-clip: border-box !important;
+  -webkit-text-fill-color: currentColor !important;
+  color: var(--accent) !important;
+}
+
+.pill.gradient,
+.chip.active,
+button.primary,
+.primary,
+.goal-bar .bar-fill,
+.spm-logo {
+  background-color: var(--accent) !important;
+  background-image: none !important;
+  color: var(--bg) !important;
+}
+
+.card,
+.activity-section,
+.activity-card,
+.activity-card .pane,
+.apps-pane,
+.apps-pane .app-row,
+.app-icon,
+.bucket-timeline,
+.live-timer,
+.live-timer.leisure-strip,
+.upcoming-hero,
+.upcoming-stat,
+.upcoming-quick-add,
+.people-hero,
+.people-overview-card,
+.mobile-settings-hero,
+.mobile-settings-overview,
+.mobile-status-card,
+.zen-lock-panel,
+.zen-summary,
+.spm-header,
+.spm-overview-card,
+.spotify-playlist-card,
+.day-summary-stat,
+.day-summary-section,
+.close-reason-foreground,
+.close-reason-presets button,
+.brain-dump-context-toggle {
+  background-color: var(--bg-elev) !important;
+  background-image: none !important;
+}
+
+.bar-fill.cat-productive,
+.cat-strip-seg.cat-productive,
+.activity-spectrum-seg.cat-productive,
+.activity-summary-spectrum-seg.cat-productive,
+.bucket-mini-bar.cat-productive,
+.live-timer.running.cat-productive::before {
+  background-color: var(--productive) !important;
+}
+
+.bar-fill.cat-distraction,
+.cat-strip-seg.cat-distraction,
+.activity-spectrum-seg.cat-distraction,
+.activity-summary-spectrum-seg.cat-distraction,
+.bucket-mini-bar.cat-distraction,
+.live-timer.running.cat-distraction::before {
+  background-color: var(--distraction) !important;
+}
+
+.bar-fill.cat-neutral,
+.cat-strip-seg.cat-neutral,
+.activity-spectrum-seg.cat-neutral,
+.activity-summary-spectrum-seg.cat-neutral,
+.bucket-mini-bar.cat-neutral,
+.live-timer.running.cat-neutral::before {
+  background-color: var(--neutral) !important;
+}
+
+.bar-fill.cat-rest,
+.cat-strip-seg.cat-rest,
+.activity-spectrum-seg.cat-rest,
+.activity-summary-spectrum-seg.cat-rest,
+.bucket-mini-bar.cat-rest,
+.live-timer.running.cat-rest::before {
+  background-color: var(--rest) !important;
+}
+
+.bar-fill.cat-leisure,
+.cat-strip-seg.cat-leisure,
+.activity-spectrum-seg.cat-leisure,
+.activity-summary-spectrum-seg.cat-leisure,
+.bucket-mini-bar.cat-leisure,
+.live-timer.running.cat-leisure::before {
+  background-color: var(--leisure) !important;
+}
+
+.bar-fill.cat-mobile,
+.cat-strip-seg.cat-mobile,
+.activity-spectrum-seg.cat-mobile,
+.activity-summary-spectrum-seg.cat-mobile,
+.bucket-mini-bar.cat-mobile {
+  background-color: var(--mobile) !important;
+}
+
+.bar-fill.cat-other,
+.cat-strip-seg.cat-other,
+.activity-spectrum-seg.cat-other,
+.activity-summary-spectrum-seg.cat-other,
+.bucket-mini-bar.cat-other {
+  background-color: var(--text-faint) !important;
+}
+
+.stat-pill.cat-productive,
+.live-now.cat-productive {
+  background-color: var(--productive-soft) !important;
+  border-color: color-mix(in srgb, var(--productive) 35%, var(--border)) !important;
+}
+
+.stat-pill.cat-distraction,
+.live-now.cat-distraction {
+  background-color: var(--distraction-soft) !important;
+  border-color: color-mix(in srgb, var(--distraction) 35%, var(--border)) !important;
+}
+
+.stat-pill.cat-neutral,
+.live-now.cat-neutral {
+  background-color: var(--neutral-soft) !important;
+  border-color: color-mix(in srgb, var(--neutral) 35%, var(--border)) !important;
+}
+
+.stat-pill.cat-rest {
+  background-color: var(--rest-soft) !important;
+  border-color: color-mix(in srgb, var(--rest) 35%, var(--border)) !important;
+}
+
+.stat-pill.cat-leisure,
+.live-now.cat-leisure {
+  background-color: var(--leisure-soft) !important;
+  border-color: color-mix(in srgb, var(--leisure) 35%, var(--border)) !important;
+}
+
+.stat-pill.cat-mobile {
+  background-color: color-mix(in srgb, var(--mobile) 12%, var(--bg-elev)) !important;
+  border-color: color-mix(in srgb, var(--mobile) 35%, var(--border)) !important;
+}
+
+.burnout-read-card.band-low::before,
+.risk-meter-fill.band-low {
+  background-color: var(--productive) !important;
+}
+
+.burnout-read-card.band-mid::before,
+.risk-meter-fill.band-mid,
+.risk-trend-bar.band-mid {
+  background-color: var(--leisure) !important;
+}
+
+.burnout-read-card.band-high::before,
+.risk-meter-fill.band-high,
+.risk-trend-bar.band-high {
+  background-color: var(--distraction) !important;
+}
+
+.burnout-read-card.band-none::before,
+.risk-meter-fill.band-none,
+.risk-trend-bar.band-none {
+  background-color: var(--neutral) !important;
+}
+
+.spotify-playlist-fallback,
+.spm-bar-fill {
+  background-color: var(--accent) !important;
+}
+
+/* Settings repair after the flat reset: the schedule/settings tabs need
+   bounded panels with real padding. Keep them flat, but do not let the
+   global .card override turn the page into edge-to-edge slabs. */
+.settings-content {
+  max-width: 1040px;
+}
+
+.settings-content .card {
+  background-color: var(--bg-elev) !important;
+  background-image: none !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-lg) !important;
+  padding: 22px !important;
+  margin: 0 0 20px !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.settings-content .card + .card {
+  border-top: 1px solid var(--border) !important;
+  padding-top: 22px !important;
+}
+
+.settings-content .card::before {
+  display: none !important;
+}
+
+.settings-content .card .card-title {
+  margin: 0 0 16px 0;
+}
+
+.settings-content .card .row.between > .card-title,
+.settings-content .card .settings-card-head .card-title {
+  margin: 0;
+}
+
+.settings-content .settings-overview-grid {
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.settings-content .settings-overview-card {
+  background-color: var(--bg-elev-2) !important;
+  background-image: none !important;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.settings-content details.settings-collapse {
+  background-color: var(--bg-elev) !important;
+  background-image: none !important;
+  border-radius: var(--r-lg);
+  margin: 0 0 20px;
+}
+
+.settings-content .settings-divider,
+.settings-content hr.soft {
+  margin: 18px -22px !important;
+}
+
+.settings-content #schedule-editor {
+  margin-top: 20px;
+}
+
+.settings-content .settings-toggle-row {
+  padding: 14px 0;
 }

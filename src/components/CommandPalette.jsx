@@ -9,7 +9,7 @@ export default function CommandPalette({ open, onClose, onNavigate }) {
   const [q, setQ] = useState("");
   const [idx, setIdx] = useState(0);
   const [tasks, setTasks] = useState([]);
-  const [currentTheme, setCurrentTheme] = useState("library");
+  const [currentTheme, setCurrentTheme] = useState("apex-focus");
   const [activeTimer, setActiveTimer] = useState(null);
   const inputRef = useRef(null);
 
@@ -113,20 +113,10 @@ export default function CommandPalette({ open, onClose, onNavigate }) {
         close();
       } });
 
-    // - Themes - quick switcher (top picks)
-    // Curated list - kept in the same order as the Appearance picker.
-    // Internal CSS may still have variants like Mono/Midnight/Carbon, but
-    // they're not surfaced here to keep the chooser snappy and coherent.
+    // - Themes - quick switcher. Same curated 6 as the Appearance picker.
     const themes = [
-      ["default-dark", "Default · Dark"], ["default-light", "Default · Light"],
-      ["slate", "Slate"], ["tokyo-night", "Tokyo Night"],
-      ["catppuccin", "Catppuccin"], ["dracula", "Dracula"], ["one-dark", "One Dark"],
-      ["vercel", "Vercel"], ["stripe", "Stripe"],
-      ["synthwave", "Synthwave"], ["cyberpunk", "Cyberpunk"], ["matrix", "Matrix"],
-      ["aurora", "Aurora"], ["obsidian", "Obsidian"], ["eclipse", "Eclipse"],
-      ["library", "Library"], ["rose-pine", "Rosé Pine"], ["gruvbox", "Gruvbox"],
-      ["nord", "Nord"], ["solarized-dark", "Solarized Dark"],
-      ["paper", "Paper"], ["solarized-light", "Solarized Light"], ["latte", "Latte"],
+      ["apex-focus", "Apex"], ["slate", "Slate"], ["sand", "Sand"],
+      ["moss", "Moss"], ["obsidian", "Obsidian"], ["default-light", "Daylight"],
     ];
     for (const [key, label] of themes) {
       a.push({

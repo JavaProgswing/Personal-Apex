@@ -61,6 +61,7 @@ export default function LiveTimer({ tasks = [], onChanged }) {
   // timer. Polled alongside the regular timer refresh.
   const [leisure, setLeisure] = useState(null);
   const [zen, setZen] = useState(null);
+  const [showMore, setShowMore] = useState(false);
   // Away/idle awareness while a timer runs — so a focus block can't quietly
   // claim minutes you spent away from the desk.
   const [away, setAway] = useState(false);
@@ -96,6 +97,12 @@ export default function LiveTimer({ tasks = [], onChanged }) {
     await api.leisure?.stop?.();
     await refresh();
   }
+  async function handleEmergencyStop() {
+    await api.focus?.emergencyStop?.();
+    setZen(null);
+    setShowMore(false);
+    refresh();
+  }
 
   // Initial load + subscribe to push updates from main.
   useEffect(() => {
@@ -113,6 +120,10 @@ export default function LiveTimer({ tasks = [], onChanged }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    setShowMore(false);
+  }, [active?.id]);
 
   // 1Hz tick to drive the countdown/leisure elapsed time without re-fetching.
   // Snap `now` to the present the instant a timer activates — otherwise the
@@ -346,12 +357,10 @@ export default function LiveTimer({ tasks = [], onChanged }) {
       </div>
       <div className="live-timer-clock">
         <div className={"live-timer-time" + (isOver ? " over" : isLow ? " low" : "")}>
-          {isOver ? `+${fmt(-remaining)}` : fmt(remaining)}
+          {isOver ? "Time's up" : fmt(remaining)}
         </div>
         {isOver && (
-          <small className="muted live-timer-autostop">
-            auto-logs in {Math.max(0, Math.ceil((AUTO_STOP_GRACE_MS - (overdueSince.current ? now - overdueSince.current : 0)) / 1000))}s
-          </small>
+          <small className="muted live-timer-autostop">Ready to log, extend, or stop.</small>
         )}
         <div className="live-timer-actions">
           {isOver ? (
@@ -427,24 +436,27 @@ export default function LiveTimer({ tasks = [], onChanged }) {
           >
             ✕
           </button>
-        </div>
-        {/* Emergency stop — the escape hatch. Kills the timer AND any Zen,
-            even a locked one, and clears the phone/web block. Always available. */}
-        <div className="live-timer-emergency-zone">
           <button
-            className="live-timer-emergency"
-            onClick={async () => {
-              if (!confirm("Emergency stop? Ends this focus block now, including locked Zen, and clears phone/web blockers.")) return;
-              await api.focus?.emergencyStop?.();
-              setZen(null);
-              refresh();
-            }}
-            title="Force-end this focus block on every device"
+            className={"ghost xsmall live-timer-more" + (showMore ? " active" : "")}
+            onClick={() => setShowMore((v) => !v)}
+            title="Show extra timer controls"
+            aria-expanded={showMore}
           >
-            Emergency stop
+            More
           </button>
-          <small>Use only for interruptions. Normal Stop logs the block cleanly.</small>
         </div>
+        {showMore && (
+          <div className="live-timer-more-menu" role="group" aria-label="Expanded timer controls">
+            <button
+              type="button"
+              className="live-timer-emergency-button"
+              onDoubleClick={handleEmergencyStop}
+              title="Double-click to force-end focus everywhere"
+            >
+              Emergency stop
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -230,12 +230,15 @@ object WellbeingReader {
         // reliable: take the app with the most recent lastTimeUsed inside the
         // window, excluding ourselves and launchers.
         return runCatching {
-            usage.queryUsageStats(UsageStatsManager.INTERVAL_BEST, now - windowMs, now)
+            val latest = usage.queryUsageStats(UsageStatsManager.INTERVAL_BEST, now - windowMs, now)
                 ?.asSequence()
                 ?.filter { it.lastTimeUsed in (now - windowMs)..now && it.packageName != context.packageName }
-                ?.filter { !it.packageName.contains("launcher") && !it.packageName.startsWith("com.android.systemui") }
                 ?.maxByOrNull { it.lastTimeUsed }
                 ?.packageName
+            if (latest == null ||
+                latest.contains("launcher") ||
+                latest.startsWith("com.android.systemui")
+            ) null else latest
         }.getOrNull()
     }
 
