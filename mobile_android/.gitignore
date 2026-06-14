@@ -1,0 +1,28 @@
+# Built application files / intermediates
+/build/
+/app/build/
+**/build/
+.cxx/
+
+# Gradle
+.gradle/
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+
+# Keystores & signing
+*.jks
+*.keystore
+
+# Generated APK / AAB / mapping
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# OS noise
+.DS_Store

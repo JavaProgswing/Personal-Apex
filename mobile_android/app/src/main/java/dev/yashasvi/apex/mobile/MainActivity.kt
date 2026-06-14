@@ -21,9 +21,11 @@ import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -556,11 +558,14 @@ class MainActivity : ComponentActivity() {
             })
         }
         contentFrame.addView(view)
-        // Slide-up fade so tab switches feel intentional rather than abrupt.
+        // Quick container fade, then cards rise in sequence so the tab reads as
+        // assembling itself rather than snapping in abruptly.
         view.alpha = 0f
-        view.translationY = dp(10).toFloat()
-        view.animate().alpha(1f).translationY(0f)
-            .setDuration(220).setInterpolator(DecelerateInterpolator()).start()
+        view.animate().alpha(1f).setDuration(160)
+            .setInterpolator(DecelerateInterpolator()).start()
+        tabColumnOf(view)?.let { column ->
+            column.post { staggerChildren(column) }
+        }
         when (key) {
             "tasks" -> renderTasks()
             "notes" -> renderNotesList()
@@ -757,6 +762,7 @@ class MainActivity : ComponentActivity() {
             background = rippleRounded(panel2, dp(16), accent)
             visibility = View.GONE
             isClickable = true
+            pressable(0.98f)
             setOnClickListener {
                 hapticPress(this)
                 confirmEmergencyStop()
@@ -816,6 +822,8 @@ class MainActivity : ComponentActivity() {
                 if (compact) {
                     addView(baseButton("Delete", panel, red) { deleteNote(id) }.apply { minHeight = dp(34) })
                 } else {
+                    background = rippleRounded(panel2, dp(10), border2)
+                    pressable(0.98f)
                     setOnClickListener {
                         editingNoteId = id
                         if (::noteTitleInput.isInitialized) noteTitleInput.setText(note.title.orEmpty())
@@ -1000,7 +1008,9 @@ class MainActivity : ComponentActivity() {
             onTimeTap = { showTimePicker("wake") },
             onToggle = { on ->
                 store.wakeAlarmEnabled = on
-                routine?.let { RoutineAlarmScheduler.scheduleConfigured(this, it) }
+                // Use reconcile (persisted times) so toggling off still cancels
+                // the alarm even when today's routine has not loaded yet.
+                RoutineAlarmScheduler.reconcile(this)
                 renderScheduleControls()
             },
             actionText = if (wakeLoud) "♪ Sound" else null,
@@ -1022,7 +1032,7 @@ class MainActivity : ComponentActivity() {
             onTimeTap = { showTimePicker("sleep") },
             onToggle = { on ->
                 store.sleepReminderEnabled = on
-                routine?.let { RoutineAlarmScheduler.scheduleConfigured(this, it) }
+                RoutineAlarmScheduler.reconcile(this)
                 renderScheduleControls()
             },
             actionText = null,
@@ -1189,7 +1199,7 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(hardRow)
 
-        android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        val builder = android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle(if (existing == null) "New alarm" else "Edit alarm")
             .setView(ScrollView(this).apply { addView(root) })
             .setPositiveButton("Save") { _, _ ->
@@ -1209,7 +1219,18 @@ class MainActivity : ComponentActivity() {
                     (if (alarm.hard) " - hard mode" else "") + "."
             }
             .setNegativeButton("Cancel", null)
-            .show()
+        // Discoverable delete (long-press on the row still works too). Goes
+        // through cancelCustom so the schedule + any pending snooze are dropped
+        // and a live ring is stopped — no stale alarm left behind.
+        if (existing != null) {
+            builder.setNeutralButton("Delete") { _, _ ->
+                RoutineAlarmScheduler.cancelCustom(this, existing.id)
+                store.removeAlarm(existing.id)
+                renderScheduleControls()
+                statusText.text = "${existing.label} deleted."
+            }
+        }
+        builder.show()
     }
 
         // PIN setup: two matching 4-8 digit entries. Used the first time hard
@@ -1315,6 +1336,7 @@ class MainActivity : ComponentActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 if (onTimeTap != null) {
                     isClickable = true
+                    pressable(0.98f)
                     setOnClickListener {
                         hapticTap(this)
                         onTimeTap()
@@ -2840,9 +2862,12 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(9), dp(10), dp(9))
             background = if (onTap != null) rippleRounded(panel2, dp(10), border2) else rounded(panel2, dp(10), border2)
-            if (onTap != null) setOnClickListener {
-                hapticTap(this)
-                onTap()
+            if (onTap != null) {
+                pressable(0.98f)
+                setOnClickListener {
+                    hapticTap(this)
+                    onTap()
+                }
             }
             addView(View(this@MainActivity).apply {
                 layoutParams = LinearLayout.LayoutParams(dp(9), dp(9)).also { it.marginEnd = dp(10) }
@@ -2878,6 +2903,45 @@ class MainActivity : ComponentActivity() {
     private fun hapticTap(view: View? = null) {
         val target = view ?: if (::contentFrame.isInitialized) contentFrame else null
         target?.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+    }
+
+    // Springy press feedback: tap dips the view, release overshoots back like a
+    // physical key. Returns false so the underlying click still fires.
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private fun View.pressable(scaleTo: Float = 0.94f): View = apply {
+        setOnTouchListener { v, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN ->
+                    v.animate().scaleX(scaleTo).scaleY(scaleTo)
+                        .setDuration(90).setInterpolator(DecelerateInterpolator()).start()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                    v.animate().scaleX(1f).scaleY(1f)
+                        .setDuration(220).setInterpolator(OvershootInterpolator(3f)).start()
+            }
+            false
+        }
+    }
+
+    // Tab views are SwipeRefreshLayout > ScrollView > tabColumn. Drill down to
+    // the column so its cards can be animated individually.
+    private fun tabColumnOf(view: View): ViewGroup? {
+        val scroll = (view as? ViewGroup)?.getChildAt(0) as? ViewGroup ?: return null
+        return scroll.getChildAt(0) as? ViewGroup
+    }
+
+    // Cards/rows fade up one after another so a tab reads as "assembling"
+    // rather than snapping in all at once.
+    private fun staggerChildren(container: ViewGroup, rise: Int = 16, step: Long = 45L) {
+        for (i in 0 until container.childCount) {
+            val child = container.getChildAt(i)
+            child.alpha = 0f
+            child.translationY = dp(rise).toFloat()
+            child.animate().alpha(1f).translationY(0f)
+                .setStartDelay(step * i)
+                .setDuration(360)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        }
     }
 
     private fun hapticPress(view: View? = null) {
@@ -2966,6 +3030,7 @@ class MainActivity : ComponentActivity() {
             stateListAnimator = null
             minHeight = dp(62)
             setPadding(dp(12), dp(8), dp(12), dp(8))
+            pressable(0.97f)
             setOnClickListener {
                 hapticTap(this)
                 onClick()
@@ -2999,6 +3064,7 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(14), 0, dp(14), 0)
             minHeight = dp(42)
             stateListAnimator = null
+            pressable()
             setOnClickListener {
                 hapticTap(this)
                 onClick()
@@ -3015,6 +3081,7 @@ class MainActivity : ComponentActivity() {
             background = rippleRounded(panel2, dp(10), border2)
             val size = dp(40)
             layoutParams = LinearLayout.LayoutParams(size, size)
+            pressable(0.86f)
             setOnClickListener {
                 hapticTap(this)
                 onClick(this)

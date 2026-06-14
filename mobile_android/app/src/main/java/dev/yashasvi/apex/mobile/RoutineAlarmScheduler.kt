@@ -92,6 +92,10 @@ object RoutineAlarmScheduler {
 
     fun cancelCustom(context: Context, id: String) {
         cancelDaily(context, CUSTOM_PREFIX + id, customRequestCode(id))
+        // Also drop any pending snooze for this alarm, plus stop it if it is
+        // ringing right now — otherwise a deleted/disabled alarm can still go
+        // off via an outstanding snooze or the live ring service.
+        AlarmRingService.stopIfRinging(context, CUSTOM_PREFIX + id)
     }
 
     // Human summary for the alarm list: "daily", "Mon Wed Fri", "once".
@@ -160,6 +164,61 @@ object RoutineAlarmScheduler {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val pending = PendingIntent.getBroadcast(context, requestCode, intent, flags)
         alarm.cancel(pending)
+        // Cancelling the standing schedule must also cancel any outstanding
+        // snooze for the same kind, or a snoozed alarm keeps ringing after the
+        // alarm itself was turned off — the classic "stale alarm".
+        cancelSnooze(context, kind)
+    }
+
+    // Cancel a pending snooze for `kind`. Mirrors the request-code derivation in
+    // snooze() exactly so the right PendingIntent is matched and dropped.
+    fun cancelSnooze(context: Context, kind: String) {
+        val alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val req = REQ_SNOOZE xor (kind.hashCode() and 0x7FFF)
+        val intent = Intent(context, RoutineAlarmReceiver::class.java)
+            .setAction(APEX_ALARM_ACTION)
+            .putExtra(EXTRA_ROUTINE_KIND, kind)
+        val pending = PendingIntent.getBroadcast(
+            context, req, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        alarm.cancel(pending)
+    }
+
+    // True when an alarm of this kind should still be allowed to (auto-)snooze
+    // and re-ring: wake/sleep must be enabled, and a custom alarm must still
+    // exist and be enabled. One-shot alarms disable themselves on fire, so they
+    // return false here — preventing the auto-snooze loop from resurrecting an
+    // alarm that is no longer set in the UI.
+    fun shouldStillRing(context: Context, kind: String): Boolean {
+        val store = ApexStore(context)
+        return when {
+            kind.startsWith(CUSTOM_PREFIX) -> {
+                val id = kind.removePrefix(CUSTOM_PREFIX)
+                store.alarmById(id)?.enabled == true
+            }
+            kind == "sleep_reminder" -> store.sleepReminderEnabled
+            kind == "wake_alarm" -> store.wakeAlarmEnabled
+            else -> false
+        }
+    }
+
+    // Re-apply the full schedule from persisted state and drop anything that is
+    // no longer enabled. Safe to call on every app open / boot to guarantee the
+    // scheduled alarms match exactly what the UI shows.
+    fun reconcile(context: Context) {
+        val store = ApexStore(context)
+        scheduleConfigured(
+            context,
+            ApexRoutine(
+                id = null,
+                date = java.time.LocalDate.now().toString(),
+                wakeTime = store.lastWakeTime,
+                sleepTime = store.lastSleepTime,
+                objective = null,
+                linkedTaskId = null,
+            ),
+        )
     }
 
     // Next occurrence of hh:mm, optionally restricted to ISO weekdays

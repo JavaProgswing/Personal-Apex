@@ -41,6 +41,14 @@ class AlarmRingService : Service() {
             stopRinging("hard re-ring cycle")
             return@Runnable
         }
+        // Don't auto-snooze (re-ring) an alarm that is no longer set in the UI
+        // — one-shot alarms disable themselves on fire, and a deleted/disabled
+        // alarm must not resurrect itself through the snooze loop.
+        if (!RoutineAlarmScheduler.shouldStillRing(this, currentKind)) {
+            postMissedNotification(currentKind)
+            stopRinging("not armed anymore")
+            return@Runnable
+        }
         val recentAutoSnooze =
             System.currentTimeMillis() - store.lastAutoSnoozeAt < 25 * 60_000L
         if (recentAutoSnooze) {
@@ -75,6 +83,10 @@ class AlarmRingService : Service() {
         when (intent?.action) {
             ACTION_DISMISS, ACTION_SNOOZE, ACTION_AWAKE -> if (pinLocked) return START_NOT_STICKY
         }
+        // Force-stop bypasses the hard-alarm PIN lock: it is only triggered
+        // internally when the alarm is deleted/disabled in the UI, so there is
+        // nothing left to protect.
+        if (intent?.action == ACTION_FORCE_STOP) { stopRinging("force stopped"); return START_NOT_STICKY }
         when (intent?.action) {
             ACTION_DISMISS -> { stopRinging("dismissed"); return START_NOT_STICKY }
             ACTION_AWAKE -> {
@@ -291,6 +303,9 @@ class AlarmRingService : Service() {
         const val ACTION_DISMISS = "dev.yashasvi.apex.mobile.ALARM_DISMISS"
         const val ACTION_SNOOZE = "dev.yashasvi.apex.mobile.ALARM_SNOOZE"
         const val ACTION_AWAKE = "dev.yashasvi.apex.mobile.ALARM_AWAKE"
+        // Internal: stop a ringing alarm unconditionally (used when its alarm
+        // is removed/disabled in the UI). Bypasses the hard-alarm PIN gate.
+        const val ACTION_FORCE_STOP = "dev.yashasvi.apex.mobile.ALARM_FORCE_STOP"
         const val EXTRA_KIND = "kind"
         // Set by MainActivity after a correct PIN — the only way a hard
         // alarm accepts a stop verb.
@@ -303,6 +318,17 @@ class AlarmRingService : Service() {
             } else {
                 context.startService(intent)
             }
+        }
+
+        // Stop the alarm if it is the one currently ringing. No-op otherwise.
+        // The service is already in the foreground while ringing, so delivering
+        // a stop command to it is allowed even from a background context.
+        fun stopIfRinging(context: Context, kind: String) {
+            if (ringingKind != kind) return
+            val intent = Intent(context, AlarmRingService::class.java)
+                .setAction(ACTION_FORCE_STOP)
+                .putExtra(EXTRA_KIND, kind)
+            runCatching { context.startService(intent) }
         }
     }
 }

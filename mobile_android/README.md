@@ -24,7 +24,15 @@ desktop sees your mobile screen-time **without USB or ADB**.
   alarm stream + vibration + full-screen Dismiss / Snooze-10 / **"I'm awake"**
   (which logs `wake_done` and triggers the desktop's morning brief). The alarm
   card now shows what is armed locally, exposes ringtone/PIN controls, supports
-  custom alarms, and keeps hard alarms tied to the on-device PIN.
+  custom alarms, and keeps hard alarms tied to the on-device PIN. Editing an
+  alarm now has a **Delete** button (long-press the row still works too).
+- **No stale alarms** - turning an alarm off, deleting it, or letting a
+  one-time alarm fire now cancels *everything* tied to it: the standing
+  schedule, any pending **snooze**, and a currently-ringing instance. The
+  auto-snooze loop refuses to re-ring an alarm that is no longer set, so an
+  alarm can never keep going off after it has disappeared from the UI. Every
+  app open and reboot re-reconciles the scheduled alarms against what the UI
+  shows.
 - **Zen blocker** - mirrors desktop Zen mode: while a focus block runs, a
   foreground watcher bounces distraction apps back to home (with the overlay
   permission) or nudges loudly. The overlay is a calmer guard panel with
