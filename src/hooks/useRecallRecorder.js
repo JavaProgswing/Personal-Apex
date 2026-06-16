@@ -50,9 +50,11 @@ export default function useRecallRecorder() {
           api.recall.audioState?.({ capturing: false, error: "no system audio track" });
           return;
         }
-        const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-          ? "audio/webm;codecs=opus"
-          : "audio/webm";
+        // Prefer ogg/opus: Gemini accepts audio/ogg natively, so when cloud
+        // recap is on, Recall can send the raw file and skip Whisper. Falls
+        // back to webm (transcribe-only) where the recorder can't do ogg.
+        const mime = ["audio/ogg;codecs=opus", "audio/ogg", "audio/webm;codecs=opus", "audio/webm"]
+          .find((m) => MediaRecorder.isTypeSupported(m)) || "audio/webm";
         const recorder = new MediaRecorder(new MediaStream(audioTracks), {
           mimeType: mime,
           audioBitsPerSecond: 32000,

@@ -744,6 +744,21 @@ function ZenComposer({
                   : "e.g. YouTube, Discord, Steam - relaxed logs/nudges these"
               }
             />
+            {attentionApps.length > 0 && (
+              <button
+                type="button"
+                className="ghost small"
+                style={{ marginTop: 8 }}
+                title="Add every currently-open / recent distraction app to the block list"
+                onClick={() => {
+                  const names = new Map(blocked.map((b) => [b.toLowerCase(), b]));
+                  attentionApps.forEach((a) => names.set(a.app.toLowerCase(), a.app));
+                  syncBlockedText(Array.from(names.values()).join(", "));
+                }}
+              >
+                ⊘ Block open distractions ({attentionApps.length})
+              </button>
+            )}
             <div className="zen-search-row" style={{ marginTop: 8, marginBottom: 8 }}>
               <input
                 type="search"

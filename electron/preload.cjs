@@ -122,6 +122,16 @@ contextBridge.exposeInMainWorld("apex", {
     hasGeminiKey: () => invoke("recall:hasGeminiKey"),
     testGeminiKey: () => invoke("recall:testGeminiKey"),
     syncNow: () => invoke("recall:syncNow"),
+    // Fires when a focus-guard session wraps with a post-task review.
+    onReview: (h) => on("recall:review", h),
+  },
+  overlay: {
+    // Transparent always-on-top focus HUD (task timer + per-task time).
+    enabled: () => invoke("overlay:enabled"),
+    toggle: (on) => invoke("overlay:toggle", on),
+    setPosition: (pos) => invoke("overlay:setPosition", pos),
+    setIgnore: (ignore) => invoke("overlay:setIgnore", ignore), // hover ⇄ click-through
+    taskTimes: (date) => invoke("overlay:taskTimes", date),
   },
   routine: {
     state: () => invoke("routine:state"),

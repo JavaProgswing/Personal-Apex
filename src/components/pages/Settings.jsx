@@ -992,6 +992,41 @@ function CourseMaterialEditor({ courses, material, onClose, onSaved }) {
   );
 }
 
+// Transparent always-on-top focus HUD: shows the current task timer + today's
+// per-task time, hover-expands, corner-anchored (changeable).
+function FocusOverlayCard() {
+  const [on, setOn] = useState(false);
+  const [pos, setPos] = useState("top-right");
+  useEffect(() => {
+    api.overlay?.enabled?.().then((v) => setOn(!!v)).catch(() => {});
+    api.settings?.get?.("overlay.position").then((v) => { if (v) setPos(v); }).catch(() => {});
+  }, []);
+  function toggle(v) { setOn(v); api.overlay?.toggle?.(v); }
+  function move(p) { setPos(p); api.overlay?.setPosition?.(p); }
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="row between" style={{ alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div className="card-title" style={{ margin: 0 }}>Focus overlay</div>
+          <small className="muted">Translucent HUD over everything — current task timer + today's per-task time on hover. Click-through.</small>
+        </div>
+        <div className="row" style={{ gap: 10, alignItems: "center" }}>
+          <select value={pos} onChange={(e) => move(e.target.value)} disabled={!on} title="Corner">
+            <option value="top-right">Top right</option>
+            <option value="top-left">Top left</option>
+            <option value="bottom-right">Bottom right</option>
+            <option value="bottom-left">Bottom left</option>
+          </select>
+          <label className="row" style={{ gap: 6, alignItems: "center", margin: 0, cursor: "pointer" }}>
+            <input type="checkbox" checked={on} onChange={(e) => toggle(e.target.checked)} />
+            <span>{on ? "On" : "Off"}</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ActivityTab({ all, setAll, save, setMsg }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1018,6 +1053,7 @@ function ActivityTab({ all, setAll, save, setMsg }) {
 
   return (
     <>
+      <FocusOverlayCard />
       <SettingsOverview
         items={[
           {
@@ -2858,11 +2894,13 @@ function RecallTab({ setMsg }) {
   const [summaries, setSummaries] = useState([]);
   const [windowMin, setWindowMin] = useState(60);
   const [intervalSec, setIntervalSec] = useState(20);
+  const [busy, setBusy] = useState(false);
+  // persisted toggles / selects
   const [audio, setAudio] = useState(false);
   const [deep, setDeep] = useState(false);
   const [sync, setSync] = useState(true);
-  const [busy, setBusy] = useState(false);
-  // P3 cloud routing
+  const [focusGuard, setFocusGuard] = useState(false);
+  const [audioMode, setAudioMode] = useState("auto");
   const [modelMode, setModelMode] = useState("auto");
   const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash-lite");
   const [hasKey, setHasKey] = useState(false);
@@ -2877,207 +2915,185 @@ function RecallTab({ setMsg }) {
   }
   useEffect(() => {
     refresh();
-    api.settings?.get?.("recall.audio").then((v) => { if (v === "1") setAudio(true); }).catch(() => {});
-    api.settings?.get?.("recall.sync").then((v) => setSync(v !== "0")).catch(() => {});
-    api.settings?.get?.("recall.model").then((v) => { if (v) setModelMode(v); }).catch(() => {});
-    api.recall?.hasGeminiKey?.().then((r) => {
-      setHasKey(!!r?.has);
-      if (r?.model) setGeminiModel(r.model);
-    }).catch(() => {});
+    const g = (k, set, map = (v) => v) => api.settings?.get?.(k).then((v) => { if (v != null) set(map(v)); }).catch(() => {});
+    g("recall.audio", setAudio, (v) => v === "1");
+    g("recall.sync", setSync, (v) => v !== "0");
+    g("recall.focusGuard", setFocusGuard, (v) => v === "1");
+    g("recall.audioToModel", setAudioMode);
+    g("recall.model", setModelMode);
+    api.recall?.hasGeminiKey?.().then((r) => { setHasKey(!!r?.has); if (r?.model) setGeminiModel(r.model); }).catch(() => {});
     const off = api.recall?.onUpdate?.((s) => setStatus(s || { active: false }));
+    const offRev = api.recall?.onReview?.(() => refresh());
     const t = setInterval(refresh, 5000);
-    return () => { off?.(); clearInterval(t); };
+    return () => { off?.(); offRev?.(); clearInterval(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function toggleAudio(on) {
-    setAudio(on);
-    api.settings?.set?.("recall.audio", on ? "1" : "0").catch(() => {});
-  }
-  function toggleSync(on) {
-    setSync(on);
-    api.settings?.set?.("recall.sync", on ? "1" : "0").catch(() => {});
-  }
+  const setPref = (k, v) => api.settings?.set?.(k, v).catch(() => {});
+  const toggle = (k, set) => (on) => { set(on); setPref(k, on ? "1" : "0"); };
+  const setSel = (k, set) => (v) => { set(v); setPref(k, v); };
+
   async function syncNow() {
     setMsg("Syncing recaps…");
-    try {
-      const r = await api.recall.syncNow();
-      setMsg(r?.ok ? `Synced ${r.saved} recap(s) to cloud.` : "Sync failed: " + (r?.error || "unknown"));
-    } catch (e) { setMsg("Sync failed: " + e.message); }
-  }
-  function changeMode(m) {
-    setModelMode(m);
-    api.settings?.set?.("recall.model", m).catch(() => {});
-  }
-  function changeGeminiModel(m) {
-    setGeminiModel(m);
-    api.settings?.set?.("recall.geminiModel", m).catch(() => {});
+    try { const r = await api.recall.syncNow(); setMsg(r?.ok ? `Synced ${r.saved} recap(s).` : "Sync failed: " + (r?.error || "")); }
+    catch (e) { setMsg("Sync failed: " + e.message); }
   }
   async function saveKey() {
     setCloudMsg("Saving…");
     try {
       const r = await api.recall.setGeminiKey(keyInput);
       if (!r?.ok) throw new Error(r?.error || "unknown");
-      setHasKey(!!keyInput.trim());
-      setCloudMsg(keyInput.trim() ? "Key saved (encrypted)." : "Key cleared.");
-      setKeyInput("");
+      setHasKey(!!keyInput.trim()); setCloudMsg(keyInput.trim() ? "Saved (encrypted)." : "Cleared."); setKeyInput("");
     } catch (e) { setCloudMsg("Save failed: " + e.message); }
   }
   async function testKey() {
     setCloudMsg("Testing…");
-    try {
-      const r = await api.recall.testGeminiKey();
-      setCloudMsg(r?.ok ? `Gemini OK (${r.model}).` : "Test failed: " + (r?.error || "unknown"));
-    } catch (e) { setCloudMsg("Test failed: " + e.message); }
+    try { const r = await api.recall.testGeminiKey(); setCloudMsg(r?.ok ? `OK (${r.model}).` : "Failed: " + (r?.error || "")); }
+    catch (e) { setCloudMsg("Failed: " + e.message); }
   }
-
   async function start() {
     setBusy(true); setMsg("");
     try {
       const r = await api.recall.start({ windowMinutes: +windowMin, intervalSeconds: +intervalSec, audio, deep });
       if (!r?.ok) throw new Error(r?.error || "could not start");
-      setMsg(`Recall armed for ${windowMin} min — capturing every ${intervalSec}s${audio ? " + screen audio" : ""}${deep ? " · deep (cloud)" : ""}.`);
-      refresh();
+      setMsg(`Recall armed · ${windowMin}m`); refresh();
     } catch (e) { setMsg("Recall: " + e.message); }
     finally { setBusy(false); }
   }
   async function stop() {
     setBusy(true);
-    try {
-      const r = await api.recall.stop();
-      setMsg(r?.summary ? "Recall stopped — summary saved." : "Recall stopped.");
-      refresh();
-    } catch (e) { setMsg("Recall: " + e.message); }
+    try { await api.recall.stop(); setMsg("Recall stopped — recap saved."); refresh(); }
+    catch (e) { setMsg("Recall: " + e.message); }
     finally { setBusy(false); }
   }
 
   const remMin = status.active ? Math.ceil((status.remainingSeconds || 0) / 60) : 0;
+  // Compact inline toggle chip.
+  const Chip = ({ on, set, label, title }) => (
+    <label className="row" style={{ gap: 6, alignItems: "center", margin: 0, cursor: "pointer" }} title={title}>
+      <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} />
+      <span>{label}</span>
+    </label>
+  );
+  const lastReview = summaries.find((s) => s.focus_task);
 
   return (
     <>
       <SettingsOverview
         items={[
           { label: "Status", value: status.active ? "Recording" : "Idle",
-            detail: status.active ? `${status.framesKept || 0} frames · ${remMin}m left` : "Not capturing",
+            detail: status.active ? `${status.framesKept || 0} frames · ${remMin}m left` : "Idle",
             tone: status.active ? "warn" : "info" },
-          { label: "Privacy", value: "On-device", detail: "Frames discarded after recap", tone: "ok" },
-          { label: "Model", value: "Local vision", detail: "Ollama — qwen2.5vl:3b / llava", tone: "info" },
+          { label: "Model", value: modelMode === "local" ? "Local" : modelMode === "cloud" ? "Cloud" : "Auto",
+            detail: hasKey ? "Gemini ready" : "Local only", tone: "info" },
+          { label: "Privacy", value: "On-device", detail: "Raw frames dropped", tone: "ok" },
         ]}
       />
-      <SectionHeader
-        title="Activity recall (beta)"
-        hint="Arm a timed window — Apex screenshots the desktop, then writes a local AI recap of what you were doing. Fully on-device; raw frames are dropped after the recap."
-      />
+
+      {lastReview && (
+        <div className="card" style={{ marginBottom: 16, borderColor: "var(--accent)" }}>
+          <div className="card-title" style={{ margin: 0 }}>Last task review · {lastReview.focus_task}</div>
+          <small className="muted" style={{ display: "block", marginTop: 4 }}>{lastReview.summary}</small>
+        </div>
+      )}
+
       <div className="card" style={{ marginBottom: 16 }}>
         {status.active ? (
           <div className="row between" style={{ alignItems: "center", flexWrap: "wrap", gap: 12 }}>
             <div>
               <strong>● Recording</strong>
               <small className="muted" style={{ display: "block" }}>
-                {status.framesKept || 0} distinct frames · ~{remMin} min left
-                {status.summarizing ? " · summarizing…" : ""}
+                {status.framesKept || 0} frames · ~{remMin}m left{status.summarizing ? " · summarizing…" : ""}
+                {status.audio ? (status.audioCapturing ? ` · 🎙 ${status.audioSeconds || 0}s` : ` · 🎙 ${status.audioError || "…"}`) : ""}
               </small>
-              {status.audio && (
-                <small className="muted" style={{ display: "block" }}>
-                  {status.audioCapturing
-                    ? `🎙 screen audio · ${status.audioSeconds || 0}s`
-                    : `🎙 audio: ${status.audioError || "starting…"}`}
-                </small>
-              )}
             </div>
-            <button className="danger" onClick={stop} disabled={busy}>■ Stop & recap now</button>
+            <button className="danger" onClick={stop} disabled={busy}>■ Stop &amp; recap</button>
           </div>
         ) : (
-          <div className="row" style={{ gap: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
-            <div className="form-row" style={{ margin: 0 }}>
-              <label>Window (minutes)</label>
-              <input type="number" min={1} max={480} value={windowMin}
-                onChange={(e) => setWindowMin(e.target.value)} style={{ width: 110 }} />
+          <>
+            <div className="row" style={{ gap: 14, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div className="form-row" style={{ margin: 0 }}>
+                <label>Window (min)</label>
+                <input type="number" min={1} max={480} value={windowMin} onChange={(e) => setWindowMin(e.target.value)} style={{ width: 90 }} />
+              </div>
+              <div className="form-row" style={{ margin: 0 }}>
+                <label>Every (sec)</label>
+                <input type="number" min={5} max={300} value={intervalSec} onChange={(e) => setIntervalSec(e.target.value)} style={{ width: 90 }} />
+              </div>
+              <button className="primary" onClick={start} disabled={busy}>▶ Start</button>
             </div>
-            <div className="form-row" style={{ margin: 0 }}>
-              <label>Capture every (seconds)</label>
-              <input type="number" min={5} max={300} value={intervalSec}
-                onChange={(e) => setIntervalSec(e.target.value)} style={{ width: 130 }} />
+            <div className="row" style={{ gap: 16, flexWrap: "wrap", marginTop: 12 }}>
+              <Chip on={audio} set={toggle("recall.audio", setAudio)} label="Audio" title="Capture system audio (loopback), used in the recap" />
+              <Chip on={deep} set={setDeep} label="Deep (cloud)" title="Use Gemini for this window — needs a key (Advanced)" />
+              <Chip on={focusGuard} set={toggle("recall.focusGuard", setFocusGuard)} label="Focus guard" title="Auto-record focus timers/Zen, nudge on distraction, review the task afterward" />
+              <Chip on={sync} set={toggle("recall.sync", setSync)} label="Sync" title="Push recaps (text + thumbnails only) for web/phone review" />
             </div>
-            <label className="row" style={{ gap: 8, alignItems: "center", margin: 0, cursor: "pointer" }}
-              title="Records system audio (loopback) and transcribes it locally into the recap">
-              <input type="checkbox" checked={audio} onChange={(e) => toggleAudio(e.target.checked)} />
-              <span>Capture screen audio</span>
-            </label>
-            <label className="row" style={{ gap: 8, alignItems: "center", margin: 0, cursor: "pointer" }}
-              title="Use the cloud (Gemini) for this window's recap — needs an API key set below">
-              <input type="checkbox" checked={deep} onChange={(e) => setDeep(e.target.checked)} />
-              <span>Deep recap (cloud)</span>
-            </label>
-            <button className="primary" onClick={start} disabled={busy}>▶ Start recall</button>
-          </div>
+          </>
         )}
         <small className="hint" style={{ display: "block", marginTop: 10 }}>
-          Needs a local vision model — run <code>ollama pull qwen2.5vl:3b</code> (≈3GB, fits 16GB laptops;
-          <code>:7b</code> needs ~12GB free RAM). Alternatives: <code>llava</code> / <code>minicpm-v</code>.
-          Screen audio is transcribed locally (needs <code>whisper</code> on PATH, or set
-          <code>recall.whisperCmd</code>); phone capture comes later.
+          Local recaps need a vision model: <code>ollama pull qwen2.5vl:3b</code>. Raw frames/audio never persisted.
         </small>
-        <div className="row between" style={{ alignItems: "center", marginTop: 12, flexWrap: "wrap", gap: 8 }}>
-          <label className="row" style={{ gap: 8, alignItems: "center", margin: 0, cursor: "pointer" }}
-            title="Push recaps (text only — never raw frames/audio) to your sync server for review on web/phone">
-            <input type="checkbox" checked={sync} onChange={(e) => toggleSync(e.target.checked)} />
-            <span>Sync recaps to cloud (review on web / phone)</span>
-          </label>
-          <button className="ghost" onClick={syncNow}>Sync now</button>
-        </div>
       </div>
 
-      <SectionHeader
-        title="Cloud recaps (Gemini)"
-        hint="Optional. Routes deep / low-confidence windows to Gemini; local Ollama handles the rest."
-      />
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="form-row" style={{ marginTop: 0 }}>
-          <label>Routing</label>
-          <select value={modelMode} onChange={(e) => changeMode(e.target.value)} style={{ maxWidth: 320 }}>
-            <option value="auto">Auto — local, escalate to cloud</option>
-            <option value="local">Local only (Ollama)</option>
-            <option value="cloud">Cloud first (Gemini)</option>
-          </select>
-        </div>
-        <div className="form-row">
-          <label>Gemini model</label>
-          <input value={geminiModel} onChange={(e) => changeGeminiModel(e.target.value)}
-            placeholder="gemini-2.5-flash-lite" style={{ maxWidth: 280 }} />
-        </div>
-        <div className="form-row">
-          <label>API key {hasKey ? "· ✓ stored" : ""}</label>
-          <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <input type="password" value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
-              placeholder={hasKey ? "•••••••• (stored)" : "AIza…"} style={{ flex: 1, minWidth: 200 }} />
-            <button className="ghost" onClick={saveKey}>{keyInput.trim() ? "Save" : "Clear"}</button>
-            <button className="ghost" onClick={testKey} disabled={!hasKey}>Test</button>
+      <details className="card" style={{ marginBottom: 16 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Advanced · cloud &amp; audio</summary>
+        <div style={{ marginTop: 12 }}>
+          <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+            <div className="form-row" style={{ margin: 0 }}>
+              <label>Recap model</label>
+              <select value={modelMode} onChange={(e) => setSel("recall.model", setModelMode)(e.target.value)}>
+                <option value="auto">Auto (local → cloud)</option>
+                <option value="local">Local only</option>
+                <option value="cloud">Cloud first</option>
+              </select>
+            </div>
+            <div className="form-row" style={{ margin: 0 }}>
+              <label>Audio to model</label>
+              <select value={audioMode} onChange={(e) => setSel("recall.audioToModel", setAudioMode)(e.target.value)}
+                title="Auto: send the audio file to Gemini when it can hear it; transcribe locally otherwise">
+                <option value="auto">Auto (file if model hears it)</option>
+                <option value="transcript">Transcript only (Whisper)</option>
+                <option value="file">Send file (cloud only)</option>
+              </select>
+            </div>
+            <div className="form-row" style={{ margin: 0 }}>
+              <label>Gemini model</label>
+              <input value={geminiModel} onChange={(e) => setSel("recall.geminiModel", setGeminiModel)(e.target.value)}
+                placeholder="gemini-2.5-flash-lite" style={{ width: 200 }} />
+            </div>
           </div>
+          <div className="form-row">
+            <label>Gemini API key {hasKey ? "· ✓" : ""}</label>
+            <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input type="password" value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
+                placeholder={hasKey ? "•••• (stored)" : "AIza…"} style={{ flex: 1, minWidth: 180 }} />
+              <button className="ghost" onClick={saveKey}>{keyInput.trim() ? "Save" : "Clear"}</button>
+              <button className="ghost" onClick={testKey} disabled={!hasKey}>Test</button>
+              <button className="ghost" onClick={syncNow}>Sync now</button>
+            </div>
+          </div>
+          {cloudMsg && <small className="muted" style={{ display: "block" }}>{cloudMsg}</small>}
+          <small className="hint" style={{ display: "block", marginTop: 6 }}>
+            Key encrypted via OS keychain. Use a billing-enabled key for always-on cloud (free keys may train Google's models).
+            Whisper (local) needs <code>whisper</code> on PATH or <code>recall.whisperCmd</code>.
+          </small>
         </div>
-        {cloudMsg && <small className="muted" style={{ display: "block" }}>{cloudMsg}</small>}
-        <small className="hint" style={{ display: "block", marginTop: 8 }}>
-          Stored encrypted via your OS keychain. Only reduced keyframes + the local transcript are sent —
-          never raw audio. Free Gemini keys may be used to train Google's models; use a billing-enabled key
-          for always-on cloud recaps.
-        </small>
-      </div>
+      </details>
 
-      <SectionHeader title="Recent recaps" hint="Saved locally, newest first." />
+      <SectionHeader title="Recent recaps" hint="On-device, newest first." />
       <div className="card">
         {summaries.length === 0 ? (
-          <small className="muted">No recaps yet — arm a window above.</small>
+          <small className="muted">No recaps yet.</small>
         ) : (
           summaries.map((s) => (
             <div key={s.id} className="day-summary-event" style={{ alignItems: "flex-start" }}>
               <code>{(s.started_at || "").slice(11, 16)}</code>
               <div>
                 <strong>
-                  {(s.started_at || "").slice(0, 10)} · {(s.started_at || "").slice(11, 16)}–{(s.ended_at || "").slice(11, 16)}
+                  {(s.started_at || "").slice(11, 16)}–{(s.ended_at || "").slice(11, 16)}
+                  {s.focus_task ? <span className="pill teal" style={{ marginLeft: 6, fontSize: 9 }}>task</span> : null}
                   <span className="muted" style={{ fontWeight: 400 }}>
-                    {" "}· {s.frame_count} frames{s.model ? ` · ${s.model}` : ""}
-                    {s.audio_seconds ? ` · 🎙 ${s.audio_seconds}s` : ""}
-                    {s.transcribe_model ? ` · ${s.transcribe_model}` : ""}
+                    {" "}· {s.frame_count}f{s.audio_seconds ? ` · 🎙${s.audio_seconds}s` : ""}{s.model ? ` · ${s.model}` : ""}
                   </span>
                 </strong>
                 <small className="muted" style={{ display: "block", marginTop: 2 }}>{s.summary}</small>

@@ -87,6 +87,7 @@ class ZenWatchService : Service() {
     override fun onCreate() {
         super.onCreate()
         store = ApexStore(this)
+        WellbeingReader.categoryOverrides = store.categoryOverrides // honour user overrides
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

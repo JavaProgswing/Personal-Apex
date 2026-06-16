@@ -18,6 +18,8 @@ const db = require("./db.cjs");
 const routine = require("./routine.cjs");
 const recallModel = require("./recall-model.cjs");
 const recallAudio = require("./recall-audio.cjs");
+const activityTracker = require("./activityTracker.cjs");
+const notifier = require("./notifier.cjs");
 
 // Tunables (overridable per-session via start()).
 const MIN_INTERVAL_SEC = 5;
@@ -56,6 +58,7 @@ function ensureTable() {
     "audio_seconds INTEGER NOT NULL DEFAULT 0",
     "transcribe_model TEXT",
     "frames_json TEXT",   // P5: a few small thumbnails [{ts,b64,mime}] for review
+    "focus_task TEXT",    // P6: set when the recap wrapped a focus session (review)
   ]) {
     try { db._db().exec(`ALTER TABLE recall_summaries ADD COLUMN ${col}`); } catch { /* exists */ }
   }
@@ -88,6 +91,12 @@ function hamming(a, b) {
   return n;
 }
 
+// Gemini accepts these audio containers inline; NOT webm. So the "send the
+// file to the model" path only applies when the capture is in one of these.
+function geminiAudioOk(mime) {
+  return /ogg|wav|mp3|mpeg|aac|flac|aiff|m4a/i.test(String(mime || ""));
+}
+
 async function captureOnce() {
   if (!session) return;
   try {
@@ -118,9 +127,28 @@ async function captureOnce() {
     });
     broadcast();
     pushLive(liveState(), 25000); // throttled live heartbeat
+    maybeNudgeDistraction();
   } catch {
     /* a single failed grab is non-fatal */
   }
+}
+
+// Focus-guard nudge: while a focus session is being recalled, if the live
+// foreground app reads as a distraction, call it out (throttled). Uses the
+// activity tracker's already-computed category — no extra model call.
+function maybeNudgeDistraction() {
+  const s = session;
+  if (!s || !s.focusTask) return;
+  const now = Date.now();
+  if (now - s.lastNudgeAt < 120_000) return; // at most one nudge / 2 min
+  let cur = null;
+  try { cur = activityTracker.status()?.current || null; } catch { cur = null; }
+  if (!cur || cur.category !== "distraction") return;
+  s.lastNudgeAt = now;
+  const app = cur.app || "a distraction app";
+  const msg = `${app} during “${s.focusTask}” — that's off-task.`;
+  try { notifier.fire?.({ title: "Off task", body: msg, kind: "recall", payload: { app } }); } catch {}
+  emit("activity:nudge", { app, category: "distraction", source: "recall", message: msg, task: s.focusTask });
 }
 
 function tick() {
@@ -129,10 +157,17 @@ function tick() {
     stop("window-elapsed");
     return;
   }
+  // A focus-linked session ends when its focus does — self-stop so the review
+  // fires right when the task wraps, without hooking every completion path.
+  if (session.focusTask) {
+    let stillFocused = false;
+    try { stillFocused = !!(db.getActiveTimer?.() || db.activeZenSession?.()); } catch { stillFocused = true; }
+    if (!stillFocused) { stop("focus-done"); return; }
+  }
   captureOnce();
 }
 
-function start({ windowMinutes = 60, intervalSeconds = 20, audio = false, deep = false } = {}) {
+function start({ windowMinutes = 60, intervalSeconds = 20, audio = false, deep = false, focusTask = null } = {}) {
   if (session) return { ok: false, error: "A recall session is already running." };
   const win = Math.max(1, Math.min(8 * 60, Math.round(+windowMinutes || 60)));
   const intervalMs = Math.max(MIN_INTERVAL_SEC, Math.round(+intervalSeconds || 20)) * 1000;
@@ -146,6 +181,11 @@ function start({ windowMinutes = 60, intervalSeconds = 20, audio = false, deep =
     lastHash: null,
     timer: null,
     summarizing: false,
+    // Focus-guard (P6): when this session is tied to a productive focus timer/
+    // Zen, recall nudges on detected distraction during the block and writes a
+    // post-task review of whether the task actually got worked on.
+    focusTask: focusTask ? String(focusTask).slice(0, 200) : null,
+    lastNudgeAt: 0,
     // audio (P2): the renderer recorder streams base64 chunks into audioChunks
     // while audio===true; we never persist them, only the derived transcript.
     audio: !!audio,
@@ -263,26 +303,51 @@ async function summarize(s, reason) {
   const fmt = (iso) => iso.slice(11, 16);
   const span = `${fmt(s.startedAt)}–${fmt(endedAt)}`;
 
-  // Audio → transcript (stays empty if no audio captured / no whisper).
+  // Audio handling. Two paths, chosen by recall.audioToModel:
+  //   transcript → always Whisper → text (works with any recap model)
+  //   file       → hand the raw audio to the recap model when it hears natively
+  //   auto       → send the file iff the recap will go to Gemini AND the format
+  //                is one Gemini accepts; else transcribe locally.
+  // Ollama vision/text models can't hear, so a local recap always needs text.
   let transcript = "";
   let transcribeModel = null;
   let audioSeconds = s.audioSeconds || 0;
   let audioNote = "";
+  let audioForModel = null; // { b64, mime, seconds } sent inline to a native-audio model
   if (s.audio && s.audioChunks.length) {
-    const a = await finalizeAudio(s);
-    transcript = a.transcript || "";
-    transcribeModel = a.model || null;
-    if (a.seconds) audioSeconds = a.seconds;
-    if (!transcript) {
-      audioNote = a.error
-        ? `\n\n[Audio captured ~${audioSeconds}s but not transcribed: ${a.error}.]`
-        : `\n\n[Audio captured ~${audioSeconds}s — no speech detected.]`;
+    audioSeconds = s.audioSeconds || audioSeconds;
+    const mode = (db.getSetting("recall.audioToModel") || "auto").toLowerCase();
+    const modelMode = (db.getSetting("recall.model") || "auto").toLowerCase();
+    const cloudPreferred = modelMode === "cloud" || ((modelMode === "auto") && !!s.deep);
+    const wantFile =
+      mode !== "transcript" &&
+      recallModel.hasGeminiKey?.() &&
+      (mode === "file" || cloudPreferred) &&
+      geminiAudioOk(s.audioMime);
+    if (wantFile) {
+      try {
+        const buf = Buffer.concat(s.audioChunks);
+        if (buf.length >= 2000) {
+          audioForModel = { b64: buf.toString("base64"), mime: s.audioMime, seconds: audioSeconds };
+        }
+      } catch { /* fall through to transcript */ }
+    }
+    if (!audioForModel) {
+      const a = await finalizeAudio(s);
+      transcript = a.transcript || "";
+      transcribeModel = a.model || null;
+      if (a.seconds) audioSeconds = a.seconds;
+      if (!transcript) {
+        audioNote = a.error
+          ? `\n\n[Audio captured ~${audioSeconds}s but not transcribed: ${a.error}.]`
+          : `\n\n[Audio captured ~${audioSeconds}s — no speech detected.]`;
+      }
     }
   }
 
   let summaryText = "";
   let model = null;
-  if (frames.length === 0 && !transcript) {
+  if (frames.length === 0 && !transcript && !audioForModel) {
     summaryText =
       "No distinct screens captured during this window (screen idle or unchanged)." + audioNote;
   } else {
@@ -290,11 +355,14 @@ async function summarize(s, reason) {
     const r = await recallModel.recap({
       frames: frames.map((f) => f.b64),
       transcript,
+      audio: audioForModel,
       span,
       deep: !!s.deep,
+      task: s.focusTask || null,
     });
     summaryText = r.summary + audioNote;
     model = r.model;
+    if (audioForModel) transcribeModel = `native:${r.model || "cloud"}`;
   }
 
   const framesJson = JSON.stringify(pickThumbnails(frames));
@@ -303,20 +371,35 @@ async function summarize(s, reason) {
   const info = db._db().prepare(
     `INSERT INTO recall_summaries
        (date, started_at, ended_at, frame_count, model, summary, source, created_at,
-        transcript, audio_seconds, transcribe_model, frames_json)
-     VALUES (?, ?, ?, ?, ?, ?, 'desktop', ?, ?, ?, ?, ?)`,
+        transcript, audio_seconds, transcribe_model, frames_json, focus_task)
+     VALUES (?, ?, ?, ?, ?, ?, 'desktop', ?, ?, ?, ?, ?, ?)`,
   ).run(
     date, s.startedAt, endedAt, frames.length, model, summaryText, created,
-    transcript || null, audioSeconds, transcribeModel, framesJson,
+    transcript || null, audioSeconds, transcribeModel, framesJson, s.focusTask || null,
   );
   // Raw frames + audio are intentionally dropped here — P2 keeps no raw media.
-  return {
+  const row = {
     id: info.lastInsertRowid,
     date, started_at: s.startedAt, ended_at: endedAt,
     frame_count: frames.length, model, summary: summaryText, reason,
     audio_seconds: audioSeconds, transcribe_model: transcribeModel,
     has_transcript: !!transcript,
+    focus_task: s.focusTask || null,
   };
+  // Post-task review: surface the recap prominently when it wrapped a focus
+  // session (the summary already carries the on-track/drifted verdict because
+  // summarize passed `task` to the model). Desktop shows a review card.
+  if (s.focusTask) {
+    emit("recall:review", row);
+    try {
+      notifier.fire?.({
+        title: `Task review · ${s.focusTask}`,
+        body: summaryText.slice(0, 220),
+        kind: "recall",
+      });
+    } catch {}
+  }
+  return row;
 }
 
 function status() {
@@ -336,6 +419,7 @@ function status() {
     audioError: session.audioError || null,
     audioSeconds: session.audioSeconds || 0,
     audioBytes: session.audioBytes || 0,
+    focusTask: session.focusTask || null,
   };
 }
 

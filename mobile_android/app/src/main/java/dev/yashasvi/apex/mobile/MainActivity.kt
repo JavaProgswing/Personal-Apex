@@ -189,6 +189,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = ApexStore(this)
+        WellbeingReader.categoryOverrides = store.categoryOverrides // load user overrides
         // Launched by the ringing alarm's full-screen intent: show over the
         // lock screen and light the display so Dismiss/Snooze are reachable.
         if (intent?.getBooleanExtra(EXTRA_FROM_ALARM, false) == true &&
@@ -2138,25 +2139,43 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Long-press an app → fix its category (the regex auto-labeller gets some
+    // apps wrong), hide it, or clear an override. Overrides win locally AND in
+    // the category uploaded to the desktop on the next sync.
+    private fun showAppCategoryMenu(pkg: String, name: String) {
+        val cats = listOf("productive", "distraction", "leisure", "rest", "neutral")
+        val current = store.categoryOverrides[pkg]
+        val labels = cats.map { c -> (if (c == current) "● " else "○ ") + c.replaceFirstChar(Char::uppercase) } +
+            listOf("Clear override", "Hide from screen time")
+        android.app.AlertDialog.Builder(this)
+            .setTitle(name)
+            .setItems(labels.toTypedArray()) { _, which ->
+                when (which) {
+                    in cats.indices -> {
+                        store.setCategoryOverride(pkg, cats[which])
+                        statusText.text = "$name → ${cats[which]}. Desktop updates next sync."
+                    }
+                    cats.size -> {
+                        store.setCategoryOverride(pkg, null)
+                        statusText.text = "$name category override cleared."
+                    }
+                    else -> {
+                        store.ignoredPkgs = store.ignoredPkgs + pkg
+                        statusText.text = "$name hidden from screen time."
+                    }
+                }
+                renderLocalUsage()
+            }
+            .show()
+    }
+
     private fun usageBarRow(name: String, minutes: Int, maxMinutes: Int, category: String?, launches: Int = 0, pkg: String? = null): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
             background = rippleRounded(panel2, dp(12), border2)
             if (pkg != null) {
-                setOnLongClickListener {
-                    android.app.AlertDialog.Builder(this@MainActivity)
-                        .setTitle("Hide $name?")
-                        .setMessage("Removes it from screen time on this phone and from desktop sync. Undo anytime with Unhide all.")
-                        .setPositiveButton("Hide") { _, _ ->
-                            store.ignoredPkgs = store.ignoredPkgs + pkg
-                            renderLocalUsage()
-                            statusText.text = "$name hidden from screen time."
-                        }
-                        .setNegativeButton("Cancel", null)
-                        .show()
-                    true
-                }
+                setOnLongClickListener { showAppCategoryMenu(pkg, name); true }
             }
             val head = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -2734,7 +2753,7 @@ class MainActivity : ComponentActivity() {
                 ))
             }
             usageBarsBox.addView(space(8))
-            usageBarsBox.addView(label("Long-press an app to hide it from screen time.", 10.5f, faint, false))
+            usageBarsBox.addView(label("Long-press an app to fix its category or hide it.", 10.5f, faint, false))
             val hidden = store.ignoredPkgs.size
             if (hidden > 0) {
                 usageBarsBox.addView(space(6))

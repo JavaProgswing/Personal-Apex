@@ -59,6 +59,7 @@ const recallModel = require("./services/recall-model.cjs");
 
 let mainWindow = null;
 let tray = null;
+let overlayWindow = null;
 // Flipped to true only when the user picks "Quit" from the tray or
 // Cmd/Ctrl+Q. Tells the close handler "this is a real quit, don't hide".
 let isQuitting = false;
@@ -421,6 +422,7 @@ app.whenReady().then(async () => {
   logAppOpen();
   createWindow();
   try { recall.init(emit); } catch (e) { console.error("[recall] init failed:", e); }
+  try { if (db.getSetting("overlay.enabled") === "1") createOverlayWindow(); } catch (e) { console.error("[overlay] init failed:", e); }
   // Create the system-tray icon ONLY if the user opted in. We keep it
   // off by default so the app doesn't grow a tray icon nobody asked for.
   try {
@@ -613,7 +615,99 @@ function emit(channel, payload) {
       mainWindow.webContents.send(channel, payload);
     }
   } catch {}
+  // Mirror to the focus overlay HUD so it reacts to timer/zen updates too.
+  try {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send(channel, payload);
+    }
+  } catch {}
 }
+
+// ── Focus overlay HUD ────────────────────────────────────────────────────────
+// A small, transparent, always-on-top, click-through window that shows the
+// current task timer (and today's per-task time on hover). Renders the React
+// app's <Overlay> route (index.html#overlay). Off by default; toggled in
+// Settings. Position is corner-anchored and remembered.
+const OVERLAY_W = 300;
+const OVERLAY_H = 260;
+function overlayPosition() {
+  const { screen } = require("electron");
+  const wa = screen.getPrimaryDisplay().workArea;
+  const m = 14;
+  const pos = db.getSetting("overlay.position") || "top-right";
+  const right = wa.x + wa.width - OVERLAY_W - m;
+  const left = wa.x + m;
+  const top = wa.y + m;
+  const bottom = wa.y + wa.height - OVERLAY_H - m;
+  switch (pos) {
+    case "top-left": return { x: left, y: top };
+    case "bottom-left": return { x: left, y: bottom };
+    case "bottom-right": return { x: right, y: bottom };
+    default: return { x: right, y: top }; // top-right
+  }
+}
+function createOverlayWindow() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) { overlayWindow.show(); return overlayWindow; }
+  const { x, y } = overlayPosition();
+  overlayWindow = new BrowserWindow({
+    width: OVERLAY_W, height: OVERLAY_H, x, y,
+    frame: false, transparent: true, resizable: false, movable: false,
+    skipTaskbar: true, alwaysOnTop: true, focusable: false, hasShadow: false,
+    fullscreenable: false, maximizable: false, minimizable: false,
+    backgroundColor: "#00000000",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true, nodeIntegration: false, sandbox: false,
+    },
+  });
+  overlayWindow.setAlwaysOnTop(true, "screen-saver");
+  overlayWindow.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true });
+  // Click-through: pointer events pass to apps behind. The renderer flips this
+  // off while the cursor is over the HUD (so hover/clicks work), back on after.
+  overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+  if (isDev) overlayWindow.loadURL("http://localhost:5173#overlay");
+  else overlayWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"), { hash: "overlay" });
+  overlayWindow.on("closed", () => { overlayWindow = null; });
+  return overlayWindow;
+}
+function destroyOverlayWindow() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.close();
+  overlayWindow = null;
+}
+ipcMain.handle("overlay:enabled", () => db.getSetting("overlay.enabled") === "1");
+ipcMain.handle("overlay:toggle", (_e, on) => {
+  db.setSetting("overlay.enabled", on ? "1" : "0");
+  if (on) createOverlayWindow(); else destroyOverlayWindow();
+  return { ok: true, enabled: !!on };
+});
+ipcMain.handle("overlay:setPosition", (_e, pos) => {
+  db.setSetting("overlay.position", pos || "top-right");
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    const { x, y } = overlayPosition();
+    overlayWindow.setPosition(x, y);
+  }
+  return { ok: true, position: pos };
+});
+// Renderer hover → make the HUD solid/interactive (false) or click-through (true).
+ipcMain.handle("overlay:setIgnore", (_e, ignore) => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.setIgnoreMouseEvents(!!ignore, { forward: true });
+  }
+  return { ok: true };
+});
+// Per-task focus time today, from timer-logged activity. Drives the HUD's
+// "how long on LeetCode vs prompts" breakdown.
+ipcMain.handle("overlay:taskTimes", (_e, isoDate) => {
+  const day = isoDate || today();
+  try {
+    return db._db().prepare(
+      `SELECT app AS task, SUM(minutes) AS minutes
+         FROM activity_sessions
+        WHERE date = ? AND source = 'timer'
+        GROUP BY app ORDER BY minutes DESC LIMIT 8`,
+    ).all(day);
+  } catch { return []; }
+});
 
 function uptimeMs() {
   const opened = Date.parse(appOpenedAt);
@@ -2004,12 +2098,31 @@ ipcMain.handle("timer:start", (_e, p) => {
   broadcastTimer(row);
   mirrorTimerFocus(row);
   if (activeZen) broadcastZen(activeZen, { timer: row });
+  maybeArmFocusRecall(row);
   // Optional Spotify focus playlist auto-play. Defined later in the file
   // (after the spotify service is required); guarded with typeof so we
   // don't blow up if the helper hasn't loaded yet.
   if (typeof _maybeStartFocusMusic === "function") _maybeStartFocusMusic(row);
   return row;
 });
+
+// Focus-guard: when the user opts in (recall.focusGuard) and starts a
+// PRODUCTIVE block, arm Recall for that window tied to the task — it nudges on
+// detected distraction during the block and writes a post-task review when the
+// focus ends. No-op if Recall is already running or the toggle is off.
+function maybeArmFocusRecall(row) {
+  try {
+    if (db.getSetting("recall.focusGuard") !== "1") return;
+    if (!row || row.category !== "productive") return;
+    if (recall.status()?.active) return;
+    const planned = (+row.planned_minutes || 25) + (+row.extended_minutes || 0);
+    recall.start({
+      windowMinutes: Math.max(1, planned + 1),
+      intervalSeconds: 30,
+      focusTask: row.title || row.kind || "Focus",
+    });
+  } catch { /* recall is best-effort, never block the timer */ }
+}
 ipcMain.handle("timer:extend", (_e, mins) => {
   const byMinutes = +mins || 5;
   const row = db.extendTimer(byMinutes);
@@ -2287,6 +2400,7 @@ ipcMain.handle("zen:start", async (_e, p) => {
     planned_minutes: session.planned_minutes,
   });
   broadcastTimer(timerRow);
+  maybeArmFocusRecall(timerRow);
   startZenMonitor();
   broadcastZen(session, { timer: timerRow });
 

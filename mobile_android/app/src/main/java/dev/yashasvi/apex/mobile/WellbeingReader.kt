@@ -242,7 +242,13 @@ object WellbeingReader {
         }.getOrNull()
     }
 
+    // User overrides (pkg → category) win over the regex. Kept in sync from
+    // ApexStore.setCategoryOverride and refreshed on app/service start.
+    @Volatile
+    var categoryOverrides: Map<String, String> = emptyMap()
+
     private fun inferCategory(packageName: String): String {
+        categoryOverrides[packageName]?.let { return it }
         val lower = packageName.lowercase()
         return when {
             Regex("whatsapp|instagram|twitter|xhs|reddit|tiktok|snapchat|youtube|netflix|hotstar|discord|telegram|facebook|avod|primevideo|disney|jiocinema|crunchyroll")

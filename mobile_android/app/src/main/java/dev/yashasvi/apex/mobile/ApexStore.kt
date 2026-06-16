@@ -148,6 +148,27 @@ class ApexStore(context: Context) {
         get() = prefs.getStringSet(KEY_IGNORED_PKGS, emptySet()) ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_IGNORED_PKGS, value).apply()
 
+    // Per-app category overrides (pkg → productive|distraction|leisure|rest|
+    // neutral). The regex auto-categorizer mislabels some apps; an override
+    // wins over it locally AND in the category uploaded to the desktop.
+    var categoryOverrides: Map<String, String>
+        get() = runCatching {
+            val o = org.json.JSONObject(prefs.getString("category_overrides", "{}") ?: "{}")
+            o.keys().asSequence().associateWith { o.optString(it) }.filterValues { it.isNotBlank() }
+        }.getOrDefault(emptyMap())
+        set(value) {
+            val o = org.json.JSONObject()
+            value.forEach { (k, v) -> o.put(k, v) }
+            prefs.edit().putString("category_overrides", o.toString()).apply()
+        }
+
+    fun setCategoryOverride(pkg: String, category: String?) {
+        val m = categoryOverrides.toMutableMap()
+        if (category.isNullOrBlank()) m.remove(pkg) else m[pkg] = category
+        categoryOverrides = m
+        WellbeingReader.categoryOverrides = m // keep the live categorizer in sync
+    }
+
     var wakeRingtoneUri: String?
         get() = prefs.getString(KEY_WAKE_RINGTONE_URI, null)
         set(value) = prefs.edit().putString(KEY_WAKE_RINGTONE_URI, value).apply()

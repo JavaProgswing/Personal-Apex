@@ -39,59 +39,86 @@ async function testGeminiKey() {
 }
 
 // ── prompts ──────────────────────────────────────────────────────────────────
-function visionPrompt(span, frameCount, transcript) {
-  let p =
+// `task` (set for focus-guard sessions) turns the recap into a post-task
+// review: same factual summary, plus an explicit on-track verdict + a nudge.
+function reviewTail(task) {
+  if (!task) return "";
+  return `\n\nThe user had set out to work on: "${task}". ` +
+    `Judge whether the activity matches that task. End with exactly one line:\n` +
+    `VERDICT: on-track — <one-line why> · next: <one concrete suggestion>\n` +
+    `(or "VERDICT: drifted — …" if they mostly did something else).`;
+}
+function audioClause(transcript) {
+  if (!transcript) return "";
+  return `\n\nAudio heard during this window (system audio / speech, transcribed):\n"""\n` +
+    `${transcript.slice(0, 4000)}\n"""\n` +
+    `Use the audio to enrich the summary (a video/lecture topic, a call), not as a verbatim quote.`;
+}
+function visionPrompt(span, frameCount, transcript, task) {
+  return (
     `These ${frameCount} screenshots are keyframes captured between ${span} on one desktop, ` +
     `in chronological order. Summarize what the user was actually doing across this window: ` +
     `the main apps/sites, the tasks or topics, and whether it read as focused work or distraction. ` +
-    `Be concrete and brief (3–5 sentences). Do not invent detail you cannot see.`;
-  if (transcript) {
-    p += `\n\nAudio heard during this window (system audio / speech, transcribed):\n"""\n` +
-      `${transcript.slice(0, 4000)}\n"""\n` +
-      `Use the audio to enrich the summary (e.g. a video/lecture topic, a call), not as a verbatim quote.`;
-  }
-  return p;
+    `Be concrete and brief (3–5 sentences). Do not invent detail you cannot see.` +
+    audioClause(transcript) + reviewTail(task)
+  );
 }
-function audioOnlyPrompt(span, transcript) {
-  return `This is audio transcribed from the user's desktop between ${span}. In 2–4 sentences, ` +
-    `say what it was about (a video/lecture topic, a call, music, etc.).\n\n"""\n${transcript.slice(0, 4000)}\n"""`;
+function audioOnlyPrompt(span, transcript, task) {
+  const body = transcript
+    ? `This is audio transcribed from the user's desktop between ${span}. In 2–4 sentences, ` +
+      `say what it was about (a video/lecture topic, a call, music, etc.).\n\n"""\n${transcript.slice(0, 4000)}\n"""`
+    : `This is system audio captured from the user's desktop between ${span}. In 2–4 sentences, ` +
+      `say what it was about (a video/lecture topic, a call, music, etc.).`;
+  return body + reviewTail(task);
 }
-const AUDIO_SYS = "You summarize a short transcript of audio a user heard or spoke during a work session.";
+const AUDIO_SYS = "You summarize a short clip/transcript of audio a user heard or spoke during a work session.";
 
 // ── route implementations ─────────────────────────────────────────────────────
-async function localRecap({ frames, transcript, span }) {
+// `audio` ({ b64, mime }) is only usable by a native-audio model (Gemini); the
+// local path can't hear, so it transcribes upstream and only sees `transcript`.
+async function localRecap({ frames, transcript, span, task }) {
   if (frames.length) {
-    const r = await ollama.analyzeImages({ imagesBase64: frames, prompt: visionPrompt(span, frames.length, transcript) });
+    const r = await ollama.analyzeImages({ imagesBase64: frames, prompt: visionPrompt(span, frames.length, transcript, task) });
     return r.ok ? { ok: true, summary: r.content.trim(), model: r.model } : { ok: false, error: r.error };
   }
-  const r = await ollama.chat({ system: AUDIO_SYS, user: audioOnlyPrompt(span, transcript) });
+  if (!transcript) return { ok: false, error: "local model can't analyze raw audio (no transcript)" };
+  const r = await ollama.chat({ system: AUDIO_SYS, user: audioOnlyPrompt(span, transcript, task) });
   return r.ok ? { ok: true, summary: r.content.trim(), model: r.model } : { ok: false, error: r.error };
 }
 
-async function cloudRecap({ frames, transcript, span }) {
+async function cloudRecap({ frames, transcript, audio, span, task }) {
   const key = geminiKey();
   if (!key) return { ok: false, error: "no Gemini key" };
   const model = geminiModel();
-  const r = frames.length
-    ? await gemini.generate({ apiKey: key, model, prompt: visionPrompt(span, frames.length, transcript), imagesBase64: frames })
-    : await gemini.generate({ apiKey: key, model, system: AUDIO_SYS, prompt: audioOnlyPrompt(span, transcript) });
+  const prompt = frames.length
+    ? visionPrompt(span, frames.length, transcript, task)
+    : audioOnlyPrompt(span, transcript, task);
+  const r = await gemini.generate({
+    apiKey: key, model, prompt,
+    imagesBase64: frames,
+    audio: audio || null, // sent inline when present; skips local transcription
+    system: frames.length ? undefined : AUDIO_SYS,
+  });
   return r.ok ? { ok: true, summary: r.content.trim(), model: r.model } : { ok: false, error: r.error };
 }
 
-// recap({ frames:[b64], transcript, span, deep }) → { ok, summary, model } | { ok:false, summary, model:null }
-async function recap({ frames = [], transcript = "", span, deep = false }) {
+// recap({ frames:[b64], transcript, audio, span, deep, task }) → { ok, summary, model }
+async function recap({ frames = [], transcript = "", audio = null, span, deep = false, task = null }) {
   const mode = setting("recall.model") || "auto";
   let order;
   if (mode === "local") order = ["local"];
   else if (mode === "cloud") order = ["cloud", "local"];
   else order = deep ? ["cloud", "local"] : ["local", "cloud"]; // auto
+  // Raw audio (no transcript) can only be read by the cloud model — make sure
+  // cloud is tried first in that case so we don't dead-end on local.
+  if (audio && !transcript && !frames.length && order[0] !== "cloud") order = ["cloud", ...order.filter((r) => r !== "cloud")];
 
   let lastErr = "no model available";
   for (const route of order) {
     if (route === "cloud" && !hasGeminiKey()) { lastErr = "no Gemini key"; continue; }
     const r = route === "cloud"
-      ? await cloudRecap({ frames, transcript, span })
-      : await localRecap({ frames, transcript, span });
+      ? await cloudRecap({ frames, transcript, audio, span, task })
+      : await localRecap({ frames, transcript, span, task });
     if (r.ok) return r;
     lastErr = r.error;
   }
