@@ -54,6 +54,8 @@ const batteryReport = require("./services/batteryReport.cjs");
 const importLinks = require("./services/importLinks.cjs");
 const cp = require("./services/cp.cjs");
 const routine = require("./services/routine.cjs");
+const recall = require("./services/recall.cjs");
+const recallModel = require("./services/recall-model.cjs");
 
 let mainWindow = null;
 let tray = null;
@@ -130,6 +132,26 @@ function createWindow() {
     }
     return { action: "allow" };
   });
+
+  // Recall audio capture (P2): grant getDisplayMedia from the renderer with
+  // system-audio loopback (Windows) and no OS picker. The recorder strips the
+  // video track and keeps only the audio. Only used while a Recall session is
+  // armed with audio on; the renderer simply never calls getDisplayMedia
+  // otherwise.
+  try {
+    const { desktopCapturer } = require("electron");
+    mainWindow.webContents.session.setDisplayMediaRequestHandler(
+      (request, callback) => {
+        desktopCapturer
+          .getSources({ types: ["screen"] })
+          .then((sources) => callback({ video: sources[0], audio: "loopback" }))
+          .catch(() => callback({}));
+      },
+      { useSystemPicker: false },
+    );
+  } catch (e) {
+    console.error("[recall] display-media handler setup failed:", e);
+  }
 
   // Hide-to-tray instead of quitting when the close button is clicked,
   // if (a) the tray icon exists AND (b) minimise-to-tray is enabled.
@@ -398,6 +420,7 @@ app.whenReady().then(async () => {
   // run. Nothing to do here.
   logAppOpen();
   createWindow();
+  try { recall.init(emit); } catch (e) { console.error("[recall] init failed:", e); }
   // Create the system-tray icon ONLY if the user opted in. We keep it
   // off by default so the app doesn't grow a tray icon nobody asked for.
   try {
@@ -1361,6 +1384,20 @@ ipcMain.handle("ollama:chat", (_e, { model, system, user }) =>
   // so even Ask-Apex gets the profile + house rules.
   ollama.chat({ model, system: ollama.buildSystem(system || "You are Apex, a helpful personal assistant."), user }),
 );
+
+// ── Recall (timed on-device screen capture → local summary) ───────────────
+ipcMain.handle("recall:start", (_e, opts) => recall.start(opts || {}));
+ipcMain.handle("recall:stop", () => recall.stop("manual"));
+ipcMain.handle("recall:status", () => recall.status());
+ipcMain.handle("recall:summaries", (_e, limit) => recall.recentSummaries(limit));
+// Renderer streams base64 audio chunks here while a session is armed with audio.
+ipcMain.on("recall:pushAudio", (_e, b64) => { try { recall.pushAudio(b64); } catch {} });
+ipcMain.on("recall:audioState", (_e, st) => { try { recall.setAudioState(st); } catch {} });
+// Gemini cloud routing (P3) — key is stored encrypted via safeStorage.
+ipcMain.handle("recall:setGeminiKey", (_e, key) => recallModel.setGeminiKey(key));
+ipcMain.handle("recall:hasGeminiKey", () => ({ has: recallModel.hasGeminiKey(), model: recallModel.geminiModel() }));
+ipcMain.handle("recall:testGeminiKey", () => recallModel.testGeminiKey());
+ipcMain.handle("recall:syncNow", () => recall.syncToCloud(50));
 
 // Streaming, multi-turn chat for the interactive Ask Apex drawer. Token
 // chunks are pushed to the renderer on a per-request channel; the awaited

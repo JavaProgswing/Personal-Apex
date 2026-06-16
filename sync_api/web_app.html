@@ -235,6 +235,23 @@
   #focusBanner #focusText { flex: 1; }
   .focus-chev { flex: none; font-size: 22px; line-height: 1; opacity: 0.45; }
 
+  .recall-item { padding: 13px 0; border-top: 1px solid var(--border2); }
+  .recall-item:first-child { border-top: none; padding-top: 0; }
+  .recall-when { font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  .recall-sum { font-size: 14px; line-height: 1.55; }
+  .recall-item details { margin-top: 7px; }
+  .recall-item summary { font-size: 12px; color: var(--accent); cursor: pointer; width: fit-content; }
+  .recall-tx { font-size: 12.5px; color: var(--muted); white-space: pre-wrap; margin-top: 6px; line-height: 1.5; }
+  .recall-thumbs { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .recall-thumb { width: 160px; height: 100px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border2); cursor: zoom-in; }
+  .recall-thumb:hover { border-color: var(--accent); }
+  .recall-live {
+    display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(110deg, rgba(46,199,180,0.15), rgba(37,169,176,0.09));
+    border: 1px solid rgba(46,199,180,0.40); border-radius: 14px;
+    padding: 11px 16px; margin-bottom: 16px; font-weight: 600; font-size: 13.5px; color: var(--text);
+  }
+
   .row-item {
     display: flex; align-items: center; gap: 12px;
     background: var(--panel2);
@@ -423,6 +440,7 @@
       <button data-tab="tasks">Tasks</button>
       <button data-tab="notes">Notes</button>
       <button data-tab="activity">Activity</button>
+      <button data-tab="recall">Recall</button>
     </nav>
 
     <!-- Today -->
@@ -502,6 +520,16 @@
         <div id="actInsight" class="empty" style="margin:2px 0 16px"></div>
         <div class="metric-strip" id="metricStrip"></div>
         <div id="actBars"></div>
+      </div>
+    </div>
+
+    <!-- Recall -->
+    <div class="panel" id="panel-recall" style="display:none">
+      <div id="recallLive"></div>
+      <div class="card">
+        <h3>Activity recall</h3>
+        <div class="empty" style="margin-bottom:14px">On-device recaps of what you were doing, synced from your desktop. Newest first.</div>
+        <div id="recallList"><div class="empty">Loading…</div></div>
       </div>
     </div>
 
@@ -845,6 +873,74 @@ async function loadAll() {
   } catch (e) {
     toast("Load failed: " + e.message, true);
     if (/401/.test(e.message)) { store.token = ""; location.reload(); }
+  }
+}
+
+// Recall — lazy-loaded when the tab opens. Recaps are text only (summary +
+// optional transcript); raw frames/audio never leave the desktop.
+let recallData = [];
+const tmFromIso = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } };
+async function loadRecall() {
+  const box = $("recallList");
+  try {
+    const [list, live] = await Promise.all([
+      api("/recall?limit=50"),
+      api("/recall/live").catch(() => ({ active: false })),
+    ]);
+    recallData = list;
+    renderRecallLive(live);
+    renderRecall();
+  } catch (e) {
+    box.innerHTML = "";
+    box.appendChild(el("div", "empty", "Couldn't load recaps: " + e.message));
+  }
+}
+function renderRecallLive(live) {
+  const box = $("recallLive");
+  if (!box) return;
+  box.innerHTML = "";
+  if (live && live.active) {
+    box.appendChild(el("div", "recall-live",
+      `● Recording on laptop · ${live.frames_kept || 0} frames${live.audio ? " · 🎙 audio" : ""}`));
+  }
+}
+function renderRecall() {
+  const box = $("recallList");
+  box.innerHTML = "";
+  if (!recallData.length) {
+    box.appendChild(el("div", "empty", "No recaps yet. Arm a Recall window on your desktop."));
+    return;
+  }
+  for (const r of recallData) {
+    const card = el("div", "recall-item");
+    const meta = [
+      r.frame_count ? `${r.frame_count} frames` : null,
+      r.audio_seconds ? `🎙 ${r.audio_seconds}s` : null,
+      r.model || null,
+    ].filter(Boolean).join(" · ");
+    const when = (r.started_at || "").slice(0, 10) + " · " + tmFromIso(r.started_at) + "–" + tmFromIso(r.ended_at);
+    card.appendChild(el("div", "recall-when", when + (meta ? "  ·  " + meta : "")));
+    card.appendChild(el("div", "recall-sum", r.summary || ""));
+    if (Array.isArray(r.frames) && r.frames.length) {
+      const strip = el("div", "recall-thumbs");
+      for (const f of r.frames) {
+        const img = document.createElement("img");
+        img.className = "recall-thumb";
+        img.loading = "lazy";
+        img.src = `data:${f.mime || "image/jpeg"};base64,${f.b64}`;
+        if (f.ts) img.title = tmFromIso(f.ts);
+        strip.appendChild(img);
+      }
+      card.appendChild(strip);
+    }
+    if (r.transcript) {
+      const d = document.createElement("details");
+      const s = document.createElement("summary"); s.textContent = "Transcript";
+      d.appendChild(s);
+      d.appendChild(el("div", "recall-tx", r.transcript));
+      card.appendChild(d);
+    }
+    box.appendChild(card);
   }
 }
 
@@ -1218,6 +1314,7 @@ function initTabs() {
       currentTab = tab;
       old.style.display = "none";
       next.style.display = "block";
+      if (tab === "recall") loadRecall();
       if (window.gsap && !REDUCED) {
         gsap.fromTo(next, { autoAlpha: 0, y: 18 }, { autoAlpha: 1, y: 0, duration: 0.45, ease: "power3.out", clearProps: "transform" });
       }

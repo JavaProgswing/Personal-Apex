@@ -101,6 +101,8 @@ class MainActivity : ComponentActivity() {
     // ── Activity tab ─────────────────────────────────────────────────────────
     private lateinit var usageAccessText: TextView
     private lateinit var usageTotalText: TextView
+    private lateinit var recallBox: LinearLayout
+    private lateinit var recallLiveText: TextView
     private lateinit var usageInsightText: TextView
     private lateinit var usageBarsBox: LinearLayout
     private lateinit var syncText: TextView
@@ -558,6 +560,7 @@ class MainActivity : ComponentActivity() {
             })
         }
         contentFrame.addView(view)
+        if (key == "activity") loadRecall()
         // Quick container fade, then cards rise in sequence so the tab reads as
         // assembling itself rather than snapping in abruptly.
         view.alpha = 0f
@@ -2004,6 +2007,98 @@ class MainActivity : ComponentActivity() {
                 bgSyncButton,
             ))
         })
+        addView(card {
+            addView(sectionTitle("Laptop recall"))
+            recallLiveText = label("", 12.5f, accent, true).apply { visibility = View.GONE }
+            addView(recallLiveText)
+            recallBox = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
+            addView(recallBox)
+        })
+    }
+
+    private fun loadRecall() {
+        if (!::recallBox.isInitialized) return
+        if (store.token.isNullOrBlank()) {
+            recallBox.removeAllViews()
+            recallBox.addView(label("Pair this phone to see laptop recaps.", 12.5f, muted, false))
+            return
+        }
+        scope.launch {
+            val recaps = try { client().recall(30) } catch (_: Throwable) { null }
+            val live = try { client().recallLive() } catch (_: Throwable) { null }
+            if (::recallLiveText.isInitialized) {
+                if (live != null && live.active) {
+                    recallLiveText.visibility = View.VISIBLE
+                    recallLiveText.text = "● Recording on laptop · ${live.framesKept} frames" + (if (live.audio) " · 🎙" else "")
+                } else recallLiveText.visibility = View.GONE
+            }
+            recallBox.removeAllViews()
+            when {
+                recaps == null -> recallBox.addView(label("Couldn't load recaps.", 12.5f, muted, false))
+                recaps.isEmpty() -> recallBox.addView(label("No laptop recaps yet. Run a Recall window on your desktop.", 12.5f, muted, false))
+                else -> recaps.forEachIndexed { i, r ->
+                    if (i > 0) recallBox.addView(View(this@MainActivity).apply {
+                        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
+                        setBackgroundColor(border2)
+                    })
+                    recallBox.addView(recapCard(r))
+                }
+            }
+        }
+    }
+
+    private fun recapCard(r: RecallRecap): LinearLayout {
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(12), 0, dp(12))
+        }
+        val span = (r.startedAt?.let { shortTime(it) } ?: "--") + (r.endedAt?.let { "–" + shortTime(it) } ?: "")
+        val meta = buildList {
+            if (r.frameCount > 0) add("${r.frameCount} frames")
+            if (r.audioSeconds > 0) add("🎙 ${r.audioSeconds}s")
+            r.model?.let { add(it) }
+        }
+        col.addView(label("${r.date}  ·  $span" + (if (meta.isNotEmpty()) "   ·   " + meta.joinToString(" · ") else ""), 11.5f, faint, false))
+        col.addView(space(4))
+        col.addView(label(r.summary, 13.5f, textColor, false))
+        if (r.frames.isNotEmpty()) {
+            col.addView(space(8))
+            col.addView(thumbStrip(r.frames))
+        }
+        r.transcript?.takeIf { it.isNotBlank() }?.let { tx ->
+            col.addView(space(6))
+            val body = label(tx, 12f, muted, false).apply { visibility = View.GONE; setPadding(0, dp(4), 0, 0) }
+            val toggle = label("▸ Transcript", 12f, accent, true)
+            toggle.setOnClickListener {
+                val show = body.visibility == View.GONE
+                body.visibility = if (show) View.VISIBLE else View.GONE
+                toggle.text = if (show) "▾ Transcript" else "▸ Transcript"
+            }
+            col.addView(toggle)
+            col.addView(body)
+        }
+        return col
+    }
+
+    private fun thumbStrip(frames: List<RecallFrame>): android.widget.HorizontalScrollView {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        for (f in frames) {
+            val bmp = try {
+                val bytes = android.util.Base64.decode(f.b64, android.util.Base64.DEFAULT)
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            } catch (_: Throwable) { null } ?: continue
+            row.addView(android.widget.ImageView(this).apply {
+                setImageBitmap(bmp)
+                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                layoutParams = LinearLayout.LayoutParams(dp(150), dp(94)).apply { marginEnd = dp(8) }
+                background = rounded(panel2, dp(8), border2)
+                clipToOutline = true
+            })
+        }
+        return android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(row)
+        }
     }
 
     private fun categoryColor(category: String?): Int = when (category) {

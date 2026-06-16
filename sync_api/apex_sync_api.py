@@ -174,6 +174,34 @@ def init_db() -> None:
                 updated_at TEXT,
                 stop_requested_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS recall_summaries (
+                id TEXT PRIMARY KEY,
+                device_id TEXT,
+                date TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                frame_count INTEGER NOT NULL DEFAULT 0,
+                audio_seconds INTEGER NOT NULL DEFAULT 0,
+                model TEXT,
+                transcribe_model TEXT,
+                summary TEXT,
+                transcript TEXT,
+                frames_json TEXT,
+                source TEXT NOT NULL DEFAULT 'desktop',
+                created_at TEXT,
+                updated_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_recall_started ON recall_summaries(started_at);
+            CREATE TABLE IF NOT EXISTS recall_live (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                active INTEGER NOT NULL DEFAULT 0,
+                started_at TEXT,
+                ends_at TEXT,
+                frames_kept INTEGER NOT NULL DEFAULT 0,
+                audio INTEGER NOT NULL DEFAULT 0,
+                source_device TEXT,
+                updated_at TEXT
+            );
             CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
             CREATE INDEX IF NOT EXISTS idx_routines_date ON routines(date);
             CREATE INDEX IF NOT EXISTS idx_objectives_updated ON objectives(updated_at);
@@ -200,6 +228,12 @@ def init_db() -> None:
             conn.execute("ALTER TABLE focus_state ADD COLUMN intensity TEXT DEFAULT 'strict'")
         if "stop_requested_at" not in fcols:
             conn.execute("ALTER TABLE focus_state ADD COLUMN stop_requested_at TEXT")
+        # recall_summaries.frames_json added in P5 — backfill on existing DBs.
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "recall_summaries" in tables:
+            rcols = {row[1] for row in conn.execute("PRAGMA table_info(recall_summaries)")}
+            if "frames_json" not in rcols:
+                conn.execute("ALTER TABLE recall_summaries ADD COLUMN frames_json TEXT")
 
 
 app = FastAPI(title=APP_NAME, version="1.0.0")
@@ -738,6 +772,142 @@ def get_focus(device: Device = Depends(current_device)) -> dict[str, Any]:
         "ends_at": ends_at,
         "stop_requested_at": data.get("stop_requested_at"),
         "updated_at": data.get("updated_at"),
+    }
+
+
+class RecallIn(BaseModel):
+    id: str
+    date: str
+    started_at: str
+    ended_at: str | None = None
+    frame_count: int = 0
+    audio_seconds: int = 0
+    model: str | None = None
+    transcribe_model: str | None = None
+    summary: str | None = None
+    transcript: str | None = None
+    frames: list[dict[str, Any]] = []   # small thumbnails [{ts,b64,mime}]
+    source: str = "desktop"
+    created_at: str | None = None
+
+
+class RecallPush(BaseModel):
+    items: list[RecallIn] = []
+
+
+class RecallLiveIn(BaseModel):
+    active: bool = False
+    started_at: str | None = None
+    ends_at: str | None = None
+    frames_kept: int = 0
+    audio: bool = False
+    source: str = "desktop"
+
+
+@app.post("/recall")
+def push_recall(payload: RecallPush, device: Device = Depends(current_device)) -> dict[str, Any]:
+    """Desktop pushes activity-recall recaps (text summary + optional transcript).
+    Raw screen/audio NEVER sync — only the derived recap. Single-user, so any
+    paired device reads them back via GET /recall. Upsert keyed on client id."""
+    stamped = now_iso()
+    saved = 0
+    with db() as conn:
+        for it in payload.items:
+            conn.execute(
+                """
+                INSERT INTO recall_summaries
+                    (id, device_id, date, started_at, ended_at, frame_count, audio_seconds,
+                     model, transcribe_model, summary, transcript, frames_json, source, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    ended_at=excluded.ended_at, frame_count=excluded.frame_count,
+                    audio_seconds=excluded.audio_seconds, model=excluded.model,
+                    transcribe_model=excluded.transcribe_model, summary=excluded.summary,
+                    transcript=excluded.transcript, frames_json=excluded.frames_json,
+                    updated_at=excluded.updated_at
+                """,
+                (it.id, device.id, it.date, it.started_at, it.ended_at, it.frame_count,
+                 it.audio_seconds, it.model, it.transcribe_model, it.summary, it.transcript,
+                 json.dumps(it.frames or []), it.source, it.created_at or stamped, stamped),
+            )
+            saved += 1
+    return {"ok": True, "saved": saved}
+
+
+@app.get("/recall")
+def list_recall(
+    date: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    device: Device = Depends(current_device),
+) -> list[dict[str, Any]]:
+    """Review recaps from any paired device (web / phone / desktop)."""
+    with db() as conn:
+        if date:
+            rows = conn.execute(
+                "SELECT * FROM recall_summaries WHERE date = ? ORDER BY started_at DESC LIMIT ?",
+                (date, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM recall_summaries ORDER BY started_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["frames"] = json.loads(d.get("frames_json") or "[]")
+        except (ValueError, TypeError):
+            d["frames"] = []
+        d.pop("frames_json", None)
+        out.append(d)
+    return out
+
+
+@app.put("/recall/live")
+def put_recall_live(payload: RecallLiveIn, device: Device = Depends(current_device)) -> dict[str, Any]:
+    """Desktop publishes whether a Recall session is capturing right now, so the
+    phone/web can show a live 'recording on laptop' indicator."""
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO recall_live (id, active, started_at, ends_at, frames_kept, audio, source_device, updated_at)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                active=excluded.active, started_at=excluded.started_at, ends_at=excluded.ends_at,
+                frames_kept=excluded.frames_kept, audio=excluded.audio,
+                source_device=excluded.source_device, updated_at=excluded.updated_at
+            """,
+            (1 if payload.active else 0, payload.started_at, payload.ends_at,
+             payload.frames_kept, 1 if payload.audio else 0, device.id, now_iso()),
+        )
+    return {"ok": True, "active": payload.active}
+
+
+@app.get("/recall/live")
+def get_recall_live(device: Device = Depends(current_device)) -> dict[str, Any]:
+    with db() as conn:
+        row = conn.execute("SELECT * FROM recall_live WHERE id = 1").fetchone()
+    if not row:
+        return {"active": False}
+    d = dict(row)
+    active = bool(d.get("active"))
+    # Stale heartbeat (>2 min without an update) reads as not-live, so a crashed
+    # desktop doesn't show "recording" forever.
+    updated = d.get("updated_at")
+    if active and updated:
+        try:
+            if (now_utc() - datetime.fromisoformat(updated)).total_seconds() > 120:
+                active = False
+        except ValueError:
+            pass
+    return {
+        "active": active,
+        "started_at": d.get("started_at"),
+        "ends_at": d.get("ends_at"),
+        "frames_kept": d.get("frames_kept") or 0,
+        "audio": bool(d.get("audio")),
+        "updated_at": d.get("updated_at"),
     }
 
 

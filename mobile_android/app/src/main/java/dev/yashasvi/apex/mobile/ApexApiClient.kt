@@ -105,6 +105,30 @@ data class WellbeingSession(
     val launches: Int = 0,
 )
 
+data class RecallFrame(val ts: String?, val b64: String, val mime: String)
+
+data class RecallRecap(
+    val id: String?,
+    val date: String,
+    val startedAt: String?,
+    val endedAt: String?,
+    val frameCount: Int,
+    val audioSeconds: Int,
+    val model: String?,
+    val transcribeModel: String?,
+    val summary: String,
+    val transcript: String?,
+    val frames: List<RecallFrame>,
+)
+
+data class RecallLive(
+    val active: Boolean,
+    val startedAt: String?,
+    val endsAt: String?,
+    val framesKept: Int,
+    val audio: Boolean,
+)
+
 class ApexApiClient(
     private val apiBase: String,
     private val tokenProvider: () -> String?,
@@ -173,6 +197,45 @@ class ApexApiClient(
             mode = json.str("mode"),
             intensity = json.str("intensity") ?: "strict",
             endsAt = json.str("ends_at"),
+        )
+    }
+
+    // Activity recall (P5): laptop recaps + a live "recording now" indicator.
+    suspend fun recall(limit: Int = 50): List<RecallRecap> = withContext(Dispatchers.IO) {
+        val arr = requestArray("GET", "$apiBase/recall?limit=$limit")
+        (0 until arr.length()).map { i -> recapFromJson(arr.getJSONObject(i)) }
+    }
+
+    suspend fun recallLive(): RecallLive = withContext(Dispatchers.IO) {
+        val j = request("GET", "$apiBase/recall/live")
+        RecallLive(
+            active = j.optBoolean("active", false),
+            startedAt = j.str("started_at"),
+            endsAt = j.str("ends_at"),
+            framesKept = j.optInt("frames_kept", 0),
+            audio = j.optBoolean("audio", false),
+        )
+    }
+
+    private fun recapFromJson(o: JSONObject): RecallRecap {
+        val framesArr = o.optJSONArray("frames") ?: JSONArray()
+        val frames = (0 until framesArr.length()).mapNotNull { i ->
+            val f = framesArr.optJSONObject(i) ?: return@mapNotNull null
+            val b = f.str("b64") ?: return@mapNotNull null
+            RecallFrame(ts = f.str("ts"), b64 = b, mime = f.optString("mime", "image/jpeg"))
+        }
+        return RecallRecap(
+            id = o.str("id"),
+            date = o.optString("date", ""),
+            startedAt = o.str("started_at"),
+            endedAt = o.str("ended_at"),
+            frameCount = o.optInt("frame_count", 0),
+            audioSeconds = o.optInt("audio_seconds", 0),
+            model = o.str("model"),
+            transcribeModel = o.str("transcribe_model"),
+            summary = o.optString("summary", ""),
+            transcript = o.str("transcript"),
+            frames = frames,
         )
     }
 

@@ -1246,7 +1246,9 @@ Return JSON:
 // will ignore them and return zero rows.
 function isVisionModel(name) {
   if (!name) return false;
-  return /vision|llava|minicpm-v|bakllava|cogvlm|moondream|qwen2-vl|qwen2\.5-vl/i.test(
+  // qwen[\d.]*-?vl covers all Qwen-VL spellings: the real Ollama tag is
+  // "qwen2.5vl" (no hyphen), plus qwen2-vl / qwen2.5-vl variants.
+  return /vision|llava|minicpm-v|bakllava|cogvlm|moondream|qwen[\d.]*-?vl/i.test(
     name,
   );
 }
@@ -1262,7 +1264,7 @@ async function ocrTimetable({ imagesBase64, hint, model }) {
   const visionRank = [
     'llama3.2-vision', 'llama3.2-vision:11b', 'llama3.2-vision:90b',
     'minicpm-v', 'llava', 'llava-llama3', 'llava-phi3', 'bakllava',
-    'moondream', 'qwen2.5-vl', 'qwen2-vl',
+    'moondream', 'qwen2.5vl', 'qwen2.5-vl', 'qwen2-vl',
   ];
   const matchInstalled = (name) =>
     installed.find((m) => m === name || m.startsWith(name + ':'));
@@ -1347,6 +1349,37 @@ otherwise infer from row position (top=1).`;
     modelUsed: chosen,
     requestedModel: model || null,
   };
+}
+
+// Generic vision call: feed base64 screenshots + a free-text prompt to the
+// best installed vision model and get prose back. Used by the Recall feature
+// to summarize "what was happening" across a window's keyframes. Reuses the
+// same vision-model ranking as ocrTimetable.
+async function analyzeImages({ imagesBase64, prompt, system, model, temperature = 0.3 }) {
+  if (!Array.isArray(imagesBase64) || imagesBase64.length === 0) {
+    return { ok: false, error: 'No images provided' };
+  }
+  const installed = await cachedModels();
+  const visionRank = [
+    'qwen2.5vl', 'qwen2.5-vl', 'qwen2-vl', 'llama3.2-vision', 'minicpm-v',
+    'llava', 'llava-llama3', 'llava-phi3', 'bakllava', 'moondream',
+  ];
+  const matchInstalled = (name) => installed.find((m) => m === name || m.startsWith(name + ':'));
+  let chosen = (model && installed.includes(model) && isVisionModel(model)) ? model : null;
+  if (!chosen) for (const v of visionRank) { const f = matchInstalled(v); if (f) { chosen = f; break; } }
+  if (!chosen) chosen = installed.find(isVisionModel) || null;
+  if (!chosen) {
+    return { ok: false, error: 'No vision model installed. Run `ollama pull qwen2.5-vl` (or llava / minicpm-v).' };
+  }
+  const resp = await chat({
+    model: chosen,
+    system: system || 'You analyze desktop screenshots and describe what the user was doing, concisely and factually.',
+    user: prompt,
+    images: imagesBase64,
+    temperature,
+  });
+  if (!resp.ok) return resp;
+  return { ok: true, content: resp.content, model: chosen };
 }
 
 function safeParseJson(content) {
@@ -1630,6 +1663,6 @@ module.exports = {
   listModels, chat, chatStream, planDay, burnoutSuggest, eveningReview, burnoutCheck, summarizeRepo,
   summarizeRecentChanges, recommendNow, chatAboutRepo, chatAboutCommit,
   summarizeCpActivity, extractTasksFromText, walkthroughFile, walkthroughRecap, compareRepos,
-  ocrTimetable, autoPickBest, resolveModel, personalContext, buildSystem,
+  ocrTimetable, analyzeImages, autoPickBest, resolveModel, personalContext, buildSystem,
   ping, ensureRunning,
 };

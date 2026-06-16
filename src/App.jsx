@@ -9,6 +9,7 @@ import People from "./components/pages/People.jsx";
 import Settings from "./components/pages/Settings.jsx";
 import Spotify from "./components/pages/Spotify.jsx";
 import api from "./lib/api.js";
+import useRecallRecorder from "./hooks/useRecallRecorder.js";
 
 // Planner is retired - merged into Dashboard (Today's plan card + Ask Apex drawer).
 // Timetable is retired - replaced by Upcoming (schedule + college tasks).
@@ -23,6 +24,9 @@ const PAGES = {
 };
 
 export default function App() {
+  // App-root recorder: streams loopback audio to main while a Recall session
+  // with audio is armed (no-op otherwise).
+  useRecallRecorder();
   const [page, setPage] = useState("dashboard");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);

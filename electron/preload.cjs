@@ -3,6 +3,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 const invoke = (channel, ...args) => ipcRenderer.invoke(channel, ...args);
+// Fire-and-forget renderer → main (no reply), e.g. streaming audio chunks.
+const send = (channel, ...args) => ipcRenderer.send(channel, ...args);
 // Subscribe to main-process events; returns an unsubscribe fn.
 const on = (channel, handler) => {
   const wrapped = (_e, payload) => handler(payload);
@@ -104,6 +106,22 @@ contextBridge.exposeInMainWorld("apex", {
     // Emergency stop: kills any timer/Zen (even locked) on this desktop.
     emergencyStop: () => invoke("focus:emergencyStop"),
     onStopped: (h) => on("focus:stopped", h),
+  },
+  recall: {
+    // Timed on-device screen capture → local AI summary (P2: + screen audio).
+    start: (opts) => invoke("recall:start", opts),
+    stop: () => invoke("recall:stop"),
+    status: () => invoke("recall:status"),
+    summaries: (limit) => invoke("recall:summaries", limit),
+    onUpdate: (h) => on("recall:update", h),
+    // Renderer audio recorder → main (loopback chunks + capture state).
+    pushAudio: (b64) => send("recall:pushAudio", b64),
+    audioState: (st) => send("recall:audioState", st),
+    // Gemini cloud routing (key stored encrypted in main via safeStorage).
+    setGeminiKey: (key) => invoke("recall:setGeminiKey", key),
+    hasGeminiKey: () => invoke("recall:hasGeminiKey"),
+    testGeminiKey: () => invoke("recall:testGeminiKey"),
+    syncNow: () => invoke("recall:syncNow"),
   },
   routine: {
     state: () => invoke("routine:state"),
