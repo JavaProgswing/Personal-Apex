@@ -70,12 +70,16 @@ export default function ZenMode({ onChanged, onActiveChange }) {
   const [endPrompt, setEndPrompt] = useState(false);
   // P7: latest Recall check-in verdict during a strict/locked Zen session.
   const [checkin, setCheckin] = useState(null);
+  // P7: the final Recall review (fires after the session ends) — persists so the
+  // verdict is visible post-session, not just as a fleeting pill.
+  const [review, setReview] = useState(null);
 
   useEffect(() => {
     refresh();
     const offUpdate = api.zen?.onUpdate?.((payload) => {
       const next = payload?.session || null;
       setActive(next);
+      if (next) setReview(null); // fresh session → drop the previous review
       if (payload?.timer !== undefined) setActiveTimer(payload.timer || null);
       onActiveChange?.(!!next, next);
       if (payload?.violation) setViolation(payload.violation);
@@ -96,12 +100,16 @@ export default function ZenMode({ onChanged, onActiveChange }) {
     });
     const offTimer = api.timer?.onUpdate?.((t) => setActiveTimer(t || null));
     const offCheckin = api.recall?.onCheckin?.((c) => { if (c?.status) setCheckin(c); });
+    const offReview = api.recall?.onReview?.((r) => {
+      if (r?.focus_task) setReview({ verdict: r.verdict || null, next: r.next_step || null, summary: r.summary || "", task: r.focus_task, at: r.ended_at });
+    });
     const offProgress = api.spotify?.onProgress?.((p) => setProgress(p));
     return () => {
       offUpdate?.();
       offViolation?.();
       offTimer?.();
       offCheckin?.();
+      offReview?.();
       offProgress?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -412,6 +420,26 @@ export default function ZenMode({ onChanged, onActiveChange }) {
 
   return (
     <>
+      {review && (
+        <section
+          className="zen-panel"
+          style={{ marginBottom: 12, borderLeft: `3px solid ${review.verdict === "drifted" ? "var(--bad)" : review.verdict === "on-track" ? "var(--ok)" : "var(--border)"}` }}
+        >
+          <div className="row between" style={{ alignItems: "flex-start", gap: 12 }}>
+            <div>
+              <div className="zen-kicker">Focus review · {review.task}</div>
+              <strong style={{ color: review.verdict === "drifted" ? "var(--bad)" : review.verdict === "on-track" ? "var(--ok)" : "var(--text)" }}>
+                {review.verdict === "drifted" ? "⚠ Drifted" : review.verdict === "on-track" ? "✓ On track" : "Reviewed"}
+                {review.next ? ` — ${review.next}` : ""}
+              </strong>
+              {review.summary && (
+                <p className="muted" style={{ margin: "6px 0 0", fontSize: 13, lineHeight: 1.5 }}>{review.summary}</p>
+              )}
+            </div>
+            <button className="ghost small" onClick={() => setReview(null)}>Dismiss</button>
+          </div>
+        </section>
+      )}
       {lastSummary && (
         <ZenSummaryPanel
           summary={lastSummary}

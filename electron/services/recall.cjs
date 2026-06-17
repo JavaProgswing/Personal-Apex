@@ -33,6 +33,21 @@ let session = null;   // { id, startedAt, endsAt, intervalMs, frames:[{ts,b64,ha
 let emit = () => {};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// A hung model call must not leave a recall stuck "active" forever — that blocks
+// the NEXT focus session from arming a recall. Cap it; on timeout we store a
+// failure row and move on (the orphaned fetch resolves harmlessly later).
+const RECAP_TIMEOUT_MS = 90_000;
+async function recapWithTimeout(args) {
+  try {
+    return await Promise.race([
+      recallModel.recap(args),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("recap timed out")), RECAP_TIMEOUT_MS)),
+    ]);
+  } catch (e) {
+    return { ok: false, summary: `Summary failed: ${e.message}`, model: null };
+  }
+}
+
 function init(emitter) {
   if (typeof emitter === "function") emit = emitter;
   ensureTable();
@@ -402,7 +417,7 @@ async function runCheckIn(s, final) {
   let summaryText = "Screen idle / unchanged this interval.";
   let model = null;
   if (frames.length > 0) {
-    const r = await recallModel.recap({
+    const r = await recapWithTimeout({
       frames: frames.map((f) => f.b64),
       transcript: "", audio: null, span, deep: false, task: s.focusTask || null,
     });
@@ -502,7 +517,7 @@ async function summarize(s, reason) {
       "No distinct screens captured during this window (screen idle or unchanged)." + audioNote;
   } else {
     // Route local (Ollama) vs cloud (Gemini) per recall.model + the deep flag.
-    const r = await recallModel.recap({
+    const r = await recapWithTimeout({
       frames: frames.map((f) => f.b64),
       transcript,
       audio: audioForModel,
@@ -515,17 +530,21 @@ async function summarize(s, reason) {
     if (audioForModel) transcribeModel = `native:${r.model || "cloud"}`;
   }
 
+  // P7: parse the on-track/drifted verdict here too (not just in runCheckIn) —
+  // focus-guard one-window recaps + the manual path now carry it.
+  const v = s.focusTask ? parseVerdict(summaryText) : { status: null, next: "" };
   const framesJson = JSON.stringify(pickThumbnails(frames));
   ensureTable();
   const created = new Date().toISOString();
   const info = db._db().prepare(
     `INSERT INTO recall_summaries
        (date, started_at, ended_at, frame_count, model, summary, source, created_at,
-        transcript, audio_seconds, transcribe_model, frames_json, focus_task)
-     VALUES (?, ?, ?, ?, ?, ?, 'desktop', ?, ?, ?, ?, ?, ?)`,
+        transcript, audio_seconds, transcribe_model, frames_json, focus_task, verdict, next_step)
+     VALUES (?, ?, ?, ?, ?, ?, 'desktop', ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     date, s.startedAt, endedAt, frames.length, model, summaryText, created,
     transcript || null, audioSeconds, transcribeModel, framesJson, s.focusTask || null,
+    v.status, v.next || null,
   );
   // Raw frames + audio are intentionally dropped here — P2 keeps no raw media.
   const row = {
@@ -535,18 +554,25 @@ async function summarize(s, reason) {
     audio_seconds: audioSeconds, transcribe_model: transcribeModel,
     has_transcript: !!transcript,
     focus_task: s.focusTask || null,
+    verdict: v.status, next_step: v.next || null,
   };
   // Post-task review: surface the recap prominently when it wrapped a focus
-  // session (the summary already carries the on-track/drifted verdict because
-  // summarize passed `task` to the model). Desktop shows a review card.
+  // session. The summary carries the on-track/drifted verdict (model saw `task`).
   if (s.focusTask) {
     emit("recall:review", row);
-    try {
-      notifier.fire?.({
-        title: `Task review · ${s.focusTask}`,
-        body: summaryText.slice(0, 220),
-        kind: "recall",
+    // Also drive the focus-UI pill so a one-window focus recap shows its verdict.
+    if (v.status) {
+      emit("recall:checkin", {
+        status: v.status, why: v.why, next: v.next, task: s.focusTask,
+        at: endedAt, mode: s.mode || null, final: true, count: s.checkInCount || 1,
+        summary: summaryText, id: row.id,
       });
+    }
+    try {
+      const head = v.status === "drifted" ? `⚠ Drifted · ${s.focusTask}`
+        : v.status === "on-track" ? `✓ On track · ${s.focusTask}`
+        : `Task review · ${s.focusTask}`;
+      notifier.fire?.({ title: head, body: summaryText.slice(0, 220), kind: "recall" });
     } catch {}
   }
   return row;

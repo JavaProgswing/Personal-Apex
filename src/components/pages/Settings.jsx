@@ -2901,7 +2901,7 @@ function RecallTab({ setMsg }) {
   const [sync, setSync] = useState(true);
   const [focusGuard, setFocusGuard] = useState(false);
   const [zenCheckin, setZenCheckin] = useState(true);
-  const [checkInMin, setCheckInMin] = useState(10);
+  const [checkInMin, setCheckInMin] = useState(5);
   const [preferLocal, setPreferLocal] = useState(false);
   const [audioMode, setAudioMode] = useState("auto");
   const [modelMode, setModelMode] = useState("auto");
@@ -2923,7 +2923,7 @@ function RecallTab({ setMsg }) {
     g("recall.sync", setSync, (v) => v !== "0");
     g("recall.focusGuard", setFocusGuard, (v) => v === "1");
     g("recall.zenCheckin", setZenCheckin, (v) => v !== "0");
-    g("recall.checkInMinutes", setCheckInMin, (v) => +v || 10);
+    g("recall.checkInMinutes", setCheckInMin, (v) => +v || 5);
     g("recall.preferLocal", setPreferLocal, (v) => v === "1");
     g("recall.captureIntervalSec", setIntervalSec, (v) => +v || 20);
     g("recall.audioToModel", setAudioMode);

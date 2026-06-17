@@ -2158,13 +2158,21 @@ function flashFocusWindow() {
 // against the Zen title, the verdict shows in the focus UI, and a drift
 // escalates (toast + window flash). Default on for strict/locked; disable with
 // recall.zenCheckin='0'. relaxed Zen + plain timers keep maybeArmFocusRecall.
-function maybeArmZenCheckin(session) {
+async function maybeArmZenCheckin(session) {
   try {
     if (!session || (session.mode !== "strict" && session.mode !== "locked")) return;
     if (db.getSetting("recall.zenCheckin") === "0") return;
-    if (recall.status()?.active) return; // don't double-start
+    const st = recall.status();
+    if (st?.active) {
+      // Already doing periodic check-ins → leave it. But a ONE-WINDOW / stale
+      // recall (e.g. armed by the wrapped focus timer, checkInMinutes===0) would
+      // make the Zen get a single end-of-session recap and NO mid-session
+      // verdicts — replace it with a real Zen check-in loop.
+      if (st.checkInMinutes > 0) return;
+      await recall.stop("zen-upgrade");
+    }
     const remainMin = Math.max(1, Math.ceil((new Date(session.ends_at).getTime() - Date.now()) / 60000));
-    const checkIn = Math.max(2, +(db.getSetting("recall.checkInMinutes") || 10));
+    const checkIn = Math.max(2, +(db.getSetting("recall.checkInMinutes") || 5));
     recall.start({
       focusTask: session.title || "Focus",
       windowMinutes: remainMin + 1,
