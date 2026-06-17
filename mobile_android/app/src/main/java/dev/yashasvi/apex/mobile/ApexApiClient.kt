@@ -127,6 +127,7 @@ data class RecallLive(
     val endsAt: String?,
     val framesKept: Int,
     val audio: Boolean,
+    val task: String? = null,
 )
 
 class ApexApiClient(
@@ -214,7 +215,13 @@ class ApexApiClient(
             endsAt = j.str("ends_at"),
             framesKept = j.optInt("frames_kept", 0),
             audio = j.optBoolean("audio", false),
+            task = j.str("task"),
         )
+    }
+
+    // Clear all laptop recaps (mirrors deleteTask/deleteNote → DELETE).
+    suspend fun clearRecalls(): JSONObject = withContext(Dispatchers.IO) {
+        request("DELETE", "$apiBase/recall")
     }
 
     private fun recapFromJson(o: JSONObject): RecallRecap {

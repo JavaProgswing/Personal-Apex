@@ -901,7 +901,7 @@ function renderRecallLive(live) {
   box.innerHTML = "";
   if (live && live.active) {
     box.appendChild(el("div", "recall-live",
-      `● Recording on laptop · ${live.frames_kept || 0} frames${live.audio ? " · 🎙 audio" : ""}`));
+      `● Recording on laptop${live.task ? " · " + live.task : ""} · ${live.frames_kept || 0} frames${live.audio ? " · 🎙 audio" : ""}`));
   }
 }
 function renderRecall() {

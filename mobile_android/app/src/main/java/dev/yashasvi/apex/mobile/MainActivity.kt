@@ -2009,12 +2009,38 @@ class MainActivity : ComponentActivity() {
             ))
         })
         addView(card {
-            addView(sectionTitle("Laptop recall"))
+            val head = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            head.addView(sectionTitle("Laptop recall").apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            head.addView(iconButton("⟳") { loadRecall() })
+            addView(head)
             recallLiveText = label("", 12.5f, accent, true).apply { visibility = View.GONE }
             addView(recallLiveText)
             recallBox = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
             addView(recallBox)
+            addView(space(8))
+            addView(quietButton("Clear all recaps") { confirmClearRecaps() }.fullWidth())
         })
+    }
+
+    private fun confirmClearRecaps() {
+        if (store.token.isNullOrBlank()) { statusText.text = "Pair first to manage recaps."; return }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Clear all recaps?")
+            .setMessage("Permanently deletes every laptop recall window from the cloud (web + this phone + desktop pull).")
+            .setPositiveButton("Clear") { _, _ ->
+                runTask("Clearing recaps…") {
+                    client().clearRecalls()
+                    loadRecall()
+                    statusText.text = "All recaps cleared."
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun loadRecall() {
@@ -2030,7 +2056,9 @@ class MainActivity : ComponentActivity() {
             if (::recallLiveText.isInitialized) {
                 if (live != null && live.active) {
                     recallLiveText.visibility = View.VISIBLE
-                    recallLiveText.text = "● Recording on laptop · ${live.framesKept} frames" + (if (live.audio) " · 🎙" else "")
+                    recallLiveText.text = "● Recording on laptop" +
+                        (if (!live.task.isNullOrBlank()) " · ${live.task}" else "") +
+                        " · ${live.framesKept} frames" + (if (live.audio) " · 🎙" else "")
                 } else recallLiveText.visibility = View.GONE
             }
             recallBox.removeAllViews()

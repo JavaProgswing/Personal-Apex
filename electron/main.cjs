@@ -422,6 +422,14 @@ app.whenReady().then(async () => {
   logAppOpen();
   createWindow();
   try { recall.init(emit); } catch (e) { console.error("[recall] init failed:", e); }
+  // One-time: prefer the cloud model for speed. Flips a previously local-only
+  // pick to cloud-first Auto (reversible in Settings → Recall → Advanced).
+  try {
+    if (!db.getSetting("recall.cloudPrefMigrated")) {
+      if (db.getSetting("recall.model") === "local") db.setSetting("recall.model", "auto");
+      db.setSetting("recall.cloudPrefMigrated", "1");
+    }
+  } catch {}
   try { if (db.getSetting("overlay.enabled") === "1") createOverlayWindow(); } catch (e) { console.error("[overlay] init failed:", e); }
   // Create the system-tray icon ONLY if the user opted in. We keep it
   // off by default so the app doesn't grow a tray icon nobody asked for.
@@ -1484,6 +1492,8 @@ ipcMain.handle("recall:start", (_e, opts) => recall.start(opts || {}));
 ipcMain.handle("recall:stop", () => recall.stop("manual"));
 ipcMain.handle("recall:status", () => recall.status());
 ipcMain.handle("recall:summaries", (_e, limit) => recall.recentSummaries(limit));
+ipcMain.handle("recall:delete", (_e, id) => recall.deleteSummary(id));
+ipcMain.handle("recall:clear", () => recall.clearSummaries());
 // Renderer streams base64 audio chunks here while a session is armed with audio.
 ipcMain.on("recall:pushAudio", (_e, b64) => { try { recall.pushAudio(b64); } catch {} });
 ipcMain.on("recall:audioState", (_e, st) => { try { recall.setAudioState(st); } catch {} });
@@ -2118,7 +2128,7 @@ function maybeArmFocusRecall(row) {
     const planned = (+row.planned_minutes || 25) + (+row.extended_minutes || 0);
     recall.start({
       windowMinutes: Math.max(1, planned + 1),
-      intervalSeconds: 30,
+      // intervalSeconds omitted → recall.captureIntervalSec setting (or 20s).
       focusTask: row.title || row.kind || "Focus",
     });
   } catch { /* recall is best-effort, never block the timer */ }
@@ -2133,6 +2143,8 @@ ipcMain.handle("timer:extend", (_e, mins) => {
   }
   broadcastTimer(row);
   mirrorTimerFocus(row); // refresh the phone's ends_at
+  // Keep a focus-guard recall window in lockstep with the task timer.
+  try { if (recall.status()?.active) recall.extendSession(byMinutes); } catch {}
   return row;
 });
 ipcMain.handle("timer:stop", () => {

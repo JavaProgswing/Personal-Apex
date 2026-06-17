@@ -122,6 +122,8 @@ contextBridge.exposeInMainWorld("apex", {
     hasGeminiKey: () => invoke("recall:hasGeminiKey"),
     testGeminiKey: () => invoke("recall:testGeminiKey"),
     syncNow: () => invoke("recall:syncNow"),
+    delete: (id) => invoke("recall:delete", id),
+    clear: () => invoke("recall:clear"),
     // Fires when a focus-guard session wraps with a post-task review.
     onReview: (h) => on("recall:review", h),
   },

@@ -151,6 +151,18 @@ function maybeNudgeDistraction() {
   emit("activity:nudge", { app, category: "distraction", source: "recall", message: msg, task: s.focusTask });
 }
 
+// Extend the active session's window by N minutes — called when the user
+// extends the linked focus timer (+10/+15) so recall keeps recording to the
+// end of the task instead of stopping at the original planned time.
+function extendSession(extraMinutes) {
+  if (!session) return { ok: false, error: "no active recall session" };
+  const add = Math.max(1, Math.round(+extraMinutes || 0));
+  session.endsAt += add * 60_000;
+  broadcast();
+  pushLive(liveState());
+  return { ok: true, endsAt: new Date(session.endsAt).toISOString() };
+}
+
 function tick() {
   if (!session) return;
   if (Date.now() >= session.endsAt) {
@@ -167,10 +179,12 @@ function tick() {
   captureOnce();
 }
 
-function start({ windowMinutes = 60, intervalSeconds = 20, audio = false, deep = false, focusTask = null } = {}) {
+function start({ windowMinutes = 60, intervalSeconds = 0, audio = false, deep = false, focusTask = null } = {}) {
   if (session) return { ok: false, error: "A recall session is already running." };
   const win = Math.max(1, Math.min(8 * 60, Math.round(+windowMinutes || 60)));
-  const intervalMs = Math.max(MIN_INTERVAL_SEC, Math.round(+intervalSeconds || 20)) * 1000;
+  // Interval: explicit arg → user's recall.captureIntervalSec setting → 20s.
+  const cfgInterval = +(db.getSetting("recall.captureIntervalSec") || 0) || 0;
+  const intervalMs = Math.max(MIN_INTERVAL_SEC, Math.round(+intervalSeconds || cfgInterval || 20)) * 1000;
   const now = Date.now();
   session = {
     id: `recall_${now}`,
@@ -430,6 +444,36 @@ function recentSummaries(limit = 20) {
   ).all(Math.max(1, Math.min(100, +limit || 20)));
 }
 
+// Delete one recap (local + cloud). The cloud key is the row's started_at
+// (see toCloud), so delete there by that.
+function deleteSummary(id) {
+  ensureTable();
+  const row = db._db().prepare("SELECT started_at FROM recall_summaries WHERE id = ?").get(id);
+  const info = db._db().prepare("DELETE FROM recall_summaries WHERE id = ?").run(id);
+  if (row?.started_at) deleteFromCloud(row.started_at);
+  return { ok: true, deleted: info.changes };
+}
+
+function clearSummaries() {
+  ensureTable();
+  const info = db._db().prepare("DELETE FROM recall_summaries").run();
+  deleteFromCloud(null); // clear all on cloud too
+  return { ok: true, deleted: info.changes };
+}
+
+// Best-effort cloud delete — one recap by its started_at id, or all (id=null).
+async function deleteFromCloud(id) {
+  if (db.getSetting("recall.sync") === "0") return;
+  const cfg = routine.getConfig();
+  const base = String(cfg.apiBase || "").trim().replace(/\/+$/, "");
+  const token = String(cfg.deviceToken || "").trim();
+  if (!base || !token) return;
+  const url = id ? `${base}/recall/${encodeURIComponent(id)}` : `${base}/recall`;
+  try {
+    await fetch(url, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+  } catch { /* best-effort */ }
+}
+
 // ── cloud sync (P4) ──────────────────────────────────────────────────────────
 // Push recaps (TEXT only — summary + transcript) to the sync API so they can be
 // reviewed on web / phone. Raw frames + audio are never uploaded. Reuses the
@@ -515,6 +559,7 @@ function liveState(extra = {}) {
     ends_at: new Date(session.endsAt).toISOString(),
     frames_kept: session.frames.length,
     audio: !!session.audio,
+    task: session.focusTask || null, // shown in the phone/web "recording" banner
     source: "desktop",
     ...extra,
   };
@@ -529,4 +574,7 @@ async function syncToCloud(limit = 50) {
   return pushToCloud(rows.map(toCloud));
 }
 
-module.exports = { init, start, stop, status, recentSummaries, pushAudio, setAudioState, syncToCloud };
+module.exports = {
+  init, start, stop, status, recentSummaries, pushAudio, setAudioState, syncToCloud,
+  extendSession, deleteSummary, clearSummaries,
+};

@@ -199,6 +199,7 @@ def init_db() -> None:
                 ends_at TEXT,
                 frames_kept INTEGER NOT NULL DEFAULT 0,
                 audio INTEGER NOT NULL DEFAULT 0,
+                task TEXT,
                 source_device TEXT,
                 updated_at TEXT
             );
@@ -228,6 +229,10 @@ def init_db() -> None:
             conn.execute("ALTER TABLE focus_state ADD COLUMN intensity TEXT DEFAULT 'strict'")
         if "stop_requested_at" not in fcols:
             conn.execute("ALTER TABLE focus_state ADD COLUMN stop_requested_at TEXT")
+        # recall_live.task added after the table shipped — backfill.
+        rlcols = {row[1] for row in conn.execute("PRAGMA table_info(recall_live)")}
+        if "task" not in rlcols:
+            conn.execute("ALTER TABLE recall_live ADD COLUMN task TEXT")
         # recall_summaries.frames_json added in P5 — backfill on existing DBs.
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if "recall_summaries" in tables:
@@ -801,6 +806,7 @@ class RecallLiveIn(BaseModel):
     ends_at: str | None = None
     frames_kept: int = 0
     audio: bool = False
+    task: str | None = None
     source: str = "desktop"
 
 
@@ -864,6 +870,31 @@ def list_recall(
     return out
 
 
+@app.delete("/recall")
+def clear_recall(
+    date: str | None = Query(default=None),
+    device: Device = Depends(current_device),
+) -> dict[str, Any]:
+    """Clear recaps — all, or just one day with ?date=YYYY-MM-DD. Any paired
+    device may clear (single-user system)."""
+    with db() as conn:
+        if date:
+            cur = conn.execute("DELETE FROM recall_summaries WHERE date = ?", (date,))
+        else:
+            cur = conn.execute("DELETE FROM recall_summaries")
+    return {"ok": True, "deleted": cur.rowcount}
+
+
+@app.delete("/recall/{recap_id}")
+def delete_recall(recap_id: str, device: Device = Depends(current_device)) -> dict[str, Any]:
+    """Delete one recap by its id (matches the /tasks/{id}, /notes/{id} pattern)."""
+    with db() as conn:
+        cur = conn.execute("DELETE FROM recall_summaries WHERE id = ?", (recap_id,))
+    if cur.rowcount == 0:
+        raise HTTPException(404, "Recap not found")
+    return {"ok": True, "deleted": recap_id}
+
+
 @app.put("/recall/live")
 def put_recall_live(payload: RecallLiveIn, device: Device = Depends(current_device)) -> dict[str, Any]:
     """Desktop publishes whether a Recall session is capturing right now, so the
@@ -871,15 +902,15 @@ def put_recall_live(payload: RecallLiveIn, device: Device = Depends(current_devi
     with db() as conn:
         conn.execute(
             """
-            INSERT INTO recall_live (id, active, started_at, ends_at, frames_kept, audio, source_device, updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO recall_live (id, active, started_at, ends_at, frames_kept, audio, task, source_device, updated_at)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 active=excluded.active, started_at=excluded.started_at, ends_at=excluded.ends_at,
-                frames_kept=excluded.frames_kept, audio=excluded.audio,
+                frames_kept=excluded.frames_kept, audio=excluded.audio, task=excluded.task,
                 source_device=excluded.source_device, updated_at=excluded.updated_at
             """,
             (1 if payload.active else 0, payload.started_at, payload.ends_at,
-             payload.frames_kept, 1 if payload.audio else 0, device.id, now_iso()),
+             payload.frames_kept, 1 if payload.audio else 0, payload.task, device.id, now_iso()),
         )
     return {"ok": True, "active": payload.active}
 
@@ -907,6 +938,7 @@ def get_recall_live(device: Device = Depends(current_device)) -> dict[str, Any]:
         "ends_at": d.get("ends_at"),
         "frames_kept": d.get("frames_kept") or 0,
         "audio": bool(d.get("audio")),
+        "task": d.get("task"),
         "updated_at": d.get("updated_at"),
     }
 

@@ -105,10 +105,15 @@ async function cloudRecap({ frames, transcript, audio, span, task }) {
 // recap({ frames:[b64], transcript, audio, span, deep, task }) → { ok, summary, model }
 async function recap({ frames = [], transcript = "", audio = null, span, deep = false, task = null }) {
   const mode = setting("recall.model") || "auto";
+  // Default = CLOUD-FIRST for speed: Gemini Flash-Lite recaps in ~1–2s vs the
+  // local VLM's minute-plus, so when a key is set, auto routes cloud→local.
+  // "Prefer local" flips it back to local-first for privacy/offline.
+  const preferLocal = setting("recall.preferLocal") === "1";
   let order;
   if (mode === "local") order = ["local"];
   else if (mode === "cloud") order = ["cloud", "local"];
-  else order = deep ? ["cloud", "local"] : ["local", "cloud"]; // auto
+  else if (preferLocal) order = ["local", "cloud"];            // auto + prefer-local
+  else order = hasGeminiKey() ? ["cloud", "local"] : ["local"]; // auto: cloud-first when keyed
   // Raw audio (no transcript) can only be read by the cloud model — make sure
   // cloud is tried first in that case so we don't dead-end on local.
   if (audio && !transcript && !frames.length && order[0] !== "cloud") order = ["cloud", ...order.filter((r) => r !== "cloud")];
@@ -116,11 +121,22 @@ async function recap({ frames = [], transcript = "", audio = null, span, deep = 
   let lastErr = "no model available";
   for (const route of order) {
     if (route === "cloud" && !hasGeminiKey()) { lastErr = "no Gemini key"; continue; }
-    const r = route === "cloud"
+    let r = route === "cloud"
       ? await cloudRecap({ frames, transcript, audio, span, task })
       : await localRecap({ frames, transcript, span, task });
+    // One retry on a transient connection blip ("fetch failed" = couldn't
+    // reach Ollama/Gemini) before giving up on this route + falling through.
+    if (!r.ok && /fetch failed|ECONNREFUSED|ETIMEDOUT|network/i.test(r.error || "")) {
+      await new Promise((res) => setTimeout(res, 800));
+      r = route === "cloud"
+        ? await cloudRecap({ frames, transcript, audio, span, task })
+        : await localRecap({ frames, transcript, span, task });
+    }
     if (r.ok) return r;
-    lastErr = r.error;
+    // Friendlier message for the common local case.
+    lastErr = route === "local" && /fetch failed|ECONNREFUSED/i.test(r.error || "")
+      ? "Ollama not reachable — is it running? (or set Recap model to Cloud)"
+      : r.error;
   }
   return { ok: false, summary: `Summary failed: ${lastErr}`, model: null };
 }

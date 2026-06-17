@@ -2900,6 +2900,7 @@ function RecallTab({ setMsg }) {
   const [deep, setDeep] = useState(false);
   const [sync, setSync] = useState(true);
   const [focusGuard, setFocusGuard] = useState(false);
+  const [preferLocal, setPreferLocal] = useState(false);
   const [audioMode, setAudioMode] = useState("auto");
   const [modelMode, setModelMode] = useState("auto");
   const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash-lite");
@@ -2919,6 +2920,8 @@ function RecallTab({ setMsg }) {
     g("recall.audio", setAudio, (v) => v === "1");
     g("recall.sync", setSync, (v) => v !== "0");
     g("recall.focusGuard", setFocusGuard, (v) => v === "1");
+    g("recall.preferLocal", setPreferLocal, (v) => v === "1");
+    g("recall.captureIntervalSec", setIntervalSec, (v) => +v || 20);
     g("recall.audioToModel", setAudioMode);
     g("recall.model", setModelMode);
     api.recall?.hasGeminiKey?.().then((r) => { setHasKey(!!r?.has); if (r?.model) setGeminiModel(r.model); }).catch(() => {});
@@ -2937,6 +2940,14 @@ function RecallTab({ setMsg }) {
     setMsg("Syncing recaps…");
     try { const r = await api.recall.syncNow(); setMsg(r?.ok ? `Synced ${r.saved} recap(s).` : "Sync failed: " + (r?.error || "")); }
     catch (e) { setMsg("Sync failed: " + e.message); }
+  }
+  async function removeRecap(id) {
+    try { await api.recall.delete(id); refresh(); } catch (e) { setMsg("Delete failed: " + e.message); }
+  }
+  async function clearAll() {
+    if (!confirm("Delete ALL recaps (local + synced)? This can't be undone.")) return;
+    try { const r = await api.recall.clear(); refresh(); setMsg(`Cleared ${r?.deleted ?? ""} recap(s).`); }
+    catch (e) { setMsg("Clear failed: " + e.message); }
   }
   async function saveKey() {
     setCloudMsg("Saving…");
@@ -3018,7 +3029,9 @@ function RecallTab({ setMsg }) {
               </div>
               <div className="form-row" style={{ margin: 0 }}>
                 <label>Every (sec)</label>
-                <input type="number" min={5} max={300} value={intervalSec} onChange={(e) => setIntervalSec(e.target.value)} style={{ width: 90 }} />
+                <input type="number" min={5} max={300} value={intervalSec}
+                  onChange={(e) => { setIntervalSec(e.target.value); setPref("recall.captureIntervalSec", e.target.value); }}
+                  title="Capture interval — also the default for focus-guard sessions" style={{ width: 90 }} />
               </div>
               <button className="primary" onClick={start} disabled={busy}>▶ Start</button>
             </div>
@@ -3026,6 +3039,7 @@ function RecallTab({ setMsg }) {
               <Chip on={audio} set={toggle("recall.audio", setAudio)} label="Audio" title="Capture system audio (loopback), used in the recap" />
               <Chip on={deep} set={setDeep} label="Deep (cloud)" title="Use Gemini for this window — needs a key (Advanced)" />
               <Chip on={focusGuard} set={toggle("recall.focusGuard", setFocusGuard)} label="Focus guard" title="Auto-record focus timers/Zen, nudge on distraction, review the task afterward" />
+              <Chip on={preferLocal} set={toggle("recall.preferLocal", setPreferLocal)} label="Prefer local" title="Use the local model even for deep windows — cloud only as fallback" />
               <Chip on={sync} set={toggle("recall.sync", setSync)} label="Sync" title="Push recaps (text + thumbnails only) for web/phone review" />
             </div>
           </>
@@ -3042,9 +3056,9 @@ function RecallTab({ setMsg }) {
             <div className="form-row" style={{ margin: 0 }}>
               <label>Recap model</label>
               <select value={modelMode} onChange={(e) => setSel("recall.model", setModelMode)(e.target.value)}>
-                <option value="auto">Auto (local → cloud)</option>
-                <option value="local">Local only</option>
+                <option value="auto">Auto (cloud-first, fast)</option>
                 <option value="cloud">Cloud first</option>
+                <option value="local">Local only (private)</option>
               </select>
             </div>
             <div className="form-row" style={{ margin: 0 }}>
@@ -3058,8 +3072,16 @@ function RecallTab({ setMsg }) {
             </div>
             <div className="form-row" style={{ margin: 0 }}>
               <label>Gemini model</label>
-              <input value={geminiModel} onChange={(e) => setSel("recall.geminiModel", setGeminiModel)(e.target.value)}
-                placeholder="gemini-2.5-flash-lite" style={{ width: 200 }} />
+              <select value={geminiModel} onChange={(e) => setSel("recall.geminiModel", setGeminiModel)(e.target.value)}
+                title="Light models — accurate enough for screenshots, fast enough for live recaps" style={{ width: 230 }}>
+                <option value="gemini-2.5-flash-lite">2.5 Flash-Lite · fastest (default)</option>
+                <option value="gemini-2.5-flash">2.5 Flash · most accurate</option>
+                <option value="gemini-2.0-flash-lite">2.0 Flash-Lite · cheapest</option>
+                <option value="gemini-3.1-flash-lite">3.1 Flash-Lite · newest</option>
+                {!["gemini-2.5-flash-lite","gemini-2.5-flash","gemini-2.0-flash-lite","gemini-3.1-flash-lite"].includes(geminiModel) && (
+                  <option value={geminiModel}>{geminiModel} (custom)</option>
+                )}
+              </select>
             </div>
           </div>
           <div className="form-row">
@@ -3080,7 +3102,12 @@ function RecallTab({ setMsg }) {
         </div>
       </details>
 
-      <SectionHeader title="Recent recaps" hint="On-device, newest first." />
+      <div className="row between" style={{ alignItems: "baseline", marginTop: 8 }}>
+        <SectionHeader title="Recent recaps" hint="On-device, newest first." />
+        {summaries.length > 0 && (
+          <button className="ghost small danger" onClick={clearAll} title="Delete every recap (local + synced)">Clear all</button>
+        )}
+      </div>
       <div className="card">
         {summaries.length === 0 ? (
           <small className="muted">No recaps yet.</small>
@@ -3088,7 +3115,7 @@ function RecallTab({ setMsg }) {
           summaries.map((s) => (
             <div key={s.id} className="day-summary-event" style={{ alignItems: "flex-start" }}>
               <code>{(s.started_at || "").slice(11, 16)}</code>
-              <div>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <strong>
                   {(s.started_at || "").slice(11, 16)}–{(s.ended_at || "").slice(11, 16)}
                   {s.focus_task ? <span className="pill teal" style={{ marginLeft: 6, fontSize: 9 }}>task</span> : null}
@@ -3098,6 +3125,7 @@ function RecallTab({ setMsg }) {
                 </strong>
                 <small className="muted" style={{ display: "block", marginTop: 2 }}>{s.summary}</small>
               </div>
+              <button className="ghost xsmall danger" title="Delete this recap" onClick={() => removeRecap(s.id)}>✕</button>
             </div>
           ))
         )}
