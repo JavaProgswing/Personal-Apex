@@ -421,7 +421,7 @@ app.whenReady().then(async () => {
   // run. Nothing to do here.
   logAppOpen();
   createWindow();
-  try { recall.init(emit); } catch (e) { console.error("[recall] init failed:", e); }
+  try { recall.init(emit); recall.setHooks({ escalate: flashFocusWindow }); } catch (e) { console.error("[recall] init failed:", e); }
   // One-time: prefer the cloud model for speed. Flips a previously local-only
   // pick to cloud-first Auto (reversible in Settings → Recall → Advanced).
   try {
@@ -451,7 +451,8 @@ app.whenReady().then(async () => {
     }
   } catch (e) { console.warn("[tracker] autostart skipped:", e.message); }
   try {
-    if (db.activeZenSession?.()) startZenMonitor();
+    const az = db.activeZenSession?.();
+    if (az) { startZenMonitor(); maybeArmZenCheckin(az); }
   } catch (e) { console.warn("[zen] autoresume skipped:", e.message); }
   try {
     startRoutineMonitor();
@@ -2133,6 +2134,45 @@ function maybeArmFocusRecall(row) {
     });
   } catch { /* recall is best-effort, never block the timer */ }
 }
+
+// Raise + flash the Apex window — the same enforcement the Zen monitor uses on a
+// foreground violation (main.cjs zenTick). Registered as Recall's escalate hook
+// so a "drifted" verdict during a strict/locked Zen check-in is enforced, not
+// just shown.
+function flashFocusWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.flashFrame(true);
+    mainWindow.setAlwaysOnTop(true, "floating");
+    setTimeout(() => {
+      try { mainWindow?.setAlwaysOnTop?.(false); mainWindow?.flashFrame?.(false); } catch {}
+    }, 4500);
+  } catch {}
+}
+
+// P7: a strict/locked Zen session OWNS a periodic Recall check-in loop. Every
+// few minutes Recall recaps the screen, the model judges on-track vs drifted
+// against the Zen title, the verdict shows in the focus UI, and a drift
+// escalates (toast + window flash). Default on for strict/locked; disable with
+// recall.zenCheckin='0'. relaxed Zen + plain timers keep maybeArmFocusRecall.
+function maybeArmZenCheckin(session) {
+  try {
+    if (!session || (session.mode !== "strict" && session.mode !== "locked")) return;
+    if (db.getSetting("recall.zenCheckin") === "0") return;
+    if (recall.status()?.active) return; // don't double-start
+    const remainMin = Math.max(1, Math.ceil((new Date(session.ends_at).getTime() - Date.now()) / 60000));
+    const checkIn = Math.max(2, +(db.getSetting("recall.checkInMinutes") || 10));
+    recall.start({
+      focusTask: session.title || "Focus",
+      windowMinutes: remainMin + 1,
+      mode: session.mode,
+      checkInMinutes: checkIn,
+    });
+  } catch { /* recall is best-effort, never block Zen */ }
+}
 ipcMain.handle("timer:extend", (_e, mins) => {
   const byMinutes = +mins || 5;
   const row = db.extendTimer(byMinutes);
@@ -2371,6 +2411,10 @@ function finishZenSession(reason = "stopped", { stopTimer = true, force = false 
   }
   const ended = db.stopZenSession?.(reason);
   if (!ended) return null;
+  // P7: stop the focus-linked Recall check-in NOW (don't wait up to one capture
+  // interval for its self-stop poll) — fires the final review. Guard on
+  // focusTask so a standalone manual recall the user started isn't killed.
+  try { if (recall.status()?.active && recall.status()?.focusTask) recall.stop(reason); } catch {}
   // Tell the phone the focus block is over so its blocker stands down.
   routine.pushFocus?.({ active: false }).catch?.(() => {});
   if (stopTimer) {
@@ -2412,7 +2456,8 @@ ipcMain.handle("zen:start", async (_e, p) => {
     planned_minutes: session.planned_minutes,
   });
   broadcastTimer(timerRow);
-  maybeArmFocusRecall(timerRow);
+  maybeArmZenCheckin(session);     // strict/locked → periodic verdict check-ins
+  maybeArmFocusRecall(timerRow);   // relaxed/plain → opt-in focus-guard (no-op if a recall is already armed)
   startZenMonitor();
   broadcastZen(session, { timer: timerRow });
 
@@ -2441,6 +2486,8 @@ ipcMain.handle("zen:extend", (_e, mins) => {
   const timer = db.extendTimer(+mins || 10);
   broadcastTimer(timer);
   broadcastZen(session);
+  // Keep the Zen-owned Recall check-in window in lockstep with the new deadline.
+  try { if (recall.status()?.active) recall.extendSession(+mins || 10); } catch {}
   // Re-publish so the phone's blocker learns the new deadline — without this
   // the phone stands down at the OLD ends_at while the desktop keeps enforcing.
   if (session) {

@@ -68,6 +68,8 @@ export default function ZenMode({ onChanged, onActiveChange }) {
   // Stop isn't a persistent button while a block runs — double-click the live
   // card to reveal "End now" for a few seconds.
   const [endPrompt, setEndPrompt] = useState(false);
+  // P7: latest Recall check-in verdict during a strict/locked Zen session.
+  const [checkin, setCheckin] = useState(null);
 
   useEffect(() => {
     refresh();
@@ -81,6 +83,7 @@ export default function ZenMode({ onChanged, onActiveChange }) {
       if (payload?.ended) {
         setLastSummary(payload.ended);
         setViolation(null);
+        setCheckin(null);
         loadHistory();
       }
       onChanged?.();
@@ -92,11 +95,13 @@ export default function ZenMode({ onChanged, onActiveChange }) {
       });
     });
     const offTimer = api.timer?.onUpdate?.((t) => setActiveTimer(t || null));
+    const offCheckin = api.recall?.onCheckin?.((c) => { if (c?.status) setCheckin(c); });
     const offProgress = api.spotify?.onProgress?.((p) => setProgress(p));
     return () => {
       offUpdate?.();
       offViolation?.();
       offTimer?.();
+      offCheckin?.();
       offProgress?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -350,6 +355,17 @@ export default function ZenMode({ onChanged, onActiveChange }) {
               <div className="zen-meta">
                 <span>{zenPlaylistLabel(active, playlistState)}</span>
                 <span>{active.violations || 0} drift</span>
+                {checkin?.status && (
+                  <span
+                    title={checkin.why || checkin.next || ""}
+                    style={{ color: checkin.status === "drifted" ? "var(--bad)" : "var(--ok)", fontWeight: 600 }}
+                  >
+                    {checkin.status === "drifted"
+                      ? `⚠ drifted${checkin.next ? " — " + checkin.next : ""}`
+                      : "✓ on track"}
+                    {checkin.count ? ` · check-in ${checkin.count}` : ""}
+                  </span>
+                )}
                 {isLocked && <span className="zen-meta-locked">🔒 locked to timer</span>}
               </div>
             </div>

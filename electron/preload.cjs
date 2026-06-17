@@ -126,6 +126,8 @@ contextBridge.exposeInMainWorld("apex", {
     clear: () => invoke("recall:clear"),
     // Fires when a focus-guard session wraps with a post-task review.
     onReview: (h) => on("recall:review", h),
+    // P7: fires on each periodic Zen check-in with the on-track/drifted verdict.
+    onCheckin: (h) => on("recall:checkin", h),
   },
   overlay: {
     // Transparent always-on-top focus HUD (task timer + per-task time).

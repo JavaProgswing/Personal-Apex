@@ -2900,6 +2900,8 @@ function RecallTab({ setMsg }) {
   const [deep, setDeep] = useState(false);
   const [sync, setSync] = useState(true);
   const [focusGuard, setFocusGuard] = useState(false);
+  const [zenCheckin, setZenCheckin] = useState(true);
+  const [checkInMin, setCheckInMin] = useState(10);
   const [preferLocal, setPreferLocal] = useState(false);
   const [audioMode, setAudioMode] = useState("auto");
   const [modelMode, setModelMode] = useState("auto");
@@ -2920,6 +2922,8 @@ function RecallTab({ setMsg }) {
     g("recall.audio", setAudio, (v) => v === "1");
     g("recall.sync", setSync, (v) => v !== "0");
     g("recall.focusGuard", setFocusGuard, (v) => v === "1");
+    g("recall.zenCheckin", setZenCheckin, (v) => v !== "0");
+    g("recall.checkInMinutes", setCheckInMin, (v) => +v || 10);
     g("recall.preferLocal", setPreferLocal, (v) => v === "1");
     g("recall.captureIntervalSec", setIntervalSec, (v) => +v || 20);
     g("recall.audioToModel", setAudioMode);
@@ -3012,13 +3016,18 @@ function RecallTab({ setMsg }) {
         {status.active ? (
           <div className="row between" style={{ alignItems: "center", flexWrap: "wrap", gap: 12 }}>
             <div>
-              <strong>● Recording</strong>
+              <strong>● Recording{status.focusTask ? ` · ${status.focusTask}` : ""}</strong>
               <small className="muted" style={{ display: "block" }}>
-                {status.framesKept || 0} frames · ~{remMin}m left{status.summarizing ? " · summarizing…" : ""}
-                {status.audio ? (status.audioCapturing ? ` · 🎙 ${status.audioSeconds || 0}s` : ` · 🎙 ${status.audioError || "…"}`) : ""}
+                {status.focusTask
+                  ? `Focus check-ins${status.mode ? ` · ${status.mode}` : ""}${status.checkInCount ? ` · ${status.checkInCount} done` : ""}${status.lastVerdict ? (status.lastVerdict === "drifted" ? " · ⚠ drifted" : " · ✓ on track") : ""}`
+                  : `${status.framesKept || 0} frames · ~${remMin}m left${status.summarizing ? " · summarizing…" : ""}${status.audio ? (status.audioCapturing ? ` · 🎙 ${status.audioSeconds || 0}s` : ` · 🎙 ${status.audioError || "…"}`) : ""}`}
               </small>
             </div>
-            <button className="danger" onClick={stop} disabled={busy}>■ Stop &amp; recap</button>
+            {status.focusTask ? (
+              <span className="muted" title="Owned by your focus session — it ends when the session ends.">Managed by focus</span>
+            ) : (
+              <button className="danger" onClick={stop} disabled={busy}>■ Stop &amp; recap</button>
+            )}
           </div>
         ) : (
           <>
@@ -3039,6 +3048,14 @@ function RecallTab({ setMsg }) {
               <Chip on={audio} set={toggle("recall.audio", setAudio)} label="Audio" title="Capture system audio (loopback), used in the recap" />
               <Chip on={deep} set={setDeep} label="Deep (cloud)" title="Use Gemini for this window — needs a key (Advanced)" />
               <Chip on={focusGuard} set={toggle("recall.focusGuard", setFocusGuard)} label="Focus guard" title="Auto-record focus timers/Zen, nudge on distraction, review the task afterward" />
+              <Chip on={zenCheckin} set={toggle("recall.zenCheckin", setZenCheckin)} label="Zen check-ins" title="During strict/locked Zen, Recall checks in every few minutes with an on-track/drifted verdict + nudge" />
+              <label className="row" style={{ gap: 6, alignItems: "center", margin: 0, fontSize: 12.5 }} title="Minutes between Zen check-ins">
+                every
+                <input type="number" min={2} max={60} value={checkInMin}
+                  onChange={(e) => { setCheckInMin(e.target.value); setPref("recall.checkInMinutes", e.target.value); }}
+                  disabled={!zenCheckin} style={{ width: 52 }} />
+                min
+              </label>
               <Chip on={preferLocal} set={toggle("recall.preferLocal", setPreferLocal)} label="Prefer local" title="Use the local model even for deep windows — cloud only as fallback" />
               <Chip on={sync} set={toggle("recall.sync", setSync)} label="Sync" title="Push recaps (text + thumbnails only) for web/phone review" />
             </div>

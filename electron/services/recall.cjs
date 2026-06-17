@@ -24,6 +24,7 @@ const notifier = require("./notifier.cjs");
 // Tunables (overridable per-session via start()).
 const MIN_INTERVAL_SEC = 5;
 const MAX_FRAMES_TO_MODEL = 12;   // cap keyframes sent to the VLM per summary
+const MAX_CHECKIN_FRAMES = 6;     // fewer per check-in → fast enough on a local VLM
 const CAPTURE_MAX_WIDTH = 1280;   // screenshot capture width (downscaled)
 const MODEL_MAX_WIDTH = 768;      // further downscale before the model (1 tile)
 const AHASH_DISTANCE_KEEP = 6;    // hamming distance over a 64-bit aHash to count as "changed"
@@ -59,6 +60,8 @@ function ensureTable() {
     "transcribe_model TEXT",
     "frames_json TEXT",   // P5: a few small thumbnails [{ts,b64,mime}] for review
     "focus_task TEXT",    // P6: set when the recap wrapped a focus session (review)
+    "verdict TEXT",       // P7: parsed on-track | drifted from the model's review
+    "next_step TEXT",     // P7: the model's one-line "next:" suggestion
   ]) {
     try { db._db().exec(`ALTER TABLE recall_summaries ADD COLUMN ${col}`); } catch { /* exists */ }
   }
@@ -66,6 +69,14 @@ function ensureTable() {
 
 function broadcast() {
   emit("recall:update", status());
+}
+
+// P7: main registers an escalation hook (raise/flash the Apex window) so a
+// "drifted" verdict during a strict/locked Zen check-in is enforced, not just
+// shown. recall.cjs can't reach the BrowserWindow itself.
+let onEscalate = () => {};
+function setHooks({ escalate } = {}) {
+  if (typeof escalate === "function") onEscalate = escalate;
 }
 
 // ── average-hash (64-bit) over a tiny grayscale of the frame, for dedup ──────
@@ -163,7 +174,7 @@ function extendSession(extraMinutes) {
   return { ok: true, endsAt: new Date(session.endsAt).toISOString() };
 }
 
-function tick() {
+async function tick() {
   if (!session) return;
   if (Date.now() >= session.endsAt) {
     stop("window-elapsed");
@@ -176,16 +187,26 @@ function tick() {
     try { stillFocused = !!(db.getActiveTimer?.() || db.activeZenSession?.()); } catch { stillFocused = true; }
     if (!stillFocused) { stop("focus-done"); return; }
   }
-  captureOnce();
+  await captureOnce();
+  // P7: periodic check-in — recap the sub-window, judge it, act on the verdict.
+  // checkinInFlight serializes them so a slow local recap can't pile up while
+  // the capture loop keeps ticking.
+  const s = session;
+  if (s && s.checkInMs && !s.summarizing && !s.checkinInFlight &&
+      Date.now() - s.lastCheckInAt >= s.checkInMs &&
+      s.frames.length > s.checkInBaseIdx) {
+    await runCheckIn(s, false);
+  }
 }
 
-function start({ windowMinutes = 60, intervalSeconds = 0, audio = false, deep = false, focusTask = null } = {}) {
+function start({ windowMinutes = 60, intervalSeconds = 0, audio = false, deep = false, focusTask = null, mode = null, checkInMinutes = 0 } = {}) {
   if (session) return { ok: false, error: "A recall session is already running." };
   const win = Math.max(1, Math.min(8 * 60, Math.round(+windowMinutes || 60)));
   // Interval: explicit arg → user's recall.captureIntervalSec setting → 20s.
   const cfgInterval = +(db.getSetting("recall.captureIntervalSec") || 0) || 0;
   const intervalMs = Math.max(MIN_INTERVAL_SEC, Math.round(+intervalSeconds || cfgInterval || 20)) * 1000;
   const now = Date.now();
+  const checkInMs = Math.max(0, Math.round(+checkInMinutes || 0)) * 60_000;
   session = {
     id: `recall_${now}`,
     startedAt: new Date(now).toISOString(),
@@ -200,6 +221,16 @@ function start({ windowMinutes = 60, intervalSeconds = 0, audio = false, deep = 
     // post-task review of whether the task actually got worked on.
     focusTask: focusTask ? String(focusTask).slice(0, 200) : null,
     lastNudgeAt: 0,
+    // P7 periodic check-ins: when checkInMs is set (Zen strict/locked owns the
+    // session), every checkInMs we recap the frames since the last check-in,
+    // parse the on-track/drifted verdict, surface it, and escalate on drift.
+    mode: mode || null,                 // zen mode: relaxed | strict | locked | null
+    checkInMs,
+    checkInBaseIdx: 0,                  // frame index where the current sub-window starts
+    checkInStartedAt: new Date(now).toISOString(),
+    lastCheckInAt: now,
+    checkInCount: 0,
+    lastVerdict: null,
     // audio (P2): the renderer recorder streams base64 chunks into audioChunks
     // while audio===true; we never persist them, only the derived transcript.
     audio: !!audio,
@@ -257,6 +288,19 @@ async function stop(reason = "manual") {
   }
   s.summarizing = true;
   broadcast();
+  // Periodic check-in (Zen-owned) session: a FINAL check-in over the last
+  // sub-window if anything new was captured. runCheckIn persists, pushes, and
+  // emits recall:review itself, so we don't also call summarize/maybePushRecall.
+  if (s.checkInMs) {
+    // Skip the final check-in if an interim is still running (it'll persist +
+    // emit on its own); otherwise recap the last sub-window.
+    const summaryRow = (!s.checkinInFlight && s.frames.length > s.checkInBaseIdx)
+      ? await runCheckIn(s, true) : null;
+    session = null;
+    broadcast();
+    pushLive({ active: false, source: "desktop" });
+    return { ok: true, summary: summaryRow };
+  }
   const summaryRow = await summarize(s, reason);
   session = null;
   broadcast();
@@ -308,6 +352,98 @@ function pickThumbnails(frames, max = 4, width = 360) {
     } catch { /* skip a bad frame */ }
   }
   return out;
+}
+
+// P7: pull the structured judgement out of the model's free-text recap. The
+// model is instructed (recall-model.reviewTail) to end with a single line:
+//   "VERDICT: on-track — <why> · next: <suggestion>"  (or "drifted").
+function parseVerdict(text) {
+  const t = String(text || "");
+  const m = t.match(/VERDICT:\s*(on[\s-]?track|drift\w*)\b([^\n]*)/i);
+  if (!m) return { status: null, why: "", next: "" };
+  const status = /drift/i.test(m[1]) ? "drifted" : "on-track";
+  const rest = m[2] || "";
+  let next = "";
+  const nx = rest.match(/(?:·\s*)?\bnext:\s*(.+)$/i);
+  if (nx) next = nx[1].trim();
+  let why = rest.replace(/^[\s—:-]+/, "").replace(/·?\s*next:.*$/i, "").replace(/[—-]\s*$/, "").trim();
+  return { status, why, next };
+}
+
+// Escalate a "drifted" verdict by mode. relaxed → soft toast; strict/locked →
+// stronger toast + raise/flash the Apex window (the registered escalate hook).
+function actOnVerdict(s, v) {
+  if (v.status !== "drifted") return; // on-track is surfaced in-UI only (no spam)
+  const strict = s.mode === "strict" || s.mode === "locked";
+  const body = v.next ? `Off “${s.focusTask}”. ${v.next}` : `You've drifted from “${s.focusTask}”.`;
+  try { notifier.fire?.({ title: strict ? "⚠ Off track" : "Drifted", body, kind: "recall", payload: { task: s.focusTask } }); } catch {}
+  if (strict) { try { onEscalate({ task: s.focusTask, next: v.next, mode: s.mode }); } catch {} }
+}
+
+// One periodic check-in: recap the frames captured since the last check-in,
+// parse + persist the verdict, surface it to the focus UI, and act on a drift.
+// Keeps the session alive (unlike stop) so the next interval continues.
+async function runCheckIn(s, final) {
+  s.checkinInFlight = true;
+  try {
+  const frames = s.frames.slice(s.checkInBaseIdx).slice(-MAX_CHECKIN_FRAMES);
+  const startIso = s.checkInStartedAt;
+  const endedAt = new Date().toISOString();
+  // Advance the sub-window NOW so a slow model call can't double-count frames.
+  s.checkInBaseIdx = s.frames.length;
+  s.checkInStartedAt = endedAt;
+  s.lastCheckInAt = Date.now();
+  s.checkInCount = (s.checkInCount || 0) + 1;
+
+  const date = startIso.slice(0, 10);
+  const fmt = (iso) => iso.slice(11, 16);
+  const span = `${fmt(startIso)}–${fmt(endedAt)}`;
+
+  let summaryText = "Screen idle / unchanged this interval.";
+  let model = null;
+  if (frames.length > 0) {
+    const r = await recallModel.recap({
+      frames: frames.map((f) => f.b64),
+      transcript: "", audio: null, span, deep: false, task: s.focusTask || null,
+    });
+    summaryText = r.summary;
+    model = r.model;
+  }
+  const v = parseVerdict(summaryText);
+  s.lastVerdict = v.status;
+
+  ensureTable();
+  const framesJson = JSON.stringify(pickThumbnails(frames));
+  const created = new Date().toISOString();
+  const info = db._db().prepare(
+    `INSERT INTO recall_summaries
+       (date, started_at, ended_at, frame_count, model, summary, source, created_at,
+        frames_json, focus_task, verdict, next_step)
+     VALUES (?, ?, ?, ?, ?, ?, 'desktop', ?, ?, ?, ?, ?)`,
+  ).run(date, startIso, endedAt, frames.length, model, summaryText, created,
+    framesJson, s.focusTask || null, v.status, v.next || null);
+  const row = {
+    id: info.lastInsertRowid, date, started_at: startIso, ended_at: endedAt,
+    frame_count: frames.length, model, summary: summaryText,
+    focus_task: s.focusTask || null, verdict: v.status, next_step: v.next || null,
+  };
+
+  emit("recall:checkin", {
+    status: v.status, why: v.why, next: v.next, task: s.focusTask || null,
+    at: endedAt, mode: s.mode || null, final: !!final, count: s.checkInCount,
+    summary: summaryText, id: row.id,
+  });
+  if (final && s.focusTask) {
+    emit("recall:review", row);
+    try { notifier.fire?.({ title: `Focus review · ${s.focusTask}`, body: summaryText.slice(0, 220), kind: "recall" }); } catch {}
+  }
+  actOnVerdict(s, v);
+  pushLive(liveState({ verdict: v.status, next: v.next || null }));
+  maybePushRecall(row.id);
+  return row;
+  } finally {
+    s.checkinInFlight = false;
+  }
 }
 
 async function summarize(s, reason) {
@@ -434,6 +570,10 @@ function status() {
     audioSeconds: session.audioSeconds || 0,
     audioBytes: session.audioBytes || 0,
     focusTask: session.focusTask || null,
+    mode: session.mode || null,
+    checkInMinutes: session.checkInMs ? session.checkInMs / 60000 : 0,
+    checkInCount: session.checkInCount || 0,
+    lastVerdict: session.lastVerdict || null,
   };
 }
 
@@ -560,6 +700,7 @@ function liveState(extra = {}) {
     frames_kept: session.frames.length,
     audio: !!session.audio,
     task: session.focusTask || null, // shown in the phone/web "recording" banner
+    verdict: session.lastVerdict || null,
     source: "desktop",
     ...extra,
   };
@@ -576,5 +717,5 @@ async function syncToCloud(limit = 50) {
 
 module.exports = {
   init, start, stop, status, recentSummaries, pushAudio, setAudioState, syncToCloud,
-  extendSession, deleteSummary, clearSummaries,
+  extendSession, deleteSummary, clearSummaries, setHooks,
 };
